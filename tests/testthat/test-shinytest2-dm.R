@@ -55,6 +55,6 @@ test_that("dm block renders output without error", {
   # Check there's no "argument is of length zero" error
   expect_false(grepl("argument is of length zero", html, ignore.case = TRUE))
 
-  # Check that dm output is displayed
-  expect_true(grepl("dm object with", html))
+ # Check that dm diagram is displayed (grViz widget renders SVG)
+  expect_true(grepl("grViz|svg", html, ignore.case = TRUE))
 })

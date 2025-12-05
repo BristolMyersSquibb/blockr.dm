@@ -122,7 +122,7 @@ new_dm_block <- function(...) {
 
 #' Custom output for dm blocks
 #'
-#' Displays dm structure instead of trying to render as a table.
+#' Displays dm structure as an interactive diagram showing tables and relationships.
 #'
 #' @param x The block object
 #' @param result The dm result
@@ -131,40 +131,11 @@ new_dm_block <- function(...) {
 #' @method block_output dm_block
 #' @export
 block_output.dm_block <- function(x, result, session) {
-
-  shiny::renderPrint({
+  DiagrammeR::renderGrViz({
     if (!inherits(result, "dm")) {
-      return(result)
+      return(NULL)
     }
-
-    # Get table info
-    tables <- dm::dm_get_tables(result)
-    table_names <- names(tables)
-
-    cat("dm object with", length(table_names), "tables:\n\n")
-
-    for (tbl_name in table_names) {
-      tbl <- tables[[tbl_name]]
-      cat("*", tbl_name, "-", nrow(tbl), "rows,", ncol(tbl), "cols\n")
-    }
-
-    # Show keys if any
-    pks <- tryCatch(dm::dm_get_all_pks(result), error = function(e) NULL)
-    if (!is.null(pks) && nrow(pks) > 0) {
-      cat("\nPrimary keys:\n")
-      for (i in seq_len(nrow(pks))) {
-        cat("*", pks$table[i], ":", as.character(pks$pk_col[[i]]), "\n")
-      }
-    }
-
-    fks <- tryCatch(dm::dm_get_all_fks(result), error = function(e) NULL)
-    if (!is.null(fks) && nrow(fks) > 0) {
-      cat("\nForeign keys:\n")
-      for (i in seq_len(nrow(fks))) {
-        cat("*", fks$child_table[i], ".", as.character(fks$child_fk_cols[[i]]),
-            "->", fks$parent_table[i], "\n")
-      }
-    }
+    dm::dm_draw(result, view_type = "keys_only")
   })
 }
 
@@ -177,9 +148,8 @@ block_output.dm_block <- function(x, result, session) {
 #' @method block_ui dm_block
 #' @export
 block_ui.dm_block <- function(id, x, ...) {
-
   shiny::tagList(
-    shiny::verbatimTextOutput(shiny::NS(id, "result"))
+    DiagrammeR::grVizOutput(shiny::NS(id, "result"), height = "300px")
   )
 }
 

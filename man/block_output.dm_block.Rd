@@ -21,5 +21,5 @@
 \item{session}{Shiny session}
 }
 \description{
-Displays dm structure instead of trying to render as a table.
+Displays dm structure as an interactive diagram showing tables and relationships.
 }
