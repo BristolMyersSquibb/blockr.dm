@@ -1,16 +1,19 @@
 Package: blockr.dm
-Title: Relational Data Management Blocks for blockr
+Title: Relational Data Management Blocks for 'blockr'
 Version: 0.0.1
 Authors@R:
     c(person(given = "Christoph",
              family = "Sax",
              role = c("aut", "cre"),
              email = "christoph@cynkra.com"))
-Description: Provides blockr blocks for working with relational data using the
-    dm package. Enables visual management of multi-table data structures,
-    primary/foreign key relationships, filtering across related tables, and
-    flattening to single tables. Particularly useful for pharmaceutical data
-    like ADaM datasets where tables share subject identifiers.
+Maintainer: Christoph Sax <christoph@cynkra.com>
+Description: Extends 'blockr.core' with interactive blocks for visual management
+    of relational data using the 'dm' package. Users can combine multiple data
+    frames into data models, define primary and foreign key relationships,
+    filter across related tables with automatic cascading, and flatten to single
+    tables. Includes interactive diagrams showing table relationships.
+    Particularly useful for pharmaceutical data like ADaM datasets where tables
+    share subject identifiers (USUBJID).
 License: GPL (>= 3)
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
@@ -21,12 +24,11 @@ Imports:
     dm,
     shiny,
     stats
-Enhances:
-    blockr
 Suggests:
     blockr,
     blockr.dag,
     blockr.dock,
+    bslib,
     testthat (>= 3.0.0),
     random.cdisc.data,
     shinytest2
