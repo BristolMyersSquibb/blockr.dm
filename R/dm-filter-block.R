@@ -149,12 +149,14 @@ new_dm_filter_block <- function(table = "", expr = "", ...) {
 }
 
 #' @rdname block_output.dm_block
+#' @method block_output dm_filter_block
 #' @export
 block_output.dm_filter_block <- function(x, result, session) {
   block_output.dm_block(x, result, session)
 }
 
 #' @rdname block_ui.dm_block
+#' @method block_ui dm_filter_block
 #' @export
 block_ui.dm_filter_block <- function(id, x, ...) {
   block_ui.dm_block(id, x, ...)

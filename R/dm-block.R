@@ -1,3 +1,6 @@
+#' @importFrom blockr.core block_output block_ui block_render_trigger
+NULL
+
 # Helper function to extract argument names for variadic blocks
 # Copied from blockr.core:::dot_args_names (not exported)
 dot_args_names <- function(x) {
@@ -125,6 +128,7 @@ new_dm_block <- function(...) {
 #' @param result The dm result
 #' @param session Shiny session
 #'
+#' @method block_output dm_block
 #' @export
 block_output.dm_block <- function(x, result, session) {
 
@@ -170,10 +174,25 @@ block_output.dm_block <- function(x, result, session) {
 #' @param x The block object
 #' @param ... Additional arguments
 #'
+#' @method block_ui dm_block
 #' @export
 block_ui.dm_block <- function(id, x, ...) {
 
   shiny::tagList(
     shiny::verbatimTextOutput(shiny::NS(id, "result"))
   )
+}
+
+#' Custom render trigger for dm blocks
+#'
+#' Override transform_block's render trigger which tries to access
+#' board options that may not be set. dm blocks don't need pagination.
+#'
+#' @param x The block object
+#' @param session Shiny session
+#'
+#' @method block_render_trigger dm_block
+#' @export
+block_render_trigger.dm_block <- function(x, session = blockr.core::get_session()) {
+  NULL
 }
