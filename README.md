@@ -54,21 +54,40 @@ run_app(
     adlb_data = new_static_block(data = adlb),
     adae_data = new_static_block(data = adae),
     dm_obj = new_dm_block(),
-    dm_keys = new_dm_add_keys_block(
+    dm_keys1 = new_dm_add_keys_block(
       pk_table = "adsl_data",
       pk_column = "USUBJID",
       fk_table = "adlb_data",
       fk_column = "USUBJID"
-    )
+    ),
+    dm_keys2 = new_dm_add_keys_block(
+      pk_table = "adsl_data",
+      pk_column = "USUBJID",
+      fk_table = "adae_data",
+      fk_column = "USUBJID"
+    ),
+    # Filter by lab condition - cascades to related tables
+    filtered_dm = new_dm_filter_block(
+      table = "adlb_data",
+      expr = "PARAMCD == 'NEUT' & AVAL > 5"
+    ),
+    # Flatten filtered dm: joins adae with adsl into one table
+    flattened = new_dm_flatten_block(start_table = "adae_data")
   ),
   links = c(
     new_link("adsl_data", "dm_obj", "adsl_data"),
     new_link("adlb_data", "dm_obj", "adlb_data"),
     new_link("adae_data", "dm_obj", "adae_data"),
-    new_link("dm_obj", "dm_keys", "data")
+    new_link("dm_obj", "dm_keys1", "data"),
+    new_link("dm_keys1", "dm_keys2", "data"),
+    new_link("dm_keys2", "filtered_dm", "data"),
+    new_link("filtered_dm", "flattened", "data")
   ),
   extensions = list(new_dag_extension())
 )
+# The flatten block joins adae with adsl via USUBJID for filtered subjects,
+# resulting in a single table with columns from both:
+# USUBJID, AETERM, AGE, SEX (only for subjects with neutrophils > 5)
 ```
 
 ## Available Blocks
@@ -86,7 +105,7 @@ blockr.dm provides 5 blocks for relational data management:
 
 ### Extracting Results
 - **new_dm_pluck_block()**: Extract a single table from a dm object as a regular data frame.
-- **new_dm_flatten_block()**: Flatten a dm into a single data frame by joining all related tables based on foreign keys.
+- **new_dm_flatten_block()**: Flatten a dm into a single data frame by joining related tables based on foreign keys. For example, starting from an adverse events table, it joins in the subject demographics, resulting in one table with columns from both (USUBJID, AETERM, AGE, SEX, etc.).
 
 ## Use Case: Cross-Table Queries
 
@@ -100,7 +119,7 @@ This query spans three tables (ADSL, ADLB, ADAE) linked by USUBJID. With blockr.
 2. Combine into a dm with `new_dm_block()`
 3. Add USUBJID as the linking key with `new_dm_add_keys_block()`
 4. Filter ADLB with `new_dm_filter_block(table = "adlb", expr = "PARAMCD == 'NEUT' & AVAL > 5")`
-5. Extract filtered adverse events with `new_dm_pluck_block(table = "adae")`
+5. Extract filtered adverse events with `new_dm_pluck_block(table = "adae")` or flatten with `new_dm_flatten_block(start_table = "adae")` to get AEs joined with subject demographics
 
 The filter cascades automatically - only adverse events for subjects meeting the lab criteria are returned.
 

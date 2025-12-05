@@ -1,0 +1,15 @@
+Type: Shiny
+Title: blockr.dm ADaM Workflow Demo
+Imports:
+    shiny,
+    blockr.core,
+    blockr,
+    blockr.dm,
+    blockr.dag,
+    dm,
+    DiagrammeR
+Remotes:
+    BristolMyersSquibb/blockr.core,
+    BristolMyersSquibb/blockr,
+    BristolMyersSquibb/blockr.dag,
+    BristolMyersSquibb/blockr.dm
