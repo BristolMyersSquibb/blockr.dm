@@ -1,0 +1,28 @@
+# fly.toml - Fly.io configuration for blockr.dm demo
+# Run `fly launch` to create the app, or `fly deploy` to deploy changes
+
+app = 'blockr-dm-demo'
+primary_region = 'fra'  # Frankfurt, Germany
+
+[build]
+
+[http_service]
+  internal_port = 3838  # Shiny Server default port
+  force_https = true
+  auto_stop_machines = 'off'  # Never stop - always running
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    grace_period = "60s"  # Give Shiny more time to start
+    interval = "30s"      # Less aggressive checking
+    method = "GET"
+    timeout = "15s"       # More time for response
+    path = "/"
+
+# Use single larger machine instead of 2 smaller ones
+[[vm]]
+  size = 'performance-2x'  # Dedicated CPU, 2 cores
+  memory = '2gb'           # 680MB used, 2GB is plenty
+  cpu_kind = 'performance'
+  cpus = 2

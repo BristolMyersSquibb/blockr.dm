@@ -12,4 +12,5 @@ Remotes:
     BristolMyersSquibb/blockr.core,
     BristolMyersSquibb/blockr,
     BristolMyersSquibb/blockr.dag,
-    BristolMyersSquibb/blockr.dm
+    BristolMyersSquibb/blockr.dplyr,
+    cynkra/blockr.dm

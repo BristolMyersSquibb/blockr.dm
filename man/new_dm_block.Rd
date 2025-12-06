@@ -4,9 +4,12 @@
 \alias{new_dm_block}
 \title{Create dm Block Constructor}
 \usage{
-new_dm_block(...)
+new_dm_block(infer_keys = TRUE, ...)
 }
 \arguments{
+\item{infer_keys}{Logical, whether to automatically infer primary and foreign
+key relationships from columns with matching names. Default is \code{TRUE}.}
+
 \item{...}{Forwarded to \code{\link[blockr.core:new_transform_block]{blockr.core::new_transform_block()}}}
 }
 \value{
@@ -18,6 +21,9 @@ This block combines multiple data frames into a dm (data model) object.
 \examples{
 # Create a dm block
 new_dm_block()
+
+# Create a dm block with auto-inferred relationships
+new_dm_block(infer_keys = TRUE)
 
 if (interactive()) {
   library(blockr.core)

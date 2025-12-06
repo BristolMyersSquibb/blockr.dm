@@ -29,7 +29,7 @@ test_that("full ADaM workflow works end-to-end", {
       adsl_data = blockr.core::new_static_block(data = adsl),
       adlb_data = blockr.core::new_static_block(data = adlb),
       adae_data = blockr.core::new_static_block(data = adae),
-      dm_obj = new_dm_block(),
+      dm_obj = new_dm_block(infer_keys = FALSE),
       dm_keys1 = new_dm_add_keys_block(
         pk_table = "adsl_data",
         pk_column = "USUBJID",
@@ -127,7 +127,7 @@ test_that("dm workflow with flatten block works", {
     blocks = list(
       subjects_data = blockr.core::new_static_block(data = subjects),
       orders_data = blockr.core::new_static_block(data = orders),
-      dm_obj = new_dm_block(),
+      dm_obj = new_dm_block(infer_keys = FALSE),
       dm_keys = new_dm_add_keys_block(
         pk_table = "subjects_data",
         pk_column = "id",
@@ -162,6 +162,68 @@ test_that("dm workflow with flatten block works", {
       expect_equal(nrow(flat_result), 5)
       expect_true("name" %in% colnames(flat_result))
       expect_true("amount" %in% colnames(flat_result))
+    },
+    args = list(x = board)
+  )
+})
+
+test_that("dm nested view block works", {
+  adsl <- data.frame(
+    USUBJID = paste0("SUBJ-", 1:3),
+    AGE = c(45, 52, 38),
+    stringsAsFactors = FALSE
+  )
+
+  adae <- data.frame(
+    USUBJID = c("SUBJ-1", "SUBJ-1", "SUBJ-2"),
+    AETERM = c("Headache", "Nausea", "Fatigue"),
+    stringsAsFactors = FALSE
+  )
+
+  board <- blockr.core::new_board(
+    blocks = list(
+      adsl_data = blockr.core::new_static_block(data = adsl),
+      adae_data = blockr.core::new_static_block(data = adae),
+      dm_obj = new_dm_block(infer_keys = TRUE),
+      nested = new_dm_nested_view_block(root_table = "adsl_data")
+    ),
+    links = c(
+      blockr.core::new_link("adsl_data", "dm_obj", "adsl_data"),
+      blockr.core::new_link("adae_data", "dm_obj", "adae_data"),
+      blockr.core::new_link("dm_obj", "nested", "data")
+    )
+  )
+
+  testServer(
+    blockr.core::board_server,
+    {
+      for (i in 1:5) {
+        session$flushReact()
+        Sys.sleep(0.05)
+      }
+
+      # Check nested result
+      nested_result <- rv$blocks$nested$server$result()
+      expect_s3_class(nested_result, "data.frame")
+
+      # Should have 3 rows (one per subject)
+      expect_equal(nrow(nested_result), 3)
+
+      # Should have USUBJID, AGE, and nested adae_data column
+      expect_true("USUBJID" %in% colnames(nested_result))
+      expect_true("AGE" %in% colnames(nested_result))
+      expect_true("adae_data" %in% colnames(nested_result))
+
+      # Check nested column is a list
+      expect_true(is.list(nested_result$adae_data))
+
+      # SUBJ-1 should have 2 AEs
+      subj1_aes <- nested_result$adae_data[[1]]
+      expect_equal(nrow(subj1_aes), 2)
+
+      # SUBJ-3 should have 0 AEs
+      subj3_aes <- nested_result$adae_data[[3]]
+      expect_equal(nrow(subj3_aes), 0)
     },
     args = list(x = board)
   )

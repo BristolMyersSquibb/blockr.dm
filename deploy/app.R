@@ -2,6 +2,10 @@
 #
 # Demonstrates cross-table queries on ADaM-style pharmaceutical data:
 # "For subjects with Neutrophil counts > 5, what are the adverse events?"
+#
+# Features:
+# - Automatic key inference from column names
+# - Nested view with expandable rows (click to see child tables)
 
 library(blockr)
 library(blockr.dag)
@@ -34,24 +38,10 @@ run_app(
     adlb_data = new_static_block(data = adlb),
     adae_data = new_static_block(data = adae),
 
-    # Combine into dm object - shows diagram with 3 unconnected tables
-    dm_obj = new_dm_block(),
-
-    # Add primary key (USUBJID in adsl) and foreign key from adlb
-    dm_keys1 = new_dm_add_keys_block(
-      pk_table = "adsl_data",
-      pk_column = "USUBJID",
-      fk_table = "adlb_data",
-      fk_column = "USUBJID"
-    ),
-
-    # Add another foreign key (adae -> adsl)
-    dm_keys2 = new_dm_add_keys_block(
-      pk_table = "adsl_data",
-      pk_column = "USUBJID",
-      fk_table = "adae_data",
-      fk_column = "USUBJID"
-    ),
+    # Combine into dm object with automatic key inference
+    # Since USUBJID is unique in adsl but not in adlb/adae,
+    # it automatically adds: PK(adsl.USUBJID) and FKs from adlb/adae
+    dm_obj = new_dm_block(infer_keys = TRUE),
 
     # Filter by lab condition - cascades to related tables!
     filtered_dm = new_dm_filter_block(
@@ -63,7 +53,10 @@ run_app(
     ae_results = new_dm_pluck_block(table = "adae_data"),
 
     # Flatten: join adae with adsl for filtered subjects
-    flattened = new_dm_flatten_block(start_table = "adae_data")
+    flattened = new_dm_flatten_block(start_table = "adae_data"),
+
+    # Nested view: click subjects to expand and see their AEs and labs
+    nested = new_dm_nested_view_block(root_table = "adsl_data")
   ),
   links = c(
     # Connect datasets to dm block
@@ -71,18 +64,17 @@ run_app(
     new_link("adlb_data", "dm_obj", "adlb_data"),
     new_link("adae_data", "dm_obj", "adae_data"),
 
-    # Add keys (chained)
-    new_link("dm_obj", "dm_keys1", "data"),
-    new_link("dm_keys1", "dm_keys2", "data"),
-
-    # Filter the dm
-    new_link("dm_keys2", "filtered_dm", "data"),
+    # Filter the dm (no need for dm_keys blocks - keys are auto-inferred!)
+    new_link("dm_obj", "filtered_dm", "data"),
 
     # Extract AE table
     new_link("filtered_dm", "ae_results", "data"),
 
     # Flatten filtered dm to single table
-    new_link("filtered_dm", "flattened", "data")
+    new_link("filtered_dm", "flattened", "data"),
+
+    # Nested view of the filtered dm
+    new_link("filtered_dm", "nested", "data")
   ),
   extensions = list(
     new_dag_extension()

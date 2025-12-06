@@ -25,7 +25,7 @@ cat("Deploying to account:", cynkra_account$name[1], "on", cynkra_account$server
 # Deploy the application
 rsconnect::deployApp(
   appDir = ".",
-  appName = "blockr-dm-demo",
+  appName = "blockr-dm-adam",
   account = cynkra_account$name[1],
   server = cynkra_account$server[1],
   forceUpdate = TRUE
