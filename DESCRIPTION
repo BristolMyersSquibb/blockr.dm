@@ -20,18 +20,28 @@ Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.3
 Imports:
     blockr.core,
+    bslib,
     DiagrammeR,
     dm,
+    dplyr,
     htmltools,
+    rappdirs,
     reactable,
+    readr,
+    readxl,
     rlang,
     shiny,
-    stats
+    shinyFiles,
+    stats,
+    utils,
+    writexl,
+    zip
 Suggests:
+    arrow,
     blockr,
     blockr.dag,
     blockr.dock,
-    bslib,
+    rio,
     testthat (>= 3.0.0),
     random.cdisc.data,
     shinytest2

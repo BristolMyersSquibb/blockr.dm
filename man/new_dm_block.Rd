@@ -16,7 +16,16 @@ key relationships from columns with matching names. Default is \code{TRUE}.}
 A block object for creating dm objects
 }
 \description{
-This block combines multiple data frames into a dm (data model) object.
+This block combines multiple data frames and/or dm objects into a single
+dm (data model) object.
+}
+\details{
+Inputs can be data frames or existing dm objects:
+\itemize{
+\item Data frames are added as new tables in the dm
+\item Existing dm objects have their tables merged into the result
+\item If table names conflict, later inputs overwrite earlier ones
+}
 }
 \examples{
 # Create a dm block

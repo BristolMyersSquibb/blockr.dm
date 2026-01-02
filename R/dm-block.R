@@ -66,8 +66,9 @@ infer_keys_from_column_names <- function(dm_obj) {
     pk_tables <- tables_with_col[uniqueness]
     fk_tables <- tables_with_col[!uniqueness]
 
-    # If exactly one table has unique values and others don't, establish relationships
-    if (length(pk_tables) == 1 && length(fk_tables) >= 1) {
+    # If at least one table has unique values and others don't, establish relationship
+    # When multiple PK candidates exist, pick the first one
+    if (length(pk_tables) >= 1 && length(fk_tables) >= 1) {
       pk_table <- pk_tables[1]
 
       # Check existing PKs to see if this table already has one
@@ -103,13 +104,20 @@ infer_keys_from_column_names <- function(dm_obj) {
 
 #' Create dm Block Constructor
 #'
-#' This block combines multiple data frames into a dm (data model) object.
+#' This block combines multiple data frames and/or dm objects into a single
+#' dm (data model) object.
 #'
 #' @param infer_keys Logical, whether to automatically infer primary and foreign
 #'   key relationships from columns with matching names. Default is `TRUE`.
 #' @param ... Forwarded to [blockr.core::new_transform_block()]
 #'
 #' @return A block object for creating dm objects
+#'
+#' @details
+#' Inputs can be data frames or existing dm objects:
+#' - Data frames are added as new tables in the dm
+#' - Existing dm objects have their tables merged into the result
+#' - If table names conflict, later inputs overwrite earlier ones
 #'
 #' @examples
 #' # Create a dm block
@@ -153,47 +161,162 @@ new_dm_block <- function(infer_keys = TRUE, ...) {
             infer_keys_rv(input$infer_keys)
           }, ignoreInit = TRUE)
 
-          # Get table names from input connections
-          arg_names <- shiny::reactive({
+          # Analyze inputs to classify as dm or data.frame, and pre-compute keys
+          input_info <- shiny::reactive({
             nms <- names(...args)
-            # Use dot_args_names to get proper names or use numeric indices
             display_nms <- dot_args_names(...args)
             if (is.null(display_nms)) {
               display_nms <- paste0("table_", nms)
             }
-            stats::setNames(nms, display_nms)
+
+            # Classify each input and collect data
+            is_dm <- logical(length(nms))
+            all_tables <- list()
+
+            for (i in seq_along(nms)) {
+              nm <- nms[i]
+              arg <- ...args[[nm]]
+              if (shiny::is.reactive(arg)) arg <- arg()
+
+              if (inherits(arg, "dm")) {
+                is_dm[i] <- TRUE
+                # Extract tables from dm
+                for (tbl_name in names(dm::dm_get_tables(arg))) {
+                  all_tables[[tbl_name]] <- arg[[tbl_name]]
+                }
+              } else {
+                is_dm[i] <- FALSE
+                all_tables[[display_nms[i]]] <- arg
+              }
+            }
+
+            list(
+              nms = nms,
+              display_nms = display_nms,
+              is_dm = is_dm,
+              all_tables = all_tables
+            )
+          })
+
+          # Compute inferred keys based on current data
+          inferred_keys <- shiny::reactive({
+            info <- input_info()
+            do_infer <- infer_keys_rv()
+
+            if (!do_infer || length(info$all_tables) < 2) {
+              return(list(pks = list(), fks = list()))
+            }
+
+            # Analyze tables for key relationships
+            table_names <- names(info$all_tables)
+            all_cols <- lapply(table_names, function(tbl) names(info$all_tables[[tbl]]))
+            names(all_cols) <- table_names
+
+            # Find shared columns
+            all_col_names <- unlist(all_cols)
+            col_counts <- table(all_col_names)
+            shared_cols <- names(col_counts[col_counts > 1])
+
+            pks <- list()
+            fks <- list()
+
+            for (col in shared_cols) {
+              tables_with_col <- table_names[vapply(all_cols, function(cols) col %in% cols, logical(1))]
+              if (length(tables_with_col) < 2) next
+
+              # Check uniqueness
+              uniqueness <- vapply(tables_with_col, function(tbl) {
+                vals <- info$all_tables[[tbl]][[col]]
+                !anyNA(vals) && !anyDuplicated(vals)
+              }, logical(1))
+
+              pk_tables <- tables_with_col[uniqueness]
+              fk_tables <- tables_with_col[!uniqueness]
+
+              # If at least one table has unique values and others don't, establish relationship
+              # When multiple PK candidates exist, pick the first one
+              if (length(pk_tables) >= 1 && length(fk_tables) >= 1) {
+                pk_table <- pk_tables[1]
+                pks <- c(pks, list(list(table = pk_table, column = col)))
+
+                for (fk_table in fk_tables) {
+                  fks <- c(fks, list(list(
+                    child_table = fk_table,
+                    child_column = col,
+                    parent_table = pk_table
+                  )))
+                }
+              }
+            }
+
+            list(pks = pks, fks = fks)
           })
 
           list(
             expr = shiny::reactive({
-              table_names <- arg_names()
-              do_infer <- infer_keys_rv()
+              info <- input_info()
+              keys <- inferred_keys()
 
-              # Require at least one input before building expression
-              shiny::req(length(table_names) > 0)
+              shiny::req(length(info$nms) > 0)
 
-              # Build the dm() call with named tables
-              # We use bquote with splice to build: dm::dm(name1 = data1, name2 = data2, ...)
-              table_syms <- lapply(table_names, as.name)
-              names(table_syms) <- names(table_names)
-
-              dm_call <- bquote(
-                dm::dm(..(tables)),
-                list(tables = table_syms),
-                splice = TRUE
-              )
-
-              if (!do_infer) {
-                return(dm_call)
-              }
-
-              # Wrap in local() to add key inference logic
-              bquote(
+              # Build base expression for creating dm
+              base_expr <- bquote(
                 local({
-                  base_dm <- .(dm_call)
-                  blockr.dm:::infer_keys_from_column_names(base_dm)
+                  result_dm <- dm::dm()
+                  input_names <- .(info$display_nms)
+                  input_is_dm <- .(info$is_dm)
+
+                  for (i in seq_along(input_names)) {
+                    input_data <- get(.(info$nms)[i])
+                    input_name <- input_names[i]
+
+                    if (input_is_dm[i]) {
+                      result_dm <- dm::dm_bind(result_dm, input_data)
+                    } else {
+                      new_dm <- dm::dm()
+                      new_dm <- dm::dm(new_dm, !!rlang::sym(input_name) := input_data)
+                      result_dm <- dm::dm_bind(result_dm, new_dm)
+                    }
+                  }
+                  result_dm
                 })
               )
+
+              # If no keys to add, return base expression
+              if (length(keys$pks) == 0 && length(keys$fks) == 0) {
+                return(base_expr)
+              }
+
+              # Build expression with hardcoded key additions using nested calls
+              result_expr <- base_expr
+
+              for (pk in keys$pks) {
+                table_sym <- as.name(pk$table)
+                col_sym <- as.name(pk$column)
+                # Wrap result in dm_add_pk call
+                result_expr <- bquote(
+                  dm::dm_add_pk(.(inner), .(tbl), .(col)),
+                  list(inner = result_expr, tbl = table_sym, col = col_sym)
+                )
+              }
+
+              for (fk in keys$fks) {
+                child_sym <- as.name(fk$child_table)
+                col_sym <- as.name(fk$child_column)
+                parent_sym <- as.name(fk$parent_table)
+                # Wrap result in dm_add_fk call
+                result_expr <- bquote(
+                  dm::dm_add_fk(.(inner), .(child), .(col), .(parent)),
+                  list(
+                    inner = result_expr,
+                    child = child_sym,
+                    col = col_sym,
+                    parent = parent_sym
+                  )
+                )
+              }
+
+              result_expr
             }),
             state = list(
               infer_keys = infer_keys_rv
@@ -209,7 +332,7 @@ new_dm_block <- function(infer_keys = TRUE, ...) {
           class = "block-container",
           shiny::tags$p(
             class = "text-muted mb-2",
-            "Combines connected data frames into a dm (data model) object."
+            "Combines data frames and/or dm objects into a single dm."
           ),
           shiny::checkboxInput(
             ns("infer_keys"),
@@ -224,10 +347,10 @@ new_dm_block <- function(infer_keys = TRUE, ...) {
       if (length(...args) < 1L) {
         stop("At least one data input is required")
       }
-      # Check all inputs are data frames
+      # Check all inputs are data frames or dm objects
       for (arg in ...args) {
-        if (!is.data.frame(arg)) {
-          stop("All inputs must be data frames")
+        if (!is.data.frame(arg) && !inherits(arg, "dm")) {
+          stop("All inputs must be data frames or dm objects")
         }
       }
     },

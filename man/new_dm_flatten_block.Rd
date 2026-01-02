@@ -4,10 +4,22 @@
 \alias{new_dm_flatten_block}
 \title{dm Flatten Block Constructor}
 \usage{
-new_dm_flatten_block(start_table = "", recursive = TRUE, ...)
+new_dm_flatten_block(
+  start_table = "",
+  include_tables = character(),
+  join_type = "left",
+  recursive = TRUE,
+  ...
+)
 }
 \arguments{
 \item{start_table}{Character, the table to start flattening from. Default "".}
+
+\item{include_tables}{Character vector, specific tables to include in the join.
+If empty, all reachable tables are included.}
+
+\item{join_type}{Character, type of join to use: "left", "inner", "full", "right".
+Default "left".}
 
 \item{recursive}{Logical, whether to recursively join all related tables.
 Default TRUE.}
@@ -25,9 +37,20 @@ all related tables based on their foreign key relationships.
 The starting table determines the base of the join. Related tables are
 joined based on their foreign key relationships. With \code{recursive = TRUE},
 all transitively related tables are included.
+
+Use \code{include_tables} to limit which tables are joined - useful when you
+want to flatten only specific relationships (e.g., join ADAE with ADSL
+but not ADLB).
 }
 \examples{
 # Create a dm flatten block
 new_dm_flatten_block(start_table = "flights", recursive = TRUE)
+
+# Flatten with specific tables and inner join
+new_dm_flatten_block(
+  start_table = "ADSL",
+  include_tables = c("ADAE"),
+  join_type = "inner"
+)
 
 }
