@@ -50,7 +50,7 @@ adae <- data.frame(
 # 1. Load three ADaM tables (ADSL, ADLB, ADAE)
 # 2. Combine into a dm object with infer_keys = TRUE (auto-detects relationships!)
 # 3. Filter by lab condition (subjects with high neutrophils)
-# 4. Extract the adverse events for those subjects (pluck)
+# 4. Extract the adverse events for those subjects (pull)
 # 5. Flatten to a single table with columns from both adae and adsl
 # 6. Temporal join: find labs within 7 days after each AE (causality assessment)
 
@@ -77,7 +77,7 @@ run_app(
 
    # Extract the adverse events for filtered subjects
    # Returns a data frame with only AEs for subjects meeting the lab criteria
-   ae_results = new_dm_pluck_block(table = "adae_data"),
+   ae_results = new_dm_pull_block(table = "adae_data"),
 
    # Flatten the filtered dm: join adae with adsl to get a single table
    # Result has columns from both: USUBJID, AETERM, AESEV, AGE, SEX
@@ -111,7 +111,7 @@ run_app(
    # Filter the dm (no need for dm_keys blocks anymore!)
    new_link("dm_obj", "filtered_dm", "data"),
 
-   # Extract AE table (pluck returns data frame)
+   # Extract AE table (pull returns data frame)
    new_link("filtered_dm", "ae_results", "data"),
 
    # Flatten the filtered dm to single table

@@ -1,4 +1,4 @@
-#' dm Pluck Block Constructor
+#' dm Pull Block Constructor
 #'
 #' This block extracts a single table from a dm object as a regular data frame.
 #' Use this after filtering to get a specific table for further analysis
@@ -10,11 +10,11 @@
 #' @return A block object for extracting tables from dm objects
 #'
 #' @examples
-#' # Create a dm pluck block
-#' new_dm_pluck_block(table = "flights")
+#' # Create a dm pull block
+#' new_dm_pull_block(table = "flights")
 #'
 #' @export
-new_dm_pluck_block <- function(table = "", ...) {
+new_dm_pull_block <- function(table = "", ...) {
 
   blockr.core::new_transform_block(
     server = function(id, data) {
@@ -94,7 +94,7 @@ new_dm_pluck_block <- function(table = "", ...) {
         )
       )
     },
-    class = "dm_pluck_block",
+    class = "dm_pull_block",
     ...
   )
 }

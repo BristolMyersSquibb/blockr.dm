@@ -104,7 +104,7 @@ blockr.dm provides 5 blocks for relational data management:
 - **new_dm_filter_block()**: Filter a dm by condition in any table. The filter automatically cascades to related tables via foreign key relationships - this is the key feature for queries like "get adverse events for subjects with lab value > X".
 
 ### Extracting Results
-- **new_dm_pluck_block()**: Extract a single table from a dm object as a regular data frame.
+- **new_dm_pull_block()**: Extract a single table from a dm object as a regular data frame.
 - **new_dm_flatten_block()**: Flatten a dm into a single data frame by joining related tables based on foreign keys. For example, starting from an adverse events table, it joins in the subject demographics, resulting in one table with columns from both (USUBJID, AETERM, AGE, SEX, etc.).
 
 ## Use Case: Cross-Table Queries
@@ -119,7 +119,7 @@ This query spans three tables (ADSL, ADLB, ADAE) linked by USUBJID. With blockr.
 2. Combine into a dm with `new_dm_block()`
 3. Add USUBJID as the linking key with `new_dm_add_keys_block()`
 4. Filter ADLB with `new_dm_filter_block(table = "adlb", expr = "PARAMCD == 'NEUT' & AVAL > 5")`
-5. Extract filtered adverse events with `new_dm_pluck_block(table = "adae")` or flatten with `new_dm_flatten_block(start_table = "adae")` to get AEs joined with subject demographics
+5. Extract filtered adverse events with `new_dm_pull_block(table = "adae")` or flatten with `new_dm_flatten_block(start_table = "adae")` to get AEs joined with subject demographics
 
 The filter cascades automatically - only adverse events for subjects meeting the lab criteria are returned.
 

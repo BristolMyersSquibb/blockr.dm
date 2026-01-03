@@ -15,7 +15,7 @@ new_dm_select
 - UI: a single slectize
 - Is there a funciton in dm? I think so
 
-new_dm_pluck
+new_dm_pull
 - already existts but unsure if name an implementation in line with dm or other functioins
 
 new_dm

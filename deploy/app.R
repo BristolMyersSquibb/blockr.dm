@@ -50,7 +50,7 @@ run_app(
     ),
 
     # Extract adverse events for filtered subjects
-    ae_results = new_dm_pluck_block(table = "adae_data"),
+    ae_results = new_dm_pull_block(table = "adae_data"),
 
     # Flatten: join adae with adsl for filtered subjects
     flattened = new_dm_flatten_block(start_table = "adae_data"),

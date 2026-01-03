@@ -1,17 +1,17 @@
-test_that("dm_pluck block constructor", {
- block <- new_dm_pluck_block()
+test_that("dm_pull block constructor", {
+ block <- new_dm_pull_block()
  expect_s3_class(
    block,
-   c("dm_pluck_block", "transform_block", "block")
+   c("dm_pull_block", "transform_block", "block")
  )
 
  # Test with initial values
- block2 <- new_dm_pluck_block(table = "adae")
- expect_s3_class(block2, "dm_pluck_block")
+ block2 <- new_dm_pull_block(table = "adae")
+ expect_s3_class(block2, "dm_pull_block")
 })
 
-test_that("dm_pluck block extracts table from dm", {
- block <- new_dm_pluck_block(table = "events")
+test_that("dm_pull block extracts table from dm", {
+ block <- new_dm_pull_block(table = "events")
 
  subjects <- data.frame(id = 1:3, name = c("a", "b", "c"))
  events <- data.frame(subject_id = c(1, 1, 2), value = c(5, 15, 20))
@@ -38,9 +38,9 @@ test_that("dm_pluck block extracts table from dm", {
  )
 })
 
-test_that("dm_pluck block extracts different tables", {
+test_that("dm_pull block extracts different tables", {
  # Test extracting subjects table
- block_subjects <- new_dm_pluck_block(table = "subjects")
+ block_subjects <- new_dm_pull_block(table = "subjects")
 
  subjects <- data.frame(id = 1:3, name = c("a", "b", "c"))
  events <- data.frame(subject_id = c(1, 1, 2), value = c(5, 15, 20))
@@ -63,8 +63,8 @@ test_that("dm_pluck block extracts different tables", {
  )
 })
 
-test_that("dm_pluck block state includes table parameter", {
- block <- new_dm_pluck_block(table = "adae")
+test_that("dm_pull block state includes table parameter", {
+ block <- new_dm_pull_block(table = "adae")
 
  subjects <- data.frame(USUBJID = paste0("SUBJ-", 1:3))
  events <- data.frame(USUBJID = c("SUBJ-1", "SUBJ-2"), AETERM = c("x", "y"))
@@ -86,8 +86,8 @@ test_that("dm_pluck block state includes table parameter", {
  )
 })
 
-test_that("dm_pluck block works after dm_filter", {
- # This is the key use case - pluck after filtering
+test_that("dm_pull block works after dm_filter", {
+ # This is the key use case - pull after filtering
 
  # Create filtered dm
  adsl <- data.frame(
@@ -113,8 +113,8 @@ test_that("dm_pluck block works after dm_filter", {
  filtered_dm <- test_dm |>
    dm::dm_filter(adlb = (PARAMCD == "NEUT" & AVAL > 5))
 
- # Now test pluck block
- block <- new_dm_pluck_block(table = "adae")
+ # Now test pull block
+ block <- new_dm_pull_block(table = "adae")
 
  testServer(
    blockr.core:::get_s3_method("block_server", block),

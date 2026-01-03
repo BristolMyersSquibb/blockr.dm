@@ -108,7 +108,7 @@ run_app(
     selected_dm = new_dm_select_block(tables = c("adsl_data", "adae_data")),
 
     # View the selected dm structure
-    view_dm = new_dm_pluck_block(table = "adae_data")
+    view_dm = new_dm_pull_block(table = "adae_data")
   ),
   links = c(
     # Connect all 4 tables to the dm block

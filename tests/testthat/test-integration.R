@@ -46,7 +46,7 @@ test_that("full ADaM workflow works end-to-end", {
         table = "adlb_data",
         expr = "PARAMCD == 'NEUT' & AVAL > 5"
       ),
-      ae_results = new_dm_pluck_block(table = "adae_data")
+      ae_results = new_dm_pull_block(table = "adae_data")
     ),
     links = c(
       # Use named inputs that match table names

@@ -13,7 +13,7 @@ register_dm_blocks <- function() {
       "new_dm_select_block",
       "new_dm_add_keys_block",
       "new_dm_filter_block",
-      "new_dm_pluck_block",
+      "new_dm_pull_block",
       "new_dm_flatten_block",
       "new_dm_nested_view_block"
     ),
@@ -24,7 +24,7 @@ register_dm_blocks <- function() {
       "Select tables",
       "Add keys to dm",
       "Filter dm",
-      "Pluck table from dm",
+      "Pull table from dm",
       "Flatten dm",
       "Nested view"
     ),
