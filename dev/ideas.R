@@ -13,7 +13,7 @@
 # - new_dm_add_keys_block() -> dm_add_pk() + dm_add_fk()
 # - new_dm_filter_block()   -> dm_filter() (cascading)
 # - new_dm_flatten_block()  -> dm_flatten_to_tbl()
-# - new_dm_pluck_block()    -> pull_tbl()
+# - new_dm_pull_block()     -> pull_tbl()
 
 # =============================================================================
 # IDEA 1: Data Quality / Validation Block

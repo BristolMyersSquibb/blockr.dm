@@ -205,7 +205,7 @@ if (interactive()) {
       dm_obj = new_dm_block(infer_keys = TRUE),
 
       # Temporal join: find labs within 7 days after AE start
-      # Returns a data frame directly - no pluck needed!
+      # Returns a data frame directly - no pull needed!
       result = new_dm_temporal_join_block(
         left_table = "adae_data",
         left_date = "ASTDT",
