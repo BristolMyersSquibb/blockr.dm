@@ -41,6 +41,7 @@ Suggests:
     blockr,
     blockr.dag,
     blockr.dock,
+    qs,
     rio,
     testthat (>= 3.0.0),
     random.cdisc.data,

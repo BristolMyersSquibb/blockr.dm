@@ -81,3 +81,65 @@ block_container_script <- function() {
     "
   ))
 }
+
+
+#' CSS for collapsible advanced options section
+#'
+#' Provides standardized CSS for expandable/collapsible sections with
+#' animated chevron indicator.
+#'
+#' @param id Character string, the namespaced ID for the advanced options div.
+#' @param use_subgrid Logical, whether to use CSS subgrid for better grid integration.
+#' @return HTML style tag with advanced toggle CSS
+#' @noRd
+css_advanced_toggle <- function(id, use_subgrid = FALSE) {
+  subgrid_css <- if (use_subgrid) {
+    "
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: subgrid;
+    gap: 15px;
+    "
+  } else {
+    ""
+  }
+
+  shiny::tags$style(shiny::HTML(sprintf(
+    "
+    #%s {
+      max-height: 0;
+      overflow: hidden;
+      transition: max-height 0.3s ease-out;
+      %s
+    }
+    #%s.expanded {
+      max-height: 500px;
+      overflow: visible;
+      transition: max-height 0.5s ease-in;
+    }
+    .block-advanced-toggle {
+      cursor: pointer;
+      user-select: none;
+      padding: 8px 0;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      color: #6c757d;
+      font-size: 0.875rem;
+    }
+    .block-chevron {
+      transition: transform 0.2s;
+      display: inline-block;
+      font-size: 14px;
+      font-weight: bold;
+    }
+    .block-chevron.rotated {
+      transform: rotate(90deg);
+    }
+    ",
+    id,
+    subgrid_css,
+    id
+  )))
+}

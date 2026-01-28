@@ -2,16 +2,20 @@
 #'
 #' A block for reading multiple data files into a dm (data model) object.
 #' Supports reading from Excel files (each sheet becomes a table), ZIP archives
-#' (containing multiple data files), or directories (reading all data files).
+#' (containing multiple data files), directories (reading all data files), or
+#' serialization formats (RDS, QS, RData).
 #'
 #' @param path Character. Path to file or directory. Can be:
 #'   - An Excel file (.xlsx, .xls): Each sheet becomes a dm table
 #'   - A ZIP file (.zip): Extracted files become dm tables
 #'   - A directory path: All data files in directory become dm tables
+#'   - An RDS file (.rds): Can contain a dm, data.frame, or list of data.frames
+#'   - A QS file (.qs): Can contain a dm, data.frame, or list of data.frames
+#'   - An RData file (.rdata, .rda): All data.frames become dm tables
 #' @param source Either "upload" for file upload widget or "path" for file browser.
 #'   Default: "upload".
-#' @param infer_keys Logical, whether to automatically infer primary and foreign
-#'   key relationships from columns with matching names. Default is `TRUE`.
+#' @param selected_tables Character vector. Optional subset of tables to include
+#'   in the output dm. Default is NULL (all tables).
 #' @param ... Forwarded to [blockr.core::new_data_block()]
 #'
 #' @section Configuration:
@@ -39,6 +43,14 @@
 #' - Subdirectories are not traversed (flat read)
 #' - Table names are derived from file names (without extension)
 #'
+#' **Serialized files (.rds, .qs):**
+#' - If the file contains a dm object, it is returned directly
+#' - If the file contains a data.frame, it is wrapped in a dm
+#' - If the file contains a list of data.frames, each becomes a dm table
+#'
+#' **RData files (.rdata, .rda):**
+#' - All data.frame objects in the file become dm tables
+#'
 #' @return A blockr data block that reads files and returns a dm object.
 #'
 #' @examples
@@ -55,7 +67,7 @@
 new_dm_read_block <- function(
     path = character(),
     source = "upload",
-    infer_keys = TRUE,
+    selected_tables = NULL,
     ...
 ) {
   # Validate parameters
@@ -92,7 +104,6 @@ new_dm_read_block <- function(
         function(input, output, session) {
           # Reactive values for state
           r_source <- shiny::reactiveVal(source)
-          r_infer_keys <- shiny::reactiveVal(infer_keys)
 
           # Path storage
           if (length(path) > 0 && file.exists(path)) {
@@ -103,14 +114,12 @@ new_dm_read_block <- function(
           r_path <- shiny::reactiveVal(initial_path)
           r_file_path <- shiny::reactiveVal(initial_path)
 
-          # Detected input type: "excel", "zip", "directory"
+          # Detected input type: "excel", "zip", "directory", "serialized", "rdata"
           initial_type <- if (length(path) > 0) detect_dm_input_type(path) else "unknown"
           r_input_type <- shiny::reactiveVal(initial_type)
 
-          # Update infer_keys from UI
-          shiny::observeEvent(input$infer_keys, {
-            r_infer_keys(input$infer_keys)
-          }, ignoreInit = TRUE)
+          # Selected tables (NULL = all)
+          r_selected_tables <- shiny::reactiveVal(selected_tables)
 
           # Initialize shinyFiles browser for files
           shinyFiles::shinyFileChoose(
@@ -118,7 +127,7 @@ new_dm_read_block <- function(
             "file_browser",
             roots = volumes,
             session = session,
-            filetypes = c("xlsx", "xls", "zip")
+            filetypes = c("xlsx", "xls", "zip", "rds", "qs", "rdata", "rda")
           )
 
           # Initialize shinyFiles browser for directories
@@ -219,6 +228,8 @@ new_dm_read_block <- function(
               "excel" = "Excel file",
               "zip" = "ZIP archive",
               "directory" = "Directory",
+              "serialized" = "Serialized file",
+              "rdata" = "RData file",
               "Unknown"
             )
 
@@ -244,6 +255,31 @@ new_dm_read_block <- function(
               } else if (input_type == "directory") {
                 files <- list_data_files(path_val)
                 paste("Found", length(files), "data files in directory")
+              } else if (input_type == "serialized") {
+                obj <- if (tolower(tools::file_ext(path_val)) == "qs") {
+                  qs::qread(path_val)
+                } else {
+                  readRDS(path_val)
+                }
+                if (inherits(obj, "dm")) {
+                  paste("Found dm with", length(names(obj)), "tables:",
+                        paste(names(obj), collapse = ", "))
+                } else if (inherits(obj, "data.frame")) {
+                  paste("Found single data.frame with", ncol(obj), "columns")
+                } else if (is.list(obj)) {
+                  are_dfs <- vapply(obj, inherits, logical(1), "data.frame")
+                  paste("Found list with", sum(are_dfs), "data.frames")
+                } else {
+                  "Unknown content type"
+                }
+              } else if (input_type == "rdata") {
+                env <- new.env()
+                load(path_val, envir = env)
+                objs <- as.list(env)
+                are_dfs <- vapply(objs, inherits, logical(1), "data.frame")
+                df_names <- names(objs)[are_dfs]
+                paste("Found", sum(are_dfs), "data.frames:",
+                      paste(df_names, collapse = ", "))
               } else {
                 ""
               }
@@ -252,29 +288,51 @@ new_dm_read_block <- function(
             })
           })
 
-          # Pre-read data for key analysis
+          # Pre-read data for table discovery
           dm_data <- shiny::reactive({
             current_path <- r_file_path()
             shiny::req(length(current_path) > 0)
             input_type <- r_input_type()
             path_val <- current_path[1]
 
-            base_expr <- dm_read_expr(path_val, input_type)
+            base_expr <- dm_read_expr(path_val, input_type, selected = NULL)
             tryCatch(eval(base_expr), error = function(e) NULL)
           })
 
-          # Analyze keys from the data
-          key_analysis <- shiny::reactive({
+          # Available tables from the loaded dm
+          available_tables <- shiny::reactive({
             dm_obj <- dm_data()
             shiny::req(inherits(dm_obj, "dm"))
-
-            if (!r_infer_keys()) {
-              return(list(pks = list(), fks = list()))
-            }
-
-            # Find keys using the helper function
-            analyze_dm_keys(dm_obj)
+            names(dm_obj)
           })
+
+          # Output for conditional panel
+          output$has_tables <- shiny::reactive({
+            length(available_tables()) > 0
+          })
+          shiny::outputOptions(output, "has_tables", suspendWhenHidden = FALSE)
+
+          # Update table selection UI when tables change
+          shiny::observeEvent(available_tables(), {
+            tables <- available_tables()
+            current_selected <- r_selected_tables()
+            # If no selection yet, select all
+            if (is.null(current_selected)) {
+              current_selected <- tables
+            } else {
+              # Keep only tables that still exist
+              current_selected <- intersect(current_selected, tables)
+            }
+            shiny::updateSelectInput(
+              session, "table_select",
+              choices = tables,
+              selected = current_selected
+            )
+          })
+
+          shiny::observeEvent(input$table_select, {
+            r_selected_tables(input$table_select)
+          }, ignoreInit = TRUE)
 
           list(
             expr = shiny::reactive({
@@ -283,48 +341,14 @@ new_dm_read_block <- function(
 
               input_type <- r_input_type()
               path_val <- current_path[1]
+              selected <- r_selected_tables()
 
-              # Build base dm expression
-              base_expr <- dm_read_expr(path_val, input_type)
-
-              keys <- key_analysis()
-
-              if (length(keys$pks) == 0 && length(keys$fks) == 0) {
-                return(base_expr)
-              }
-
-              # Build expression with hardcoded key additions
-              expr_parts <- list(bquote(dm_obj <- .(base_expr)))
-
-              # Add PK expressions with actual table/column names
-              for (pk in keys$pks) {
-                table_sym <- as.name(pk$table)
-                col_sym <- as.name(pk$column)
-                expr_parts <- c(expr_parts, list(
-                  bquote(dm_obj <- dm::dm_add_pk(dm_obj, .(table_sym), .(col_sym)))
-                ))
-              }
-
-              # Add FK expressions with actual table/column names
-              for (fk in keys$fks) {
-                child_sym <- as.name(fk$child_table)
-                col_sym <- as.name(fk$column)
-                parent_sym <- as.name(fk$parent_table)
-                expr_parts <- c(expr_parts, list(
-                  bquote(dm_obj <- dm::dm_add_fk(dm_obj, .(child_sym), .(col_sym), .(parent_sym)))
-                ))
-              }
-
-              # Return dm_obj
-              expr_parts <- c(expr_parts, list(quote(dm_obj)))
-
-              # Combine into local({ ... })
-              as.call(c(quote(local), list(as.call(c(quote(`{`), expr_parts)))))
+              dm_read_expr(path_val, input_type, selected)
             }),
             state = list(
               path = r_path,
               source = r_source,
-              infer_keys = r_infer_keys
+              selected_tables = r_selected_tables
             )
           )
         }
@@ -379,16 +403,16 @@ new_dm_read_block <- function(
                   value = "upload",
                   shiny::div(
                     class = "block-input-wrapper mt-3",
-                    shiny::tags$h4("Upload Excel or ZIP file", class = "mb-2"),
+                    shiny::tags$h4("Upload data file", class = "mb-2"),
                     shiny::div(
                       class = "block-help-text mb-3",
-                      "Excel: each sheet becomes a table. ZIP: all data files become tables."
+                      "Excel/ZIP/RDS/QS/RData: each table/sheet becomes a dm table."
                     ),
                     shiny::fileInput(
                       inputId = ns("file_upload"),
                       label = NULL,
                       multiple = FALSE,
-                      accept = c(".xlsx", ".xls", ".zip")
+                      accept = c(".xlsx", ".xls", ".zip", ".rds", ".qs", ".rdata", ".rda")
                     )
                   )
                 ),
@@ -400,7 +424,7 @@ new_dm_read_block <- function(
                     shiny::tags$h4("Select file or directory", class = "mb-2"),
                     shiny::div(
                       class = "block-help-text mb-3",
-                      "Pick an Excel/ZIP file or a directory containing data files."
+                      "Pick a data file (Excel/ZIP/RDS/QS/RData) or a directory."
                     ),
                     shiny::div(
                       class = "d-flex gap-2",
@@ -436,12 +460,50 @@ new_dm_read_block <- function(
                 shiny::textOutput(ns("preview_info"))
               )
             ),
+
+            # Advanced Options Toggle
+            css_advanced_toggle(ns("advanced-options"), use_subgrid = TRUE),
             shiny::div(
-              class = "block-section mt-3",
-              shiny::checkboxInput(
-                ns("infer_keys"),
-                "Infer relationships from column names",
-                value = infer_keys
+              class = "block-section",
+              shiny::div(
+                class = "block-advanced-toggle text-muted",
+                id = ns("advanced-toggle"),
+                onclick = sprintf(
+                  "
+                  const section = document.getElementById('%s');
+                  const chevron = document.querySelector('#%s .block-chevron');
+                  section.classList.toggle('expanded');
+                  chevron.classList.toggle('rotated');
+                  ",
+                  ns("advanced-options"),
+                  ns("advanced-toggle")
+                ),
+                shiny::tags$span(class = "block-chevron", "\u203A"),
+                "Advanced Options"
+              )
+            ),
+
+            # Advanced Options Content (collapsed by default)
+            shiny::div(
+              id = ns("advanced-options"),
+              shiny::conditionalPanel(
+                condition = "output.has_tables",
+                ns = ns,
+                shiny::div(
+                  class = "block-section",
+                  shiny::tags$h4("Select Tables"),
+                  shiny::div(
+                    class = "block-input-wrapper",
+                    shiny::selectInput(
+                      ns("table_select"),
+                      label = NULL,
+                      choices = character(),
+                      selected = character(),
+                      multiple = TRUE,
+                      selectize = TRUE
+                    )
+                  )
+                )
               )
             )
           )
@@ -455,86 +517,9 @@ new_dm_read_block <- function(
 }
 
 
-#' Analyze dm object for potential PK/FK relationships
-#'
-#' Returns structured info about keys to add, which can then be
-#' hardcoded into the expression.
-#'
-#' @param dm_obj A dm object
-#' @return List with `pks` (list of list(table, column)) and `fks` (list of list(child_table, column, parent_table))
-#' @noRd
-analyze_dm_keys <- function(dm_obj) {
-  pks <- list()
-  fks <- list()
-
-
-  table_names <- names(dm_obj)
-  if (length(table_names) < 2) {
-    return(list(pks = pks, fks = fks))
-  }
-
-  # Get all column names for each table
-  all_cols <- lapply(table_names, function(tbl) names(dm_obj[[tbl]]))
-  names(all_cols) <- table_names
-
-  # Find columns that appear in multiple tables
-  col_counts <- table(unlist(all_cols))
-  shared_cols <- names(col_counts[col_counts > 1])
-
-  if (length(shared_cols) == 0) {
-    return(list(pks = pks, fks = fks))
-  }
-
-  existing_pks <- dm::dm_get_all_pks(dm_obj)
-  existing_fks <- dm::dm_get_all_fks(dm_obj)
-
-  for (col in shared_cols) {
-    tables_with_col <- table_names[vapply(all_cols, function(cols) col %in% cols, logical(1))]
-    if (length(tables_with_col) < 2) next
-
-    # Check uniqueness
-    uniqueness <- vapply(tables_with_col, function(tbl) {
-      vals <- dm_obj[[tbl]][[col]]
-      !anyNA(vals) && !anyDuplicated(vals)
-    }, logical(1))
-
-    pk_tables <- tables_with_col[uniqueness]
-    fk_tables <- tables_with_col[!uniqueness]
-
-    # If at least one table has unique values and others don't, establish relationship
-    # When multiple PK candidates exist, pick the first one
-    if (length(pk_tables) >= 1 && length(fk_tables) >= 1) {
-      pk_table <- pk_tables[1]
-
-      # Add PK if not already set
-      if (!(pk_table %in% existing_pks$table)) {
-        pks <- c(pks, list(list(table = pk_table, column = col)))
-      }
-
-      # Add FKs
-      for (fk_table in fk_tables) {
-        has_fk <- any(
-          existing_fks$child_table == fk_table &
-            existing_fks$parent_table == pk_table
-        )
-        if (!has_fk) {
-          fks <- c(fks, list(list(
-            child_table = fk_table,
-            column = col,
-            parent_table = pk_table
-          )))
-        }
-      }
-    }
-  }
-
-  list(pks = pks, fks = fks)
-}
-
-
 #' Detect dm input type from path
 #' @param path Path to file or directory
-#' @return Character: "excel", "zip", "directory", or "unknown"
+#' @return Character: "excel", "zip", "directory", "serialized", "rdata", or "unknown"
 #' @noRd
 detect_dm_input_type <- function(path) {
   if (dir.exists(path)) {
@@ -543,15 +528,13 @@ detect_dm_input_type <- function(path) {
 
   ext <- tolower(tools::file_ext(path))
 
-  if (ext %in% c("xlsx", "xls")) {
-    return("excel")
-  }
-
-  if (ext == "zip") {
-    return("zip")
-  }
-
-  "unknown"
+  switch(ext,
+    xlsx = , xls = "excel",
+    zip = "zip",
+    rds = , qs = "serialized",
+    rdata = , rda = "rdata",
+    "unknown"
+  )
 }
 
 
@@ -566,29 +549,37 @@ list_data_files <- function(dir_path) {
 
 #' Build expression to read files into dm
 #' @noRd
-dm_read_expr <- function(path, input_type) {
-  if (input_type == "excel") {
-    dm_read_expr_excel(path)
-  } else if (input_type == "zip") {
-    dm_read_expr_zip(path)
-  } else if (input_type == "directory") {
-    dm_read_expr_directory(path)
-  } else {
+dm_read_expr <- function(path, input_type, selected = NULL) {
+  switch(input_type,
+    excel = dm_read_expr_excel(path, selected),
+    zip = dm_read_expr_zip(path, selected),
+    directory = dm_read_expr_directory(path, selected),
+    serialized = dm_read_expr_serialized(path, selected),
+    rdata = dm_read_expr_rdata(path, selected),
     stop("Unknown input type: ", input_type)
-  }
+  )
 }
 
 
 #' Read Excel file - each sheet becomes a table
 #' @noRd
-dm_read_expr_excel <- function(path) {
+dm_read_expr_excel <- function(path, selected = NULL) {
   bquote(
     local({
       sheets <- readxl::excel_sheets(.(path))
+      table_names <- make.names(sheets, unique = TRUE)
+
+      # Filter to selected tables
+      if (!is.null(.(selected))) {
+        keep <- table_names %in% .(selected)
+        sheets <- sheets[keep]
+        table_names <- table_names[keep]
+      }
+
       tables <- lapply(sheets, function(sheet) {
         readxl::read_excel(.(path), sheet = sheet)
       })
-      names(tables) <- make.names(sheets, unique = TRUE)
+      names(tables) <- table_names
       do.call(dm::dm, tables)
     })
   )
@@ -597,7 +588,7 @@ dm_read_expr_excel <- function(path) {
 
 #' Read ZIP file - extract and read all data files
 #' @noRd
-dm_read_expr_zip <- function(path) {
+dm_read_expr_zip <- function(path, selected = NULL) {
   bquote(
     local({
       temp_dir <- tempfile("dm_zip_")
@@ -616,48 +607,12 @@ dm_read_expr_zip <- function(path) {
         stop("No data files found in ZIP archive")
       }
 
-      # Read each file
-      tables <- lapply(files, function(f) {
-        ext <- tolower(tools::file_ext(f))
-        if (ext %in% c("csv", "tsv")) {
-          readr::read_csv(f, show_col_types = FALSE)
-        } else if (ext %in% c("xlsx", "xls")) {
-          readxl::read_excel(f)
-        } else if (ext == "parquet") {
-          arrow::read_parquet(f)
-        } else if (ext == "feather") {
-          arrow::read_feather(f)
-        } else if (ext %in% c("rds")) {
-          readRDS(f)
-        } else if (ext == "rda") {
-          e <- new.env()
-          load(f, envir = e)
-          as.list(e)[[1]]
-        } else {
-          rio::import(f)
-        }
-      })
-
-      # Name tables from filenames (without extension)
-      names(tables) <- make.names(tools::file_path_sans_ext(basename(files)), unique = TRUE)
-      do.call(dm::dm, tables)
-    })
-  )
-}
-
-
-#' Read directory - read all data files
-#' @noRd
-dm_read_expr_directory <- function(path) {
-  bquote(
-    local({
-      # Find all data files
-      extensions <- c("csv", "tsv", "xlsx", "xls", "parquet", "feather", "rds", "rda")
-      pattern <- paste0("\\.(", paste(extensions, collapse = "|"), ")$")
-      files <- list.files(.(path), pattern = pattern, ignore.case = TRUE, full.names = TRUE)
-
-      if (length(files) == 0) {
-        stop("No data files found in directory")
+      # Get table names and filter to selected
+      table_names <- make.names(tools::file_path_sans_ext(basename(files)), unique = TRUE)
+      if (!is.null(.(selected))) {
+        keep <- table_names %in% .(selected)
+        files <- files[keep]
+        table_names <- table_names[keep]
       }
 
       # Read each file
@@ -682,8 +637,126 @@ dm_read_expr_directory <- function(path) {
         }
       })
 
-      # Name tables from filenames (without extension)
-      names(tables) <- make.names(tools::file_path_sans_ext(basename(files)), unique = TRUE)
+      names(tables) <- table_names
+      do.call(dm::dm, tables)
+    })
+  )
+}
+
+
+#' Read directory - read all data files
+#' @noRd
+dm_read_expr_directory <- function(path, selected = NULL) {
+  bquote(
+    local({
+      # Find all data files
+      extensions <- c("csv", "tsv", "xlsx", "xls", "parquet", "feather", "rds", "rda")
+      pattern <- paste0("\\.(", paste(extensions, collapse = "|"), ")$")
+      files <- list.files(.(path), pattern = pattern, ignore.case = TRUE, full.names = TRUE)
+
+      if (length(files) == 0) {
+        stop("No data files found in directory")
+      }
+
+      # Get table names and filter to selected
+      table_names <- make.names(tools::file_path_sans_ext(basename(files)), unique = TRUE)
+      if (!is.null(.(selected))) {
+        keep <- table_names %in% .(selected)
+        files <- files[keep]
+        table_names <- table_names[keep]
+      }
+
+      # Read each file
+      tables <- lapply(files, function(f) {
+        ext <- tolower(tools::file_ext(f))
+        if (ext %in% c("csv", "tsv")) {
+          readr::read_csv(f, show_col_types = FALSE)
+        } else if (ext %in% c("xlsx", "xls")) {
+          readxl::read_excel(f)
+        } else if (ext == "parquet") {
+          arrow::read_parquet(f)
+        } else if (ext == "feather") {
+          arrow::read_feather(f)
+        } else if (ext %in% c("rds")) {
+          readRDS(f)
+        } else if (ext == "rda") {
+          e <- new.env()
+          load(f, envir = e)
+          as.list(e)[[1]]
+        } else {
+          rio::import(f)
+        }
+      })
+
+      names(tables) <- table_names
+      do.call(dm::dm, tables)
+    })
+  )
+}
+
+
+#' Read serialized file (RDS or QS) into dm
+#' @noRd
+dm_read_expr_serialized <- function(path, selected = NULL) {
+  bquote(
+    local({
+      obj <- if (tolower(tools::file_ext(.(path))) == "qs") {
+        qs::qread(.(path))
+      } else {
+        readRDS(.(path))
+      }
+
+      if (inherits(obj, "dm")) {
+        if (!is.null(.(selected))) {
+          return(dm::dm_select_tbl(obj, dplyr::all_of(.(selected))))
+        }
+        return(obj)
+      }
+      if (inherits(obj, "data.frame")) {
+        return(dm::dm(data = obj))
+      }
+      if (is.list(obj) && length(obj) > 0) {
+        are_dfs <- vapply(obj, inherits, logical(1), "data.frame")
+        if (all(are_dfs)) {
+          if (is.null(names(obj))) names(obj) <- paste0("table", seq_along(obj))
+          names(obj) <- make.names(names(obj), unique = TRUE)
+          # Filter to selected
+          if (!is.null(.(selected))) {
+            obj <- obj[names(obj) %in% .(selected)]
+          }
+          return(do.call(dm::dm, obj))
+        }
+      }
+      stop("File must contain a dm, data.frame, or list of data.frames")
+    })
+  )
+}
+
+
+#' Read RData file into dm
+#' @noRd
+dm_read_expr_rdata <- function(path, selected = NULL) {
+  bquote(
+    local({
+      env <- new.env()
+      load(.(path), envir = env)
+      objs <- as.list(env)
+
+      # Keep only data.frames
+      are_dfs <- vapply(objs, inherits, logical(1), "data.frame")
+      tables <- objs[are_dfs]
+
+      if (length(tables) == 0) {
+        stop("RData file contains no data.frames")
+      }
+
+      names(tables) <- make.names(names(tables), unique = TRUE)
+
+      # Filter to selected
+      if (!is.null(.(selected))) {
+        tables <- tables[names(tables) %in% .(selected)]
+      }
+
       do.call(dm::dm, tables)
     })
   )

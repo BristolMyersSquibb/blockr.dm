@@ -7,7 +7,7 @@
 new_dm_read_block(
   path = character(),
   source = "upload",
-  infer_keys = TRUE,
+  selected_tables = NULL,
   ...
 )
 }
@@ -17,13 +17,16 @@ new_dm_read_block(
 \item An Excel file (.xlsx, .xls): Each sheet becomes a dm table
 \item A ZIP file (.zip): Extracted files become dm tables
 \item A directory path: All data files in directory become dm tables
+\item An RDS file (.rds): Can contain a dm, data.frame, or list of data.frames
+\item A QS file (.qs): Can contain a dm, data.frame, or list of data.frames
+\item An RData file (.rdata, .rda): All data.frames become dm tables
 }}
 
 \item{source}{Either "upload" for file upload widget or "path" for file browser.
 Default: "upload".}
 
-\item{infer_keys}{Logical, whether to automatically infer primary and foreign
-key relationships from columns with matching names. Default is \code{TRUE}.}
+\item{selected_tables}{Character vector. Optional subset of tables to include
+in the output dm. Default is NULL (all tables).}
 
 \item{...}{Forwarded to \code{\link[blockr.core:new_data_block]{blockr.core::new_data_block()}}}
 }
@@ -33,7 +36,8 @@ A blockr data block that reads files and returns a dm object.
 \description{
 A block for reading multiple data files into a dm (data model) object.
 Supports reading from Excel files (each sheet becomes a table), ZIP archives
-(containing multiple data files), or directories (reading all data files).
+(containing multiple data files), directories (reading all data files), or
+serialization formats (RDS, QS, RData).
 }
 \details{
 \subsection{File Handling}{
@@ -56,6 +60,18 @@ Supports reading from Excel files (each sheet becomes a table), ZIP archives
 \item All recognized data files in the directory are read
 \item Subdirectories are not traversed (flat read)
 \item Table names are derived from file names (without extension)
+}
+
+\strong{Serialized files (.rds, .qs):}
+\itemize{
+\item If the file contains a dm object, it is returned directly
+\item If the file contains a data.frame, it is wrapped in a dm
+\item If the file contains a list of data.frames, each becomes a dm table
+}
+
+\strong{RData files (.rdata, .rda):}
+\itemize{
+\item All data.frame objects in the file become dm tables
 }
 }
 }
