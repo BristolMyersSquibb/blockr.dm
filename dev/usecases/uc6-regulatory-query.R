@@ -2,29 +2,17 @@
 # "For patients with elevated creatinine, what concomitant medications
 #  were they on?"
 #
-# What this demonstrates:
-# - The simplest cascading filter pattern: filter one child table (ADLB),
-#   and the cascade propagates through the parent (ADSL) to another child
-#   table (ADCM)
-# - This is the pattern blockr.dm handles best today: relational filtering
-#   across tables connected by foreign keys
+# Approach: enrich ADLB with ADSL demographics via left_join, crossfilter
+# to select CREAT and see high AVAL, then semi_join to get matching ADCM.
 #
-# How it works:
-# 1. Filter ADLB: PARAMCD == 'CREAT' & AVAL > 1.5
-# 2. dm_filter cascades UP to ADSL (via semi-join on USUBJID),
-#    identifying subjects with elevated creatinine
-# 3. The filter then cascades DOWN from ADSL to ADCM, subsetting
-#    to concomitant medications for those subjects only
-# 4. Pull ADCM to get the medication list
-#
-# Limitations:
-# - No visual crossfilter UI; the filter expression is static text
-# - To change the threshold (e.g., 1.5 -> 2.0), you must edit the
-#   expression in the UI or create a new block
+# Filter child (ADLB), get sibling (ADCM). The crossfilter handles the
+# PARAMCD selection interactively. The semi_join propagates the subject
+# filter to ADCM.
 
 library(blockr)
+library(blockr.dplyr)
+library(blockr.bi)
 library(blockr.dag)
-library(blockr.dm)
 
 # --- Synthetic data ---
 
@@ -73,14 +61,12 @@ adcm <- data.frame(
 
 # --- Workflow ---
 #
-# 1. Load ADSL, ADLB, ADCM
-# 2. Combine into dm (USUBJID links all three)
-# 3. Filter ADLB: elevated creatinine (PARAMCD == 'CREAT' & AVAL > 1.5)
-#    -> Cascades UP to ADSL, then DOWN to ADCM
-# 4. Pull ADCM: concomitant medications for affected subjects
+# 1. Enrich ADLB with ADSL demographics via left_join
+# 2. Crossfilter on enriched labs — click CREAT under PARAMCD, see high AVAL
+# 3. Semi_join ADCM with filtered labs to get medications for matching subjects
 #
 # Expected subjects with elevated creatinine: SUBJ-1, -3, -5, -8
-# Expected ADCM records: medications for those 4 subjects
+# Expected ADCM records:
 #   SUBJ-1: Lisinopril, Metformin
 #   SUBJ-3: Atorvastatin, Ibuprofen
 #   SUBJ-5: Amlodipine, Metformin
@@ -88,33 +74,29 @@ adcm <- data.frame(
 
 run_app(
   blocks = c(
-    adsl_data = new_static_block(data = adsl),
-    adlb_data = new_static_block(data = adlb),
-    adcm_data = new_static_block(data = adcm),
+    adsl_data     = new_static_block(data = adsl),
+    adlb_data     = new_static_block(data = adlb),
+    adcm_data     = new_static_block(data = adcm),
 
-    dm_obj = new_dm_block(infer_keys = TRUE),
+    # Enrich labs with demographics
+    lab_enriched  = new_join_block(type = "left_join"),
 
-    # Filter ADLB to elevated creatinine
-    # Cascades: ADLB -> ADSL -> ADCM (via USUBJID foreign keys)
-    filtered_dm = new_dm_filter_block(
-      table = "adlb_data",
-      expr = "PARAMCD == 'CREAT' & AVAL > 1.5"
-    ),
+    # Interactive filter: click CREAT, see high AVAL values
+    lab_filter    = new_table_filter_block(),
 
-    # Pull concomitant medications for affected subjects
-    medications = new_dm_pull_block(table = "adcm_data"),
-
-    # Also: nested view to explore subject -> medications interactively
-    nested = new_dm_nested_view_block(root_table = "adsl_data")
+    # Propagate to medications: keep ADCM rows matching filtered lab subjects
+    filtered_meds = new_join_block(type = "semi_join", by = "USUBJID")
   ),
   links = c(
-    new_link("adsl_data", "dm_obj", "adsl_data"),
-    new_link("adlb_data", "dm_obj", "adlb_data"),
-    new_link("adcm_data", "dm_obj", "adcm_data"),
+    # Enrich labs with ADSL
+    new_link("adlb_data", "lab_enriched", "x"),
+    new_link("adsl_data", "lab_enriched", "y"),
 
-    new_link("dm_obj", "filtered_dm", "data"),
-    new_link("filtered_dm", "medications", "data"),
-    new_link("filtered_dm", "nested", "data")
-  ),
-  extensions = list(new_dag_extension())
+    # Crossfilter on enriched labs
+    new_link("lab_enriched", "lab_filter", "data"),
+
+    # Semi_join: ADCM (x, kept) where USUBJID matches filtered labs (y)
+    new_link("adcm_data", "filtered_meds", "x"),
+    new_link("lab_filter", "filtered_meds", "y")
+  )
 )

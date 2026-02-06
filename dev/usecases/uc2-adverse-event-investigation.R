@@ -1,29 +1,18 @@
 # Use Case 2: Adverse Event Investigation
 # "Which patients had Grade 3+ neutropenia within 7 days of a serious AE?"
 #
-# What this demonstrates:
-# - Temporal join via new_dm_temporal_join_block(): join ADAE and ADLB
-#   within a time window to assess causal relationships
-# - This is a blockr.dm-specific feature not available in teal
-# - The temporal join block outputs a data frame with a `days_diff` column
-#   showing the number of days between the AE and the lab measurement
+# Approach: filter ADAE to serious events via crossfilter, enrich with ADSL
+# demographics, then join ADLB with a time window using mutate + filter.
 #
-# How it works:
-# new_dm_temporal_join_block() takes a dm, joins two tables by their
-# common key (USUBJID), computes days_diff = right_date - left_date,
-# and filters to rows within the specified window. The `direction`
-# parameter controls whether to look "after", "before", or "around"
-# the anchor event.
-#
-# Limitations:
-# - The temporal join returns a flat data frame, not a dm; downstream
-#   dm operations are not possible on the result
-# - Cannot chain multiple temporal joins in sequence
-# - No built-in visualization of the temporal relationship (timeline)
+# Teal doesn't support temporal joins at all — users must pre-compute with
+# admiral. Here we make it explicit: join AE and lab data, compute days_diff,
+# filter to window. More steps but fully transparent. A dedicated
+# temporal_join block (like blockr.dm has) could wrap this for convenience.
 
 library(blockr)
+library(blockr.dplyr)
+library(blockr.bi)
 library(blockr.dag)
-library(blockr.dm)
 
 # --- Synthetic data ---
 
@@ -85,51 +74,56 @@ adlb <- data.frame(
 
 # --- Workflow ---
 #
-# 1. Load ADSL, ADAE, ADLB
-# 2. Combine into dm with auto-inferred keys
-# 3. Filter ADAE to serious AEs (AESER == 'Y')
-# 4. Temporal join: for each serious AE, find labs within 7 days BEFORE
-#    the AE start date (to see if neutropenia preceded or coincided)
+# 1. Enrich ADAE with ADSL demographics via left_join
+# 2. Crossfilter on enriched AEs — click AESER=Y to select serious events
+# 3. Left join filtered serious AEs with ADLB on USUBJID (many-to-many)
+# 4. Compute days_diff = ADT - ASTDT (lab date minus AE start date)
+# 5. Filter to rows within 7-day window (days_diff >= 0 & days_diff <= 7)
 #
-# Expected: SUBJ-1's febrile neutropenia (Jan 10) matches NEUT on Jan 8
-#   (2 days before), SUBJ-3's neutropenia (Jan 8) matches NEUT on Jan 6
-#   (2 days before), SUBJ-4's febrile neutropenia (Jan 25) matches
-#   NEUT on Jan 26 (1 day after — outside "before" window)
+# This is 5 blocks vs 1 dm temporal_join_block, but every step is visible.
+# Expected: SUBJ-1 febrile neutropenia (Jan 10) matches NEUT on Jan 12
+#   (2 days after), SUBJ-3 neutropenia (Jan 8) matches NEUT on Jan 10
+#   (2 days after)
 
 run_app(
   blocks = c(
-    adsl_data = new_static_block(data = adsl),
-    adae_data = new_static_block(data = adae),
-    adlb_data = new_static_block(data = adlb),
+    adsl_data   = new_static_block(data = adsl),
+    adae_data   = new_static_block(data = adae),
+    adlb_data   = new_static_block(data = adlb),
 
-    dm_obj = new_dm_block(infer_keys = TRUE),
+    # Enrich AEs with demographics
+    ae_enriched = new_join_block(type = "left_join"),
 
-    # Filter to serious adverse events only
-    serious_dm = new_dm_filter_block(
-      table = "adae_data",
-      expr = "AESER == 'Y'"
+    # Interactive filter: click AESER=Y for serious events
+    ae_filter   = new_table_filter_block(),
+
+    # Join filtered serious AEs with lab data (many-to-many on USUBJID)
+    ae_lab_join = new_join_block(type = "left_join", by = "USUBJID"),
+
+    # Compute days between lab measurement and AE start
+    temporal    = new_mutate_expr_block(
+      exprs = list(days_diff = "as.numeric(ADT - ASTDT)")
     ),
 
-    # Temporal join: find labs within 7 days BEFORE each serious AE
-    # direction = "before" means: right_date is 0-7 days before left_date
-    temporal_result = new_dm_temporal_join_block(
-      left_table = "adae_data",
-      left_date = "ASTDT",
-      right_table = "adlb_data",
-      right_date = "ADT",
-      window_days = 7,
-      direction = "before"
+    # Keep only labs within 7 days after AE start
+    window      = new_filter_expr_block(
+      exprs = "days_diff >= 0 & days_diff <= 7"
     )
   ),
   links = c(
-    new_link("adsl_data", "dm_obj", "adsl_data"),
-    new_link("adae_data", "dm_obj", "adae_data"),
-    new_link("adlb_data", "dm_obj", "adlb_data"),
+    # Enrich AEs with ADSL
+    new_link("adae_data", "ae_enriched", "x"),
+    new_link("adsl_data", "ae_enriched", "y"),
 
-    new_link("dm_obj", "serious_dm", "data"),
+    # Crossfilter on enriched AEs
+    new_link("ae_enriched", "ae_filter", "data"),
 
-    # Temporal join takes the filtered dm
-    new_link("serious_dm", "temporal_result", "data")
-  ),
-  extensions = list(new_dag_extension())
+    # Join filtered AEs with labs
+    new_link("ae_filter", "ae_lab_join", "x"),
+    new_link("adlb_data", "ae_lab_join", "y"),
+
+    # Compute time difference and filter to window
+    new_link("ae_lab_join", "temporal", "data"),
+    new_link("temporal", "window", "data")
+  )
 )

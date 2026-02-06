@@ -1,27 +1,17 @@
 # Use Case 1: Population Selection
 # "Show me the safety population, females over 65, in the Drug A arm"
 #
-# What this demonstrates:
-# - Cascading filter via dm::dm_filter() and new_dm_filter_block()
-# - Semi-join propagation: filtering ADSL automatically subsets child
-#   tables (ADAE, ADLB) to matching subjects via foreign keys
-# - Pull a downstream table (ADAE) that reflects the parent filter
+# Approach: enrich ADAE with ADSL demographics via left_join, then
+# crossfilter on the enriched table. No dm needed.
 #
-# How it works:
-# dm_filter() applies the filter expression to the specified table, then
-# uses semi-joins along foreign key relationships to propagate the filter.
-# Child tables (those with a FK pointing to the filtered table) are
-# automatically subsetted to only rows matching the filtered parent.
-# This is the core mechanism behind "cascading filters" in blockr.dm.
-#
-# Limitations:
-# - Only one filter expression per dm_filter_block; chain multiple blocks
-#   for compound cross-table filters
-# - No visual crossfilter UI (click-to-filter) for multi-table data yet
+# In the crossfilter, click Y under SAFFL, F under SEX, Drug A under TRT01A.
+# The table updates instantly showing only AEs for matching subjects.
+# A left_join enriches ADAE with ADSL columns, then crossfilter does the rest.
 
 library(blockr)
+library(blockr.dplyr)
+library(blockr.bi)
 library(blockr.dag)
-library(blockr.dm)
 
 # --- Synthetic data ---
 
@@ -43,51 +33,26 @@ adae <- data.frame(
             "MILD", "MODERATE", "MILD", "MODERATE")
 )
 
-adlb <- data.frame(
-  USUBJID = rep(paste0("SUBJ-", 1:10), each = 2),
-  PARAMCD = rep(c("ALT", "CREAT"), 10),
-  AVAL = c(25, 0.9, 30, 1.1, 45, 1.3, 22, 0.8, 28, 1.0,
-           55, 1.5, 35, 1.2, 20, 0.7, 40, 1.4, 32, 1.1)
-)
-
 # --- Workflow ---
 #
-# 1. Load ADSL, ADAE, ADLB as static blocks
-# 2. Combine into a dm with infer_keys = TRUE
-#    (USUBJID is unique in ADSL -> PK; non-unique in ADAE/ADLB -> FK)
-# 3. Filter ADSL: safety population, females over 65, Drug A arm
-#    -> This cascades to ADAE and ADLB via semi-join on USUBJID
-# 4. Pull ADAE to see adverse events for the filtered population
+# 1. Load ADSL and ADAE as static blocks
+# 2. Left join ADAE with ADSL on USUBJID to enrich AEs with demographics
+# 3. Crossfilter on the enriched table — click SAFFL=Y, SEX=F, etc.
 #
-# Expected filtered subjects: SUBJ-1 (F, 70, Drug A, Y),
-#   SUBJ-4 (F, 72, Drug A, Y), SUBJ-6 (F, 80, Drug A, Y),
-#   SUBJ-9 (F, 74, Drug A, Y)
-# Expected ADAE rows: events for those 4 subjects only
+# Expected: clicking SAFFL=Y, SEX=F, AGE>65, TRT01A=Drug A filters to
+# AEs for SUBJ-1 (F, 70, Drug A), SUBJ-4 (F, 72, Drug A),
+# SUBJ-6 (F, 80, Drug A), SUBJ-9 (F, 74, Drug A)
 
 run_app(
   blocks = c(
-    adsl_data = new_static_block(data = adsl),
-    adae_data = new_static_block(data = adae),
-    adlb_data = new_static_block(data = adlb),
-
-    dm_obj = new_dm_block(infer_keys = TRUE),
-
-    # Cascading filter on ADSL — propagates to all child tables
-    filtered_dm = new_dm_filter_block(
-      table = "adsl_data",
-      expr = "SAFFL == 'Y' & SEX == 'F' & AGE > 65 & TRT01A == 'Drug A'"
-    ),
-
-    # Pull the filtered ADAE table (only events for matching subjects)
-    ae_results = new_dm_pull_block(table = "adae_data")
+    adsl_data   = new_static_block(data = adsl),
+    adae_data   = new_static_block(data = adae),
+    enriched    = new_join_block(type = "left_join"),
+    crossfilter = new_table_filter_block()
   ),
   links = c(
-    new_link("adsl_data", "dm_obj", "adsl_data"),
-    new_link("adae_data", "dm_obj", "adae_data"),
-    new_link("adlb_data", "dm_obj", "adlb_data"),
-
-    new_link("dm_obj", "filtered_dm", "data"),
-    new_link("filtered_dm", "ae_results", "data")
-  ),
-  extensions = list(new_dag_extension())
+    new_link("adae_data", "enriched", "x"),
+    new_link("adsl_data", "enriched", "y"),
+    new_link("enriched", "crossfilter", "data")
+  )
 )
