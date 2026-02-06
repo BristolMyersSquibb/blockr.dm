@@ -10,8 +10,9 @@
 
 library(blockr)
 library(blockr.dplyr)
-library(blockr.bi)
 library(blockr.dag)
+
+pkgload::load_all("../blockr.dm")
 
 # --- Synthetic data ---
 
@@ -57,7 +58,7 @@ run_app(
     adsl_data   = new_static_block(data = adsl),
     adtte_data  = new_static_block(data = adtte),
     enriched    = new_join_block(type = "left_join"),
-    crossfilter = new_table_filter_block()
+    crossfilter = new_crossfilter_block()
   ),
   links = c(
     new_link("adtte_data", "enriched", "x"),

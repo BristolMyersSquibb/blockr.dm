@@ -25,6 +25,7 @@ Imports:
     dm,
     dplyr,
     htmltools,
+    htmlwidgets,
     rappdirs,
     reactable,
     readr,

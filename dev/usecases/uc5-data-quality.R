@@ -8,8 +8,9 @@
 # from other dimensions.
 
 library(blockr)
-library(blockr.bi)
 library(blockr.dag)
+
+pkgload::load_all("../blockr.dm")
 
 # --- Synthetic data ---
 # ADLB with intentional missing values to simulate data quality issues
@@ -67,7 +68,7 @@ adlb <- grid[, c("USUBJID", "SITEID", "PARAMCD", "VISIT", "AVAL", "MISSING")]
 run_app(
   blocks = c(
     adlb_data   = new_static_block(data = adlb),
-    crossfilter = new_table_filter_block()
+    crossfilter = new_crossfilter_block()
   ),
   links = c(
     new_link("adlb_data", "crossfilter", "data")

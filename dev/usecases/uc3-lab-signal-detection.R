@@ -11,8 +11,9 @@
 
 library(blockr)
 library(blockr.dplyr)
-library(blockr.bi)
 library(blockr.dag)
+
+pkgload::load_all("../blockr.dm")
 
 # --- Synthetic data ---
 
@@ -74,7 +75,7 @@ run_app(
     ae_enriched   = new_join_block(type = "left_join"),
 
     # Interactive filter: click Hepatotoxicity under AEDECOD
-    ae_filter     = new_table_filter_block(),
+    ae_filter     = new_crossfilter_block(),
 
     # Propagate to labs: keep ADLB rows matching filtered AE subjects
     filtered_labs = new_join_block(type = "semi_join", by = "USUBJID")

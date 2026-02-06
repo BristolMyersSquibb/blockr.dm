@@ -2,17 +2,17 @@
 # "Which patients had Grade 3+ neutropenia within 7 days of a serious AE?"
 #
 # Approach: filter ADAE to serious events via crossfilter, enrich with ADSL
-# demographics, then join ADLB with a time window using mutate + filter.
+# demographics, then use temporal_join_block to find labs within a time window.
 #
-# Teal doesn't support temporal joins at all — users must pre-compute with
-# admiral. Here we make it explicit: join AE and lab data, compute days_diff,
-# filter to window. More steps but fully transparent. A dedicated
-# temporal_join block (like blockr.dm has) could wrap this for convenience.
+# Teal doesn't support temporal joins at all -- users must pre-compute with
+# admiral. Here we make it explicit with a dedicated temporal_join_block:
+# join AE and lab data, compute days_diff, filter to window -- all in one block.
 
 library(blockr)
 library(blockr.dplyr)
-library(blockr.bi)
 library(blockr.dag)
+
+pkgload::load_all("../blockr.dm")
 
 # --- Synthetic data ---
 
@@ -75,12 +75,12 @@ adlb <- data.frame(
 # --- Workflow ---
 #
 # 1. Enrich ADAE with ADSL demographics via left_join
-# 2. Crossfilter on enriched AEs — click AESER=Y to select serious events
-# 3. Left join filtered serious AEs with ADLB on USUBJID (many-to-many)
-# 4. Compute days_diff = ADT - ASTDT (lab date minus AE start date)
-# 5. Filter to rows within 7-day window (days_diff >= 0 & days_diff <= 7)
+# 2. Crossfilter on enriched AEs -- click AESER=Y to select serious events
+# 3. Temporal join: find labs within 7 days after each filtered serious AE
 #
-# This is 5 blocks vs 1 dm temporal_join_block, but every step is visible.
+# The temporal_join_block replaces the old 3-block chain (join + mutate + filter)
+# with a single interactive block. The slider lets you adjust the window.
+#
 # Expected: SUBJ-1 febrile neutropenia (Jan 10) matches NEUT on Jan 12
 #   (2 days after), SUBJ-3 neutropenia (Jan 8) matches NEUT on Jan 10
 #   (2 days after)
@@ -95,19 +95,15 @@ run_app(
     ae_enriched = new_join_block(type = "left_join"),
 
     # Interactive filter: click AESER=Y for serious events
-    ae_filter   = new_table_filter_block(),
+    ae_filter   = new_crossfilter_block(),
 
-    # Join filtered serious AEs with lab data (many-to-many on USUBJID)
-    ae_lab_join = new_join_block(type = "left_join", by = "USUBJID"),
-
-    # Compute days between lab measurement and AE start
-    temporal    = new_mutate_expr_block(
-      exprs = list(days_diff = "as.numeric(ADT - ASTDT)")
-    ),
-
-    # Keep only labs within 7 days after AE start
-    window      = new_filter_expr_block(
-      exprs = "days_diff >= 0 & days_diff <= 7"
+    # Temporal join: find labs within 7 days after each serious AE
+    temporal    = new_temporal_join_block(
+      by = "USUBJID",
+      left_date = "ASTDT",
+      right_date = "ADT",
+      window_days = 7,
+      direction = "after"
     )
   ),
   links = c(
@@ -118,12 +114,8 @@ run_app(
     # Crossfilter on enriched AEs
     new_link("ae_enriched", "ae_filter", "data"),
 
-    # Join filtered AEs with labs
-    new_link("ae_filter", "ae_lab_join", "x"),
-    new_link("adlb_data", "ae_lab_join", "y"),
-
-    # Compute time difference and filter to window
-    new_link("ae_lab_join", "temporal", "data"),
-    new_link("temporal", "window", "data")
+    # Temporal join: filtered AEs (x) with labs (y)
+    new_link("ae_filter", "temporal", "x"),
+    new_link("adlb_data", "temporal", "y")
   )
 )
