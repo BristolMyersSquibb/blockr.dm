@@ -6,6 +6,7 @@
 \usage{
 duckplyr_crossfilter_agg(
   duck_tables,
+  col_classes,
   key_col_fn,
   tbl_name,
   dim,
@@ -15,6 +16,8 @@ duckplyr_crossfilter_agg(
 }
 \arguments{
 \item{duck_tables}{Named list of duckplyr data frames}
+
+\item{col_classes}{Named list of per-table column class vectors}
 
 \item{key_col_fn}{Function: tbl_name -> key column name (or NULL)}
 
@@ -30,6 +33,7 @@ duckplyr_crossfilter_agg(
 Data frame with columns: dim, .count
 }
 \description{
-Compute aggregated counts for a categorical dimension (duckplyr backend)
+Keeps the query lazy through the GROUP BY, only materializes the small
+aggregated result.
 }
 \keyword{internal}

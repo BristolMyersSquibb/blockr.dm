@@ -6,6 +6,7 @@
 \usage{
 duckplyr_crossfilter_data(
   duck_tables,
+  col_classes,
   key_col_fn,
   tbl_name,
   exclude_dim,
@@ -15,6 +16,8 @@ duckplyr_crossfilter_data(
 }
 \arguments{
 \item{duck_tables}{Named list of duckplyr data frames}
+
+\item{col_classes}{Named list of per-table column class vectors}
 
 \item{key_col_fn}{Function: tbl_name -> key column name (or NULL)}
 
@@ -30,7 +33,6 @@ duckplyr_crossfilter_data(
 Filtered data frame (materialized)
 }
 \description{
-Uses \code{apply_crossfilter_filters_sym()} + \code{semi_join()} to stay in DuckDB.
-Materializes with \code{as.data.frame()} at the end.
+Compute crossfilter-filtered data for a table (duckplyr backend)
 }
 \keyword{internal}

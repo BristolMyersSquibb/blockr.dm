@@ -5,31 +5,23 @@
 \title{Crossfilter Block}
 \usage{
 new_crossfilter_block(
-  dimensions = NULL,
-  range_dimensions = NULL,
-  measure = NULL,
   filters = list(),
   range_filters = list(),
+  active_dims = list(),
   ...
 )
 }
 \arguments{
-\item{dimensions}{Character vector. Which columns to show as dimension tables.
-If NULL, auto-detected from data (non-numeric + low-cardinality numeric).}
+\item{filters}{Named list of categorical filters. Each element is a character
+vector of selected values.
+E.g., \code{list(Species = c("setosa", "virginica"))}}
 
-\item{range_dimensions}{Character vector. Which numeric columns get range sliders.
-If NULL, auto-detected: numeric columns with >10 unique values that aren't the
-selected measure.}
+\item{range_filters}{Named list of range filters. Each element is a
+numeric vector of length 2 (min, max).
+E.g., \code{list(Sepal.Length = c(5, 7))}}
 
-\item{measure}{Character. Which numeric column to aggregate in the tables.
-Default is the first numeric column found. User can change via dropdown.}
-
-\item{filters}{Named list. Active filters per dimension. Each element is a character
-vector of selected values. Default is empty list (no filters). This is saved as
-part of block state and restored when the block is restored.}
-
-\item{range_filters}{Named list. Active range filters for numeric columns. Each
-element is a numeric vector of length 2 (min, max). Default is empty list.}
+\item{active_dims}{Named list of active filter columns (per-table format,
+but only one table \code{.tbl}). E.g., \code{list(.tbl = c("Species", "Sepal.Width"))}}
 
 \item{...}{Forwarded to \code{\link[blockr.core:new_transform_block]{blockr.core::new_transform_block()}}}
 }
@@ -37,13 +29,9 @@ element is a numeric vector of length 2 (min, max). Default is empty list.}
 A blockr transform block that returns filtered data
 }
 \description{
-A crossfilter block using reactable tables and range sliders. Shows multiple
-sortable, searchable tables for categorical dimensions with inline bar charts,
-and range sliders for high-cardinality numeric columns.
-Clicking on a row filters the data to only rows matching that selection.
-Each widget uses the exclude-own-dimension pattern: it shows all its values
-while reflecting filters from other dimensions.
-Returns the filtered data frame.
+A crossfilter block for a single data frame. Internally wraps the data as a
+one-table dm object and delegates to the dm crossfilter engine, giving it
+search UI, duckdb backend, date sliders, and density overlays for free.
 }
 \examples{
 if (interactive()) {

@@ -4,7 +4,13 @@
 \alias{apply_crossfilter_filters_sym}
 \title{Apply categorical + range filters (duckplyr-compatible)}
 \usage{
-apply_crossfilter_filters_sym(df, cat_f, rng_f, exclude_dim = NULL)
+apply_crossfilter_filters_sym(
+  df,
+  cat_f,
+  rng_f,
+  exclude_dim = NULL,
+  col_classes = NULL
+)
 }
 \arguments{
 \item{df}{A data frame}
@@ -14,9 +20,15 @@ apply_crossfilter_filters_sym(df, cat_f, rng_f, exclude_dim = NULL)
 \item{rng_f}{Named list of numeric(2) vectors (range filters)}
 
 \item{exclude_dim}{Optional dimension name to skip}
+
+\item{col_classes}{Named character vector mapping column names to their class
+(e.g. "Date", "numeric"). Used instead of \code{df[[dim]]} to avoid
+materializing duckplyr lazy tables. If NULL, range filters are treated
+as numeric.}
 }
 \description{
 Uses \code{!!rlang::sym(dim)} instead of \code{.data[[dim]]} and avoids \code{between()}
 to prevent silent fallback to dplyr in duckplyr.
+Avoids \code{df[[dim]]} column extraction which would materialize the lazy table.
 }
 \keyword{internal}

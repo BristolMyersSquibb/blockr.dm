@@ -158,43 +158,15 @@ dm_crossfilter_search_css <- function() {
   "))
 }
 
-#' dm Crossfilter Block
-#'
-#' A crossfilter block that accepts a dm object, shows per-table filter panels,
-#' and propagates filters across tables using the dm's key relationships.
-#' For example, filtering AESEV=SEVERE in ADAE reduces the subject set visible
-#' in ADLB and ADSL panels.
-#'
-#' @param active_dims Named list of per-table active filter columns. Each element
-#'   is a character vector of column names to show as filter widgets.
-#'   E.g., `list(adsl_data = c("SEX", "AGE"), adlb_data = c("PARAMCD"))`
-#'   Start with an empty list (default) to show no filters initially.
-#' @param filters Named list of per-table categorical filters. Each element is
-#'   itself a named list of character vectors.
-#'   E.g., `list(adsl = list(SEX = c("F")), adae = list(AESEV = c("SEVERE")))`
-#' @param range_filters Named list of per-table range filters. Each element is
-#'   a named list of numeric(2) vectors.
-#'   E.g., `list(adsl = list(AGE = c(65, 80)))`
-#' @param ... Forwarded to [blockr.core::new_transform_block()]
-#'
-#' @return A blockr transform block that returns a filtered dm object
-#'
-#' @export
-new_dm_crossfilter_block <- function(
-    active_dims = list(),
-    filters = list(),
-    range_filters = list(),
-    ...
-) {
-  blockr.core::new_transform_block(
-    server = function(id, data) {
-      shiny::moduleServer(
-        id,
-        function(input, output, session) {
-          ns <- session$ns
+dm_crossfilter_server_factory <- function(active_dims, filters, range_filters) {
+  function(id, data) {
+    shiny::moduleServer(
+      id,
+      function(input, output, session) {
+        ns <- session$ns
 
-          # --- dm info: extract tables, PKs, FKs ---
-          dm_info <- shiny::reactive({
+        # --- dm info: extract tables, PKs, FKs ---
+        dm_info <- shiny::reactive({
             dm_obj <- data()
             shiny::req(inherits(dm_obj, "dm"))
 
@@ -1226,6 +1198,9 @@ new_dm_crossfilter_block <- function(
 
           # --- Helper: format table name with label ---
           format_tbl_label <- function(tbl_name) {
+            info <- dm_info()
+            # Suppress table name header for single-table dm
+            if (length(info$table_names) == 1) return("")
             col_info <- column_info_per_table()
             lbl <- col_info[[tbl_name]]$table_label
             if (is.null(lbl) || lbl == "") return(toupper(tbl_name))
@@ -1427,10 +1402,14 @@ new_dm_crossfilter_block <- function(
                   type_badge(dtype)
                 )
               })
-              shiny::tagList(
-                shiny::div(class = "dm-cf-search-group-header", format_tbl_label(tbl_name)),
-                col_items
-              )
+              if (length(info$table_names) > 1) {
+                shiny::tagList(
+                  shiny::div(class = "dm-cf-search-group-header", format_tbl_label(tbl_name)),
+                  col_items
+                )
+              } else {
+                shiny::tagList(col_items)
+              }
             })
 
             shiny::div(class = "dm-cf-search-results", items)
@@ -1546,9 +1525,8 @@ new_dm_crossfilter_block <- function(
                 ))
               }
 
-              # Table section with header
-              shiny::div(
-                class = "dm-cf-table-section",
+              # Table section with header (suppress header for single-table dm)
+              header_tag <- if (length(info$table_names) > 1) {
                 shiny::div(
                   class = "dm-cf-table-header",
                   format_tbl_label(tbl_name),
@@ -1556,7 +1534,11 @@ new_dm_crossfilter_block <- function(
                     class = "dm-cf-table-header-count",
                     paste0(nrow(info$tables[[tbl_name]]), " rows")
                   )
-                ),
+                )
+              }
+              shiny::div(
+                class = "dm-cf-table-section",
+                header_tag,
                 shiny::tagList(parts)
               )
             })
@@ -1777,44 +1759,78 @@ new_dm_crossfilter_block <- function(
           )
         }
       )
-    },
-    ui = function(id) {
-      ns <- shiny::NS(id)
+  }
+}
 
-      # SVG search icon (16x16)
-      search_icon <- shiny::HTML(
-        '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="7" r="4.5"/><line x1="10.2" y1="10.2" x2="14" y2="14"/></svg>'
-      )
+dm_crossfilter_ui <- function(id) {
+  ns <- shiny::NS(id)
 
-      shiny::tagList(
-        shiny::div(
-          class = "dm-crossfilter-container",
-          style = "padding: 10px;",
-          dm_crossfilter_search_css(),
-          # Search bar — plain input with shiny-input-text for auto-binding
-          shiny::tags$div(
-            class = "dm-cf-search-wrapper",
-            shiny::tags$span(
-              class = "dm-cf-search-icon",
-              search_icon
-            ),
-            shiny::tags$input(
-              type = "text",
-              id = ns("search_input"),
-              class = "dm-cf-search-input shiny-input-text",
-              placeholder = "Search columns to add filter...",
-              autocomplete = "off"
-            )
-          ),
-          # Search results (rendered server-side when typing)
-          # Invisible output to bind focus/blur events on search input
-          shiny::uiOutput(ns("search_init")),
-          shiny::uiOutput(ns("search_results")),
-          shiny::uiOutput(ns("filter_status")),
-          shiny::uiOutput(ns("tables_grid"))
+  # SVG search icon (16x16)
+  search_icon <- shiny::HTML(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="7" r="4.5"/><line x1="10.2" y1="10.2" x2="14" y2="14"/></svg>'
+  )
+
+  shiny::tagList(
+    shiny::div(
+      class = "dm-crossfilter-container",
+      style = "padding: 10px;",
+      dm_crossfilter_search_css(),
+      # Search bar — plain input with shiny-input-text for auto-binding
+      shiny::tags$div(
+        class = "dm-cf-search-wrapper",
+        shiny::tags$span(
+          class = "dm-cf-search-icon",
+          search_icon
+        ),
+        shiny::tags$input(
+          type = "text",
+          id = ns("search_input"),
+          class = "dm-cf-search-input shiny-input-text",
+          placeholder = "Search columns to add filter...",
+          autocomplete = "off"
         )
-      )
-    },
+      ),
+      # Search results (rendered server-side when typing)
+      # Invisible output to bind focus/blur events on search input
+      shiny::uiOutput(ns("search_init")),
+      shiny::uiOutput(ns("search_results")),
+      shiny::uiOutput(ns("filter_status")),
+      shiny::uiOutput(ns("tables_grid"))
+    )
+  )
+}
+
+#' dm Crossfilter Block
+#'
+#' A crossfilter block that accepts a dm object, shows per-table filter panels,
+#' and propagates filters across tables using the dm's key relationships.
+#' For example, filtering AESEV=SEVERE in ADAE reduces the subject set visible
+#' in ADLB and ADSL panels.
+#'
+#' @param active_dims Named list of per-table active filter columns. Each element
+#'   is a character vector of column names to show as filter widgets.
+#'   E.g., `list(adsl_data = c("SEX", "AGE"), adlb_data = c("PARAMCD"))`
+#'   Start with an empty list (default) to show no filters initially.
+#' @param filters Named list of per-table categorical filters. Each element is
+#'   itself a named list of character vectors.
+#'   E.g., `list(adsl = list(SEX = c("F")), adae = list(AESEV = c("SEVERE")))`
+#' @param range_filters Named list of per-table range filters. Each element is
+#'   a named list of numeric(2) vectors.
+#'   E.g., `list(adsl = list(AGE = c(65, 80)))`
+#' @param ... Forwarded to [blockr.core::new_transform_block()]
+#'
+#' @return A blockr transform block that returns a filtered dm object
+#'
+#' @export
+new_dm_crossfilter_block <- function(
+    active_dims = list(),
+    filters = list(),
+    range_filters = list(),
+    ...
+) {
+  blockr.core::new_transform_block(
+    server = dm_crossfilter_server_factory(active_dims, filters, range_filters),
+    ui = dm_crossfilter_ui,
     dat_valid = function(data) {
       if (!inherits(data, "dm")) {
         stop("Input must be a dm object")
