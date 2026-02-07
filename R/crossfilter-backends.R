@@ -440,8 +440,11 @@ duckplyr_crossfilter_lazy <- function(duck_tables, col_classes, key_col_fn,
     col_classes = col_classes[[tbl_name]]
   )
 
-  # Semi-join with other tables' filtered key sets
+  # Collect key sets from other tables, intersect in R, semi_join once.
+  # Faster than chaining 7 semi_joins (DuckDB planner overhead on complex plans).
+  # Uses semi_join with as_duckdb_tibble instead of %in% (>100 values fallback).
   if (!is.null(key_col)) {
+    allowed_keys <- NULL
     for (other_tbl in names(duck_tables)) {
       if (other_tbl == tbl_name) next
       other_key <- key_col_fn(other_tbl)
@@ -452,11 +455,21 @@ duckplyr_crossfilter_lazy <- function(duck_tables, col_classes, key_col_fn,
         duck_tables[[other_tbl]], other_cat, other_rng,
         col_classes = col_classes[[other_tbl]]
       )
-      other_keys <- dplyr::distinct(other_filtered, !!rlang::sym(other_key))
-      if (other_key != key_col) {
-        other_keys <- dplyr::rename(other_keys, !!key_col := !!rlang::sym(other_key))
+      other_key_vals <- dplyr::pull(
+        dplyr::distinct(other_filtered, !!rlang::sym(other_key))
+      )
+      if (is.null(allowed_keys)) {
+        allowed_keys <- other_key_vals
+      } else {
+        allowed_keys <- intersect(allowed_keys, other_key_vals)
       }
-      own_filtered <- dplyr::semi_join(own_filtered, other_keys, by = key_col)
+    }
+    if (!is.null(allowed_keys)) {
+      keys_tbl <- duckplyr::as_duckdb_tibble(
+        stats::setNames(data.frame(allowed_keys, stringsAsFactors = FALSE),
+                         key_col)
+      )
+      own_filtered <- dplyr::semi_join(own_filtered, keys_tbl, by = key_col)
     }
   }
 
@@ -497,18 +510,21 @@ duckplyr_crossfilter_agg <- function(duck_tables, col_classes, key_col_fn,
   lazy <- duckplyr_crossfilter_lazy(duck_tables, col_classes, key_col_fn,
                                      tbl_name, dim,
                                      cat_filters, rng_filters)
-  # group_by + summarise (avoid .by which may cause fallback)
+  # Use .by (not group_by) — duckplyr requires .by to avoid fallback
+  # Cast to character AFTER materialization — as.character() causes fallback
   agg <- lazy |>
-    dplyr::group_by(!!rlang::sym(dim)) |>
-    dplyr::summarise(.count = dplyr::n(), .groups = "drop") |>
-    dplyr::mutate(!!dim := as.character(!!rlang::sym(dim))) |>
+    dplyr::summarise(.count = dplyr::n(), .by = dplyr::all_of(dim)) |>
     dplyr::arrange(dplyr::desc(!!rlang::sym(".count")))
-  as.data.frame(agg)
+  agg <- as.data.frame(agg)
+  agg[[dim]] <- as.character(agg[[dim]])
+  agg
 }
 
 #' Compute filtered row counts per table (duckplyr backend)
 #'
-#' Uses lazy `summarise(n())` per table — avoids materializing full results.
+#' Computes filtered key sets per table once, intersects in R (cheap on small
+#' key vectors), then counts per table with a single filter. Avoids rebuilding
+#' 7 semi_join chains per table.
 #' @inheritParams duckplyr_crossfilter_data
 #' @param table_names Character vector of table names to count
 #' @return List with total, filtered, n_tables
@@ -518,17 +534,43 @@ duckplyr_crossfilter_counts <- function(duck_tables, col_classes, key_col_fn,
                                         cat_filters, rng_filters) {
   total <- 0L
   filtered <- 0L
-  for (tbl_name in table_names) {
-    # Total: use nrow on the lazy tibble (metadata, no scan)
-    total <- total + nrow(duck_tables[[tbl_name]])
 
-    # Filtered: build lazy query, then COUNT(*) via summarise
-    lazy <- duckplyr_crossfilter_lazy(
-      duck_tables, col_classes, key_col_fn,
-      tbl_name, exclude_dim = NULL,
-      cat_filters, rng_filters
+  # Step 1: compute filtered key set per table (one query each)
+  key_sets <- list()
+  for (tbl_name in table_names) {
+    total <- total + nrow(duck_tables[[tbl_name]])
+    key_col <- key_col_fn(tbl_name)
+    if (is.null(key_col)) next
+    cat_f <- cat_filters[[tbl_name]] %||% list()
+    rng_f <- rng_filters[[tbl_name]] %||% list()
+    filt <- apply_crossfilter_filters_sym(duck_tables[[tbl_name]], cat_f, rng_f,
+                                          col_classes = col_classes[[tbl_name]])
+    key_sets[[tbl_name]] <- dplyr::pull(dplyr::distinct(filt, !!rlang::sym(key_col)))
+  }
+
+  # Step 2: intersect all key sets in R (fast — small vectors)
+  all_keys <- Reduce(intersect, key_sets)
+
+  # Step 3: create keys duckplyr tibble ONCE (as_duckdb_tibble outside the loop)
+  keys_tbl <- NULL
+  if (!is.null(all_keys)) {
+    keys_tbl <- duckplyr::as_duckdb_tibble(
+      data.frame(.key = all_keys, stringsAsFactors = FALSE)
     )
-    count_df <- dplyr::summarise(lazy, n = dplyr::n())
+  }
+
+  # Step 4: count per table with the global key set
+  for (tbl_name in table_names) {
+    key_col <- key_col_fn(tbl_name)
+    cat_f <- cat_filters[[tbl_name]] %||% list()
+    rng_f <- rng_filters[[tbl_name]] %||% list()
+    filt <- apply_crossfilter_filters_sym(duck_tables[[tbl_name]], cat_f, rng_f,
+                                          col_classes = col_classes[[tbl_name]])
+    if (!is.null(key_col) && !is.null(keys_tbl)) {
+      renamed_keys <- dplyr::rename(keys_tbl, !!key_col := ".key")
+      filt <- dplyr::semi_join(filt, renamed_keys, by = key_col)
+    }
+    count_df <- dplyr::summarise(filt, n = dplyr::n())
     filtered <- filtered + as.data.frame(count_df)$n
   }
   list(total = total, filtered = filtered, n_tables = length(table_names))

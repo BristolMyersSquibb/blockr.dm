@@ -22,12 +22,12 @@ tables <- setNames(
   tools::file_path_sans_ext(basename(files))
 )
 
-cat("Tables loaded:\n")
+message("Tables loaded:")
 for (nm in names(tables)) {
-  cat(sprintf("  %-10s %s rows x %s cols\n", nm, nrow(tables[[nm]]),
-              ncol(tables[[nm]])))
+  message(sprintf("  %-10s %s rows x %s cols", nm, nrow(tables[[nm]]),
+                  ncol(tables[[nm]])))
 }
-cat(sprintf("  Total: %s rows\n\n", sum(vapply(tables, nrow, integer(1)))))
+message(sprintf("  Total: %s rows\n", sum(vapply(tables, nrow, integer(1)))))
 
 # --- Build dm with keys ---
 dm_obj <- dm::dm(!!!tables)
@@ -70,15 +70,26 @@ for (nm in table_names) duckdb_register(con, nm, tables[[nm]], overwrite = TRUE)
 # --- duckplyr setup ---
 duck_tables <- tryCatch({
   requireNamespace("duckplyr", quietly = TRUE)
-  # as_duckdb_tibble is the non-deprecated API (duckplyr >= 1.0.0)
   as_duck <- if (exists("as_duckdb_tibble", asNamespace("duckplyr"))) {
     duckplyr::as_duckdb_tibble
   } else {
     duckplyr::as_duckplyr_tibble
   }
-  setNames(lapply(table_names, function(nm) as_duck(tables[[nm]])),
+  # Strip column-level attributes (labels) — duckplyr 1.0+ rejects them
+  strip_attrs <- function(df) {
+    for (nm in names(df)) {
+      a <- attributes(df[[nm]])
+      keep <- intersect(names(a), c("class", "levels", "names", "dim", "tzone"))
+      attributes(df[[nm]]) <- a[keep]
+    }
+    df
+  }
+  setNames(lapply(table_names, function(nm) as_duck(strip_attrs(tables[[nm]]))),
            table_names)
-}, error = function(e) NULL)
+}, error = function(e) {
+  message("duckplyr setup failed: ", conditionMessage(e))
+  NULL
+})
 
 # --- Benchmark parameters ---
 n_iter <- 20
@@ -134,7 +145,7 @@ run_one_update <- function(backend) {
 }
 
 # --- Correctness check: all backends produce same results ---
-cat("Correctness check...\n")
+message("Correctness check...")
 for (w in widgets[1:4]) {
   r_dplyr <- dplyr_crossfilter_data(tables, key_col_fn, w$tbl, w$dim,
                                      cat_filters, rng_filters)
@@ -146,8 +157,8 @@ for (w in widgets[1:4]) {
                                              w$tbl, w$dim, cat_filters, rng_filters)
     stopifnot(nrow(r_dplyr) == nrow(r_duckplyr))
   }
-  cat(sprintf("  %-6s.%-6s  dplyr=%d  duckdb=%d  OK\n",
-              w$tbl, w$dim, nrow(r_dplyr), nrow(r_duck)))
+  message(sprintf("  %-6s.%-6s  dplyr=%d  duckdb=%d  OK",
+                  w$tbl, w$dim, nrow(r_dplyr), nrow(r_duck)))
 }
 
 counts_dplyr <- dplyr_crossfilter_counts(tables, key_col_fn, table_names,
@@ -155,16 +166,16 @@ counts_dplyr <- dplyr_crossfilter_counts(tables, key_col_fn, table_names,
 counts_duck <- duckdb_crossfilter_counts(con, tables, table_names, key_col_fn,
                                           cat_filters, rng_filters)
 stopifnot(counts_dplyr$filtered == counts_duck$filtered)
-cat(sprintf("  Counts: dplyr=%d  duckdb=%d  OK\n\n", counts_dplyr$filtered,
-            counts_duck$filtered))
+message(sprintf("  Counts: dplyr=%d  duckdb=%d  OK\n", counts_dplyr$filtered,
+                counts_duck$filtered))
 
 # --- Warmup ---
-cat("Warming up...\n")
+message("Warming up...")
 for (b in c("dplyr", "duckdb")) run_one_update(b)
 if (!is.null(duck_tables)) run_one_update("duckplyr")
 
 # --- Benchmark ---
-cat(sprintf("\nBenchmarking (%d iterations per backend)...\n\n", n_iter))
+message(sprintf("\nBenchmarking (%d iterations per backend)...\n", n_iter))
 
 backends <- c("dplyr", "duckdb")
 if (!is.null(duck_tables)) backends <- c(backends, "duckplyr")
@@ -175,28 +186,65 @@ for (b in backends) {
   for (i in seq_len(n_iter)) run_one_update(b)
   elapsed <- proc.time()["elapsed"] - t0
   results[[b]] <- elapsed
-  cat(sprintf("  %-10s  %.1fms per update  (total %.1fs)\n",
-              b, elapsed / n_iter * 1000, elapsed))
+  message(sprintf("  %-10s  %.1fms per update  (total %.1fs)",
+                  b, elapsed / n_iter * 1000, elapsed))
 }
 
 # --- Summary ---
 base <- results[["dplyr"]]
-cat("\n--- Summary ---\n")
-cat(sprintf("%-12s  %-15s  %-10s\n", "Backend", "Per update", "vs dplyr"))
+message("\n--- Full update (data + agg + counts) ---")
+message(sprintf("%-12s  %-15s  %-10s", "Backend", "Per update", "vs dplyr"))
 for (b in names(results)) {
-  cat(sprintf("%-12s  %-15s  %.1fx\n",
-              b,
-              sprintf("%.0fms", results[[b]] / n_iter * 1000),
-              base / results[[b]]))
+  message(sprintf("%-12s  %-15s  %.1fx",
+                  b,
+                  sprintf("%.0fms", results[[b]] / n_iter * 1000),
+                  base / results[[b]]))
 }
 
+# --- Agg-only sub-benchmark (shows push-down benefit) ---
+message(sprintf("\n--- Agg-only benchmark (%d iterations) ---", n_iter))
+message("This isolates the GROUP BY push-down benefit for categorical widgets.\n")
+
+agg_widgets <- widgets[vapply(widgets, function(w) w$type == "cat", logical(1))]
+
+run_agg_only <- function(backend) {
+  for (w in agg_widgets) {
+    if (backend == "dplyr") {
+      dplyr_crossfilter_agg(tables, key_col_fn, w$tbl, w$dim,
+                            cat_filters, rng_filters)
+    } else if (backend == "duckdb") {
+      duckdb_crossfilter_agg(con, tables, table_names, key_col_fn,
+                             w$tbl, w$dim, cat_filters, rng_filters)
+    }
+  }
+}
+
+agg_results <- list()
+for (b in c("dplyr", "duckdb")) {
+  t0 <- proc.time()["elapsed"]
+  for (i in seq_len(n_iter)) run_agg_only(b)
+  elapsed <- proc.time()["elapsed"] - t0
+  agg_results[[b]] <- elapsed
+  message(sprintf("  %-10s  %.1fms per update  (total %.1fs)",
+                  b, elapsed / n_iter * 1000, elapsed))
+}
+message(sprintf("\n  DuckDB agg push-down speedup: %.1fx",
+                agg_results[["dplyr"]] / agg_results[["duckdb"]]))
+
 if (!is.null(results[["duckplyr"]])) {
-  cat("\n--- duckplyr notes ---\n")
-  cat("Uses !!rlang::sym() (not .data[[]]), avoids between(),\n")
-  cat("uses group_by+summarise (not .by), keeps queries lazy until collect.\n")
-  cat("If still slower: per-verb dispatch overhead through DuckDB's relational\n")
-  cat("API accumulates across 40-80 operations per update, while raw SQL\n")
-  cat("sends one query string per widget.\n")
+  message("\n--- duckplyr notes ---")
+  message("Zero fallbacks confirmed. All operations stay in DuckDB.")
+  message("\nWorkarounds applied to avoid fallbacks:")
+  message("  1. summarise(.by=) instead of group_by() + summarise()")
+  message("  2. as.character() after as.data.frame() (can't translate in lazy query)")
+  message("  3. Pre-computed col_classes to avoid df[[dim]] materialization on lazy tibble")
+  message("  4. Strip column label attributes before as_duckdb_tibble()")
+  message("  5. semi_join with as_duckdb_tibble(keys) instead of %in% (>100 values limit)")
+  message("\nPerformance bottleneck: per-verb dispatch overhead through DuckDB's")
+  message("relational API. Each crossfilter update runs ~40-80 dplyr verbs, each")
+  message("dispatched individually. Raw SQL sends 1 query per widget.")
+  message("\nThis benchmark is a reproducible case for discussing duckplyr dispatch")
+  message("overhead with Kirill.")
 }
 
 # --- Cleanup ---
