@@ -1,15 +1,15 @@
 # Use Case 4: Subgroup Analysis
 # "Compare efficacy between Japanese and non-Japanese patients with prior therapy"
 #
-# Approach: enrich ADTTE with ADSL demographics via left_join, then
-# crossfilter on the flattened table. Click PTHFL=Y, then subgroup by RACE.
+# Approach: create a dm from ADSL + ADTTE, then dm crossfilter.
+# Filter PTHFL=Y in the ADSL panel — the ADTTE panel cascades to show
+# only TTE endpoints for subjects with prior therapy.
 #
-# Same as UC1 but targeting ADTTE. The flattened data has both demographics
-# (RACE, ETHNIC) and TTE endpoints (AVAL, CNSR), so you can filter and
-# group in one view.
+# The dm crossfilter replaces the old join+flat-crossfilter:
+# no manual left_join needed, demographics and endpoints stay in
+# separate panels, cascading via FK handles the linking.
 
 library(blockr)
-library(blockr.dplyr)
 library(blockr.dag)
 
 pkgload::load_all("../blockr.dm")
@@ -44,9 +44,10 @@ adtte <- data.frame(
 
 # --- Workflow ---
 #
-# 1. Left join ADTTE with ADSL to enrich TTE data with demographics
-# 2. Crossfilter on enriched table — click PTHFL=Y for prior therapy
-# 3. The enriched view shows RACE, ETHNIC, AVAL, CNSR together
+# 1. Combine ADSL and ADTTE into a dm (auto-infers USUBJID PK/FK)
+# 2. dm crossfilter — filter PTHFL=Y in ADSL panel;
+#    ADTTE panel cascades to matching subjects
+# 3. Pull the filtered ADTTE table for display
 #
 # Expected filtered subjects (PTHFL == 'Y'):
 #   SUBJ-1 (Japanese), SUBJ-2 (White), SUBJ-4 (Chinese),
@@ -57,12 +58,31 @@ run_app(
   blocks = c(
     adsl_data   = new_static_block(data = adsl),
     adtte_data  = new_static_block(data = adtte),
-    enriched    = new_join_block(type = "left_join"),
-    crossfilter = new_crossfilter_block()
+
+    # Combine into dm with auto-inferred keys
+    dm_obj      = new_dm_block(),
+
+    # dm crossfilter: filter by prior therapy, race, ethnicity
+    crossfilter = new_dm_crossfilter_block(
+      active_dims = list(
+        adsl_data = c("PTHFL", "RACE", "ETHNIC", "TRT01A"),
+        adtte_data = c("EVNTDESC")
+      ),
+      filters = list(adsl_data = list(PTHFL = "Y"))
+    ),
+
+    # Pull filtered TTE data
+    result      = new_dm_pull_block(table = "adtte_data")
   ),
   links = c(
-    new_link("adtte_data", "enriched", "x"),
-    new_link("adsl_data", "enriched", "y"),
-    new_link("enriched", "crossfilter", "data")
+    # Combine into dm
+    new_link("adsl_data", "dm_obj", "adsl_data"),
+    new_link("adtte_data", "dm_obj", "adtte_data"),
+
+    # Crossfilter on dm
+    new_link("dm_obj", "crossfilter", "data"),
+
+    # Pull filtered TTE
+    new_link("crossfilter", "result", "data")
   )
 )

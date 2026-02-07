@@ -1,16 +1,14 @@
 # Use Case 1: Population Selection
 # "Show me the safety population, females over 65, in the Drug A arm"
 #
-# Approach: enrich ADAE with ADSL demographics via left_join, then
-# crossfilter on the enriched table. No dm needed.
+# Approach: create a dm from ADSL + ADAE, then dm crossfilter for cross-table
+# filtering. Filter SAFFL=Y, SEX=F, TRT01A=Drug A, AGE>=65 in the ADSL panel.
+# The ADAE panel cascades automatically — only AEs for matching subjects.
 #
-# In the crossfilter, click Y under SAFFL, F under SEX, Drug A under TRT01A.
-# Use the AGE range slider to set min=65. The table updates instantly showing
-# only AEs for matching subjects.
-# A left_join enriches ADAE with ADSL columns, then crossfilter does the rest.
+# The dm crossfilter replaces the old join+flat-crossfilter pattern:
+# no manual left_join needed, and filters cascade bidirectionally.
 
 library(blockr)
-library(blockr.dplyr)
 library(blockr.dag)
 
 pkgload::load_all("../blockr.dm")
@@ -46,26 +44,34 @@ adae <- data.frame(
 # --- Workflow ---
 #
 # 1. Load ADSL and ADAE as static blocks
-# 2. Left join ADAE with ADSL on USUBJID to enrich AEs with demographics
-# 3. Crossfilter on the enriched table — click SAFFL=Y, SEX=F, TRT01A=Drug A
-#    and use the AGE range slider to set min=65
+# 2. Combine into a dm (auto-infers USUBJID PK/FK)
+# 3. dm crossfilter — ADSL panel shows SAFFL, SEX, TRT01A, AGE;
+#    ADAE panel shows AESEV. Filters cascade across tables.
+# 4. Pull the filtered ADAE table for display
 #
-# Expected: clicking SAFFL=Y, SEX=F, AGE>=65, TRT01A=Drug A filters to
-# AEs for SUBJ-1 (F, 70, Drug A), SUBJ-4 (F, 72, Drug A),
-# SUBJ-6 (F, 80, Drug A), SUBJ-9 (F, 74, Drug A)
+# Pre-applied: SAFFL=Y, SEX=F, TRT01A=Drug A, AGE>=65
+# Expected: AEs for SUBJ-1 (F, 70), SUBJ-4 (F, 72),
+#           SUBJ-6 (F, 80), SUBJ-9 (F, 74)
 
 run_app(
   blocks = c(
     adsl_data   = new_static_block(data = adsl),
     adae_data   = new_static_block(data = adae),
-    enriched    = new_join_block(type = "left_join"),
-    crossfilter = new_crossfilter_block(
-      dimensions = c("SAFFL", "SEX", "TRT01A", "AESEV")
-    )
+    dm_obj      = new_dm_block(),
+    crossfilter = new_dm_crossfilter_block(
+      active_dims = list(
+        adsl_data = c("SAFFL", "SEX", "TRT01A", "AGE"),
+        adae_data = c("AESEV")
+      ),
+      filters = list(adsl_data = list(SAFFL = "Y", SEX = "F", TRT01A = "Drug A")),
+      range_filters = list(adsl_data = list(AGE = c(65, 100)))
+    ),
+    result      = new_dm_pull_block(table = "adae_data")
   ),
   links = c(
-    new_link("adae_data", "enriched", "x"),
-    new_link("adsl_data", "enriched", "y"),
-    new_link("enriched", "crossfilter", "data")
+    new_link("adsl_data", "dm_obj", "adsl_data"),
+    new_link("adae_data", "dm_obj", "adae_data"),
+    new_link("dm_obj", "crossfilter", "data"),
+    new_link("crossfilter", "result", "data")
   )
 )

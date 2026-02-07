@@ -1,16 +1,14 @@
 # Use Case 3: Lab Signal Detection
 # "Show ALT distribution for patients with hepatotoxicity AEs"
 #
-# Approach: enrich ADAE with ADSL demographics via left_join, crossfilter
-# to select hepatotoxicity, then semi_join to get matching ADLB records.
+# Approach: create a dm from ADSL + ADAE + ADLB, then dm crossfilter.
+# Click Hepatotoxicity under AEDECOD in the ADAE panel — the ADLB panel
+# automatically cascades to show only lab records for those subjects.
 #
-# The crossfilter on enriched ADAE lets you click Hepatotoxicity under
-# AEDECOD. The semi_join propagates to ADLB — you get all lab records for
-# hepatotoxicity subjects. This is the "filter child, get sibling" pattern.
-# Note semi_join direction: ADLB is x (kept), filtered AE is y (match against).
+# The dm crossfilter replaces the old 3-block chain (join + crossfilter +
+# semi_join). No manual joins needed — cascading via FK handles it all.
 
 library(blockr)
-library(blockr.dplyr)
 library(blockr.dag)
 
 pkgload::load_all("../blockr.dm")
@@ -57,39 +55,47 @@ adlb <- data.frame(
 
 # --- Workflow ---
 #
-# 1. Enrich ADAE with ADSL demographics via left_join
-# 2. Crossfilter on enriched AEs — click Hepatotoxicity under AEDECOD
-# 3. Semi_join ADLB with filtered AEs to get labs for matching subjects
+# 1. Combine ADSL, ADAE, ADLB into a dm (auto-infers USUBJID PK/FK)
+# 2. dm crossfilter — click Hepatotoxicity under AEDECOD in ADAE panel
+#    -> ADLB panel cascades to show only labs for hepatotox subjects
+#    -> ADSL panel cascades to show only matching subjects
+# 3. Pull the filtered ADLB table for display
 #
-# The semi_join keeps all ADLB rows where USUBJID matches the filtered AEs.
 # Expected hepatotoxicity subjects: SUBJ-1, -2, -4, -8
 # Expected ADLB output: all lab records (ALT + AST, both visits) for those 4
 
 run_app(
   blocks = c(
-    adsl_data     = new_static_block(data = adsl),
-    adae_data     = new_static_block(data = adae),
-    adlb_data     = new_static_block(data = adlb),
+    adsl_data   = new_static_block(data = adsl),
+    adae_data   = new_static_block(data = adae),
+    adlb_data   = new_static_block(data = adlb),
 
-    # Enrich AEs with demographics
-    ae_enriched   = new_join_block(type = "left_join"),
+    # Combine into dm with auto-inferred keys
+    dm_obj      = new_dm_block(),
 
-    # Interactive filter: click Hepatotoxicity under AEDECOD
-    ae_filter     = new_crossfilter_block(),
+    # dm crossfilter: filter by AE type, labs and demographics cascade
+    crossfilter = new_dm_crossfilter_block(
+      active_dims = list(
+        adae_data = c("AEDECOD", "AESEV"),
+        adlb_data = c("PARAMCD", "VISIT"),
+        adsl_data = c("SEX", "TRT01A")
+      ),
+      filters = list(adae_data = list(AEDECOD = "Hepatotoxicity"))
+    ),
 
-    # Propagate to labs: keep ADLB rows matching filtered AE subjects
-    filtered_labs = new_join_block(type = "semi_join", by = "USUBJID")
+    # Pull filtered labs
+    result      = new_dm_pull_block(table = "adlb_data")
   ),
   links = c(
-    # Enrich AEs with ADSL
-    new_link("adae_data", "ae_enriched", "x"),
-    new_link("adsl_data", "ae_enriched", "y"),
+    # Combine into dm
+    new_link("adsl_data", "dm_obj", "adsl_data"),
+    new_link("adae_data", "dm_obj", "adae_data"),
+    new_link("adlb_data", "dm_obj", "adlb_data"),
 
-    # Crossfilter on enriched AEs
-    new_link("ae_enriched", "ae_filter", "data"),
+    # Crossfilter on dm
+    new_link("dm_obj", "crossfilter", "data"),
 
-    # Semi_join: ADLB (x, kept) where USUBJID matches filtered AEs (y)
-    new_link("adlb_data", "filtered_labs", "x"),
-    new_link("ae_filter", "filtered_labs", "y")
+    # Pull filtered labs
+    new_link("crossfilter", "result", "data")
   )
 )

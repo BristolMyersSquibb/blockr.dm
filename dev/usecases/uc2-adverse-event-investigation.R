@@ -1,15 +1,19 @@
 # Use Case 2: Adverse Event Investigation
 # "Which patients had Grade 3+ neutropenia within 7 days of a serious AE?"
 #
-# Approach: filter ADAE to serious events via crossfilter, enrich with ADSL
-# demographics, then use temporal_join_block to find labs within a time window.
+# Approach: create a dm from ADSL + ADAE + ADLB, then dm crossfilter to
+# filter serious AEs. Pull filtered AE and lab tables, then temporal_join
+# to find labs within 7 days of each serious AE.
+#
+# The dm crossfilter replaces the old join+flat-crossfilter:
+# - No manual left_join to enrich AEs with demographics
+# - ADSL demographics filterable in their own panel
+# - ADLB cascades automatically to matching subjects
 #
 # Teal doesn't support temporal joins at all -- users must pre-compute with
-# admiral. Here we make it explicit with a dedicated temporal_join_block:
-# join AE and lab data, compute days_diff, filter to window -- all in one block.
+# admiral. Here we make it explicit with a dedicated temporal_join_block.
 
 library(blockr)
-library(blockr.dplyr)
 library(blockr.dag)
 
 pkgload::load_all("../blockr.dm")
@@ -74,12 +78,11 @@ adlb <- data.frame(
 
 # --- Workflow ---
 #
-# 1. Enrich ADAE with ADSL demographics via left_join
-# 2. Crossfilter on enriched AEs -- click AESER=Y to select serious events
-# 3. Temporal join: find labs within 7 days after each filtered serious AE
-#
-# The temporal_join_block replaces the old 3-block chain (join + mutate + filter)
-# with a single interactive block. The slider lets you adjust the window.
+# 1. Combine ADSL, ADAE, ADLB into a dm (auto-infers USUBJID PK/FK)
+# 2. dm crossfilter — filter AESER=Y in adae panel for serious events;
+#    ADSL and ADLB panels cascade to matching subjects
+# 3. Pull filtered ADAE and ADLB tables
+# 4. Temporal join: find labs within 7 days after each serious AE
 #
 # Expected: SUBJ-1 febrile neutropenia (Jan 10) matches NEUT on Jan 12
 #   (2 days after), SUBJ-3 neutropenia (Jan 8) matches NEUT on Jan 10
@@ -91,11 +94,22 @@ run_app(
     adae_data   = new_static_block(data = adae),
     adlb_data   = new_static_block(data = adlb),
 
-    # Enrich AEs with demographics
-    ae_enriched = new_join_block(type = "left_join"),
+    # Combine into dm with auto-inferred keys
+    dm_obj      = new_dm_block(),
 
-    # Interactive filter: click AESER=Y for serious events
-    ae_filter   = new_crossfilter_block(),
+    # dm crossfilter: filter serious AEs, demographics cascade
+    crossfilter = new_dm_crossfilter_block(
+      active_dims = list(
+        adae_data = c("AESER", "AESEV"),
+        adsl_data = c("SEX", "AGE"),
+        adlb_data = c("PARAMCD", "ATOXGR")
+      ),
+      filters = list(adae_data = list(AESER = "Y"))
+    ),
+
+    # Pull filtered tables for temporal join
+    pull_ae     = new_dm_pull_block(table = "adae_data"),
+    pull_labs   = new_dm_pull_block(table = "adlb_data"),
 
     # Temporal join: find labs within 7 days after each serious AE
     temporal    = new_temporal_join_block(
@@ -107,15 +121,20 @@ run_app(
     )
   ),
   links = c(
-    # Enrich AEs with ADSL
-    new_link("adae_data", "ae_enriched", "x"),
-    new_link("adsl_data", "ae_enriched", "y"),
+    # Combine into dm
+    new_link("adsl_data", "dm_obj", "adsl_data"),
+    new_link("adae_data", "dm_obj", "adae_data"),
+    new_link("adlb_data", "dm_obj", "adlb_data"),
 
-    # Crossfilter on enriched AEs
-    new_link("ae_enriched", "ae_filter", "data"),
+    # Crossfilter on dm
+    new_link("dm_obj", "crossfilter", "data"),
 
-    # Temporal join: filtered AEs (x) with labs (y)
-    new_link("ae_filter", "temporal", "x"),
-    new_link("adlb_data", "temporal", "y")
+    # Pull tables from filtered dm
+    new_link("crossfilter", "pull_ae", "data"),
+    new_link("crossfilter", "pull_labs", "data"),
+
+    # Temporal join: filtered AEs (x) with filtered labs (y)
+    new_link("pull_ae", "temporal", "x"),
+    new_link("pull_labs", "temporal", "y")
   )
 )

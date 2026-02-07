@@ -1,11 +1,13 @@
 # Use Case 5: Data Quality Exploration
 # "Which sites have unusual patterns of missing lab data?"
 #
-# Approach: single-table crossfilter on ADLB — the ideal crossfilter use case.
-# Click SITE-03 -> see which PARAMCDs and VISITs have high missing rates.
-# Click CREAT -> see which sites are worst. The exclude-own-dimension pattern
-# makes this work: each table shows all its values while reflecting filters
-# from other dimensions.
+# Approach: create a dm from ADSL + ADLB, then dm crossfilter for cross-table
+# exploration. Click SITE-03 in ADSL panel -> ADLB panel shows which PARAMCDs
+# and VISITs have high missing rates at that site. Click CREAT in ADLB panel ->
+# ADSL panel shows which sites have missing creatinine data.
+#
+# The dm crossfilter enables bidirectional exploration: filter sites in ADSL
+# to see lab impact, or filter labs in ADLB to see affected sites/subjects.
 
 library(blockr)
 library(blockr.dag)
@@ -13,28 +15,38 @@ library(blockr.dag)
 pkgload::load_all("../blockr.dm")
 
 # --- Synthetic data ---
-# ADLB with intentional missing values to simulate data quality issues
+# ADSL with site assignments, ADLB with intentional missing values
 
 set.seed(123)
 
 sites <- c("SITE-01", "SITE-02", "SITE-03", "SITE-04")
 subjects_per_site <- 5
+
+adsl <- data.frame(
+  USUBJID = paste0(rep(sites, each = subjects_per_site), "-SUBJ-",
+                   rep(1:subjects_per_site, length(sites))),
+  SITEID = rep(sites, each = subjects_per_site),
+  AGE = sample(30:75, 20, replace = TRUE),
+  SEX = sample(c("M", "F"), 20, replace = TRUE)
+)
+
 visits <- c("Screening", "Baseline", "Week 4", "Week 8", "Week 12")
 params <- c("ALT", "AST", "CREAT", "BILI")
 
 # Generate complete grid
 grid <- expand.grid(
-  SITEID = sites,
-  SUBJNUM = 1:subjects_per_site,
+  USUBJID = adsl$USUBJID,
   VISIT = visits,
   PARAMCD = params,
   stringsAsFactors = FALSE
 )
-grid$USUBJID <- paste0(grid$SITEID, "-SUBJ-", grid$SUBJNUM)
 
 # Generate values with intentional missing patterns
 n <- nrow(grid)
 grid$AVAL <- round(runif(n, 10, 100), 1)
+
+# Extract SITEID from USUBJID for missing patterns
+grid$SITEID <- sub("-SUBJ-.*", "", grid$USUBJID)
 
 # SITE-03 has high missingness at later visits
 missing_site3_late <- grid$SITEID == "SITE-03" &
@@ -56,21 +68,47 @@ grid$AVAL[random_missing & !missing_site3_late & !missing_site4_creat] <- NA
 # Flag missing values
 grid$MISSING <- ifelse(is.na(grid$AVAL), "Y", "N")
 
-adlb <- grid[, c("USUBJID", "SITEID", "PARAMCD", "VISIT", "AVAL", "MISSING")]
+adlb <- grid[, c("USUBJID", "PARAMCD", "VISIT", "AVAL", "MISSING")]
 
 # --- Workflow ---
 #
-# 1. Load ADLB as a static block
-# 2. Crossfilter with dimensions: SITEID, PARAMCD, VISIT, MISSING
+# 1. Combine ADSL and ADLB into a dm (auto-infers USUBJID PK/FK)
+# 2. dm crossfilter — ADSL panel shows SITEID, SEX;
+#    ADLB panel shows PARAMCD, VISIT, MISSING
+#    Filters cascade bidirectionally between tables.
+# 3. Pull the filtered ADLB table for display
 #
-# No joins needed — this is a pure single-table exploration.
+# Click SITE-03 -> see which PARAMCDs/VISITs have high missing rates
+# Click MISSING=Y -> see which sites and subjects have the most gaps
 
 run_app(
   blocks = c(
+    adsl_data   = new_static_block(data = adsl),
     adlb_data   = new_static_block(data = adlb),
-    crossfilter = new_crossfilter_block()
+
+    # Combine into dm with auto-inferred keys
+    dm_obj      = new_dm_block(),
+
+    # dm crossfilter: explore missing patterns across sites and labs
+    crossfilter = new_dm_crossfilter_block(
+      active_dims = list(
+        adsl_data = c("SITEID", "SEX"),
+        adlb_data = c("PARAMCD", "VISIT", "MISSING")
+      )
+    ),
+
+    # Pull filtered labs
+    result      = new_dm_pull_block(table = "adlb_data")
   ),
   links = c(
-    new_link("adlb_data", "crossfilter", "data")
+    # Combine into dm
+    new_link("adsl_data", "dm_obj", "adsl_data"),
+    new_link("adlb_data", "dm_obj", "adlb_data"),
+
+    # Crossfilter on dm
+    new_link("dm_obj", "crossfilter", "data"),
+
+    # Pull filtered labs
+    new_link("crossfilter", "result", "data")
   )
 )
