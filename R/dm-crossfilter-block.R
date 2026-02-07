@@ -307,28 +307,42 @@ new_dm_crossfilter_block <- function(
           # --- Build filter table for a dimension in a specific table ---
           build_filter_table <- function(tbl_name, dim) {
             df <- crossfilter_data_for_dim(tbl_name, dim)
-            shiny::req(nrow(df) > 0)
 
-            # Always aggregate by count for dm crossfilter
-            agg <- dplyr::summarise(
-              df,
-              .count = dplyr::n(),
-              .by = dplyr::all_of(dim)
-            )
+            if (nrow(df) == 0) {
+              # Show empty table with dim column and zero counts
+              info <- dm_info()
+              full_df <- info$tables[[tbl_name]]
+              all_vals <- unique(as.character(full_df[[dim]]))
+              agg <- data.frame(
+                x = all_vals,
+                .count = rep(0L, length(all_vals)),
+                .selected = rep(FALSE, length(all_vals)),
+                stringsAsFactors = FALSE
+              )
+              names(agg)[1] <- dim
+            } else {
+              # Always aggregate by count for dm crossfilter
+              agg <- dplyr::summarise(
+                df,
+                .count = dplyr::n(),
+                .by = dplyr::all_of(dim)
+              )
+              agg <- dplyr::mutate(agg, !!dim := as.character(.data[[dim]]))
+              agg <- dplyr::arrange(agg, dplyr::desc(.data[[".count"]]))
+
+              current_filter <- r_filters()[[tbl_name]][[dim]]
+              has_filter <- !is.null(current_filter) && length(current_filter) > 0
+              agg$.selected <- if (has_filter) {
+                agg[[dim]] %in% current_filter
+              } else {
+                TRUE
+              }
+            }
+
             value_col <- ".count"
 
-            agg <- dplyr::mutate(agg, !!dim := as.character(.data[[dim]]))
-            agg <- dplyr::arrange(agg, dplyr::desc(.data[[value_col]]))
-
-            # Get current filter for highlighting
             current_filter <- r_filters()[[tbl_name]][[dim]]
             has_filter <- !is.null(current_filter) && length(current_filter) > 0
-
-            agg$.selected <- if (has_filter) {
-              agg[[dim]] %in% current_filter
-            } else {
-              TRUE
-            }
 
             max_abs_val <- max(abs(agg[[value_col]]), na.rm = TRUE)
             if (is.na(max_abs_val) || max_abs_val == 0) max_abs_val <- 1
@@ -418,7 +432,6 @@ new_dm_crossfilter_block <- function(
             full_max <- max(full_vals)
 
             cf_df <- crossfilter_data_for_dim(tbl_name, dim)
-            shiny::req(nrow(cf_df) > 0)
             cf_vals <- cf_df[[dim]]
             cf_vals <- cf_vals[!is.na(cf_vals)]
 
