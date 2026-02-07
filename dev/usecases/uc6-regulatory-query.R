@@ -1,17 +1,15 @@
-# Use Case 6: Regulatory Query Response
+# Use Case 6: Regulatory Query Response (dm crossfilter, 3 tables)
 # "For patients with elevated creatinine, what concomitant medications
 #  were they on?"
 #
-# Approach: enrich ADLB with ADSL demographics via left_join, crossfilter
-# to select CREAT and use the AVAL range slider to set a threshold,
-# then semi_join to get matching ADCM.
+# Approach: create a dm object from ADSL + ADLB + ADCM, then use dm crossfilter
+# for cross-table filtering across all three tables. Filter PARAMCD=CREAT in
+# the ADLB panel, use the AVAL range slider to set min=1.5, and the ADCM panel
+# instantly shows only medications for matching subjects.
 #
-# The range slider on AVAL lets you interactively set "elevated" > 1.5.
-# The crossfilter handles the PARAMCD selection. The semi_join propagates
-# the subject filter to ADCM.
+# A downstream dm_pull_block extracts the filtered ADCM table.
 
 library(blockr)
-library(blockr.dplyr)
 library(blockr.dag)
 
 pkgload::load_all("../blockr.dm")
@@ -63,10 +61,12 @@ adcm <- data.frame(
 
 # --- Workflow ---
 #
-# 1. Enrich ADLB with ADSL demographics via left_join
-# 2. Crossfilter on enriched labs -- click CREAT under PARAMCD,
-#    then use the AVAL range slider to set min=1.5 for "elevated"
-# 3. Semi_join ADCM with filtered labs to get medications for matching subjects
+# 1. Load ADSL, ADLB, ADCM as static blocks
+# 2. Combine into a dm object (auto-infers USUBJID PK/FK)
+# 3. dm crossfilter shows per-table panels for all 3 tables
+#    Click CREAT under PARAMCD in ADLB panel, use AVAL slider min=1.5
+#    -> ADCM panel updates to show only meds for subjects with elevated creatinine
+# 4. Pull the filtered ADCM table for display
 #
 # Expected subjects with elevated creatinine (AVAL >= 1.5): SUBJ-1, -3, -5, -8
 # Expected ADCM records:
@@ -77,30 +77,18 @@ adcm <- data.frame(
 
 run_app(
   blocks = c(
-    adsl_data     = new_static_block(data = adsl),
-    adlb_data     = new_static_block(data = adlb),
-    adcm_data     = new_static_block(data = adcm),
-
-    # Enrich labs with demographics
-    lab_enriched  = new_join_block(type = "left_join"),
-
-    # Interactive filter: click CREAT, use AVAL slider to set >= 1.5
-    # AVAL is auto-detected as a range dimension (>10 unique values)
-    lab_filter    = new_crossfilter_block(),
-
-    # Propagate to medications: keep ADCM rows matching filtered lab subjects
-    filtered_meds = new_join_block(type = "semi_join", by = "USUBJID")
+    adsl_data   = new_static_block(data = adsl),
+    adlb_data   = new_static_block(data = adlb),
+    adcm_data   = new_static_block(data = adcm),
+    dm_obj      = new_dm_block(),
+    crossfilter = new_dm_crossfilter_block(),
+    result      = new_dm_pull_block(table = "adcm_data")
   ),
   links = c(
-    # Enrich labs with ADSL
-    new_link("adlb_data", "lab_enriched", "x"),
-    new_link("adsl_data", "lab_enriched", "y"),
-
-    # Crossfilter on enriched labs
-    new_link("lab_enriched", "lab_filter", "data"),
-
-    # Semi_join: ADCM (x, kept) where USUBJID matches filtered labs (y)
-    new_link("adcm_data", "filtered_meds", "x"),
-    new_link("lab_filter", "filtered_meds", "y")
+    new_link("adsl_data", "dm_obj", "adsl_data"),
+    new_link("adlb_data", "dm_obj", "adlb_data"),
+    new_link("adcm_data", "dm_obj", "adcm_data"),
+    new_link("dm_obj", "crossfilter", "data"),
+    new_link("crossfilter", "result", "data")
   )
 )

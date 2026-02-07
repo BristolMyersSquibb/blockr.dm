@@ -17,7 +17,8 @@ register_dm_blocks <- function() {
       "new_dm_flatten_block",
       "new_dm_nested_view_block",
       "new_temporal_join_block",
-      "new_crossfilter_block"
+      "new_crossfilter_block",
+      "new_dm_crossfilter_block"
     ),
     name = c(
       "Read dm",
@@ -30,7 +31,8 @@ register_dm_blocks <- function() {
       "Flatten dm",
       "Nested view",
       "Temporal join",
-      "Crossfilter"
+      "Crossfilter",
+      "dm Crossfilter"
     ),
     description = c(
       "Read multiple tables from Excel, ZIP, or directory into a dm object",
@@ -43,9 +45,11 @@ register_dm_blocks <- function() {
       "Flatten a dm into a single data frame by joining related tables",
       "Display dm as nested table with expandable child rows",
       "Join two tables and filter by time window between date columns",
-      "Interactive crossfilter with categorical tables and numeric range sliders"
+      "Interactive crossfilter with categorical tables and numeric range sliders",
+      "Cross-table crossfilter on a dm object with per-table filter panels"
     ),
     category = c(
+      "structured",
       "structured",
       "structured",
       "structured",
@@ -69,7 +73,8 @@ register_dm_blocks <- function() {
       "layers",
       "list-nested",
       "clock-history",
-      "sliders"
+      "sliders",
+      "sliders2"
     ),
     package = utils::packageName(),
     overwrite = TRUE
