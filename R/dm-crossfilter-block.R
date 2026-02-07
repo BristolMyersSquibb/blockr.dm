@@ -409,7 +409,7 @@ new_dm_crossfilter_block <- function(
 
               filtered <- filtered + nrow(result_df)
             }
-            list(total = total, filtered = filtered)
+            list(total = total, filtered = filtered, n_tables = length(info$table_names))
           })
 
           # --- Handle row clicks ---
@@ -1193,12 +1193,14 @@ new_dm_crossfilter_block <- function(
               status_text <- paste0(
                 filter_text,
                 " (", format(counts$filtered, big.mark = ","),
-                " / ", format(counts$total, big.mark = ","), " rows)"
+                " / ", format(counts$total, big.mark = ","),
+                " rows in ", counts$n_tables, " tables)"
               )
             } else {
               status_text <- paste0(
                 "No filters active (",
-                format(counts$total, big.mark = ","), " rows)"
+                format(counts$total, big.mark = ","),
+                " rows in ", counts$n_tables, " tables)"
               )
             }
 

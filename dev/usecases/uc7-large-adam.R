@@ -1,11 +1,13 @@
-# Use Case 7: Large realistic ADaM data (efficiency testing)
+# Use Case 7: Realistic ADaM data (CDISC Pilot 01 from safetyData)
 #
-# Reads bundled parquet files from inst/extdata/adam:
-# ADSL (400 subjects, 55 cols), ADLB (8400 rows, 49 cols),
-# ADCM (2000 rows, 30 cols), ADAE (2100 rows, 39 cols)
+# Bundled parquet files from inst/extdata/adam (normalized):
+# ADSL  (254 subjects, 48 cols) - Subject Level
+# ADLBC (74,264 rows, 34 cols) - Laboratory Chemistry
+# ADVS  (32,139 rows, 24 cols) - Vital Signs
+# ADAE  (1,191 rows, 45 cols)  - Adverse Events
 #
-# Data generated with random.cdisc.data, normalized, labels preserved via parquet.
-# dm_read_block reads the directory, dm_block infers PK/FK keys from USUBJID.
+# Source: safetyData R package (CDISC Pilot 01 study)
+# Labels preserved via parquet.
 
 library(blockr)
 library(blockr.dag)
