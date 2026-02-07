@@ -464,7 +464,8 @@ new_dm_crossfilter_block <- function(
                 col_vals <- col_vals[!is.na(col_vals)]
                 data_min <- min(col_vals)
                 data_max <- max(col_vals)
-                if (val[1] <= data_min && val[2] >= data_max) {
+                eps <- 0.001 * (data_max - data_min)
+                if (val[1] <= data_min + eps && val[2] >= data_max - eps) {
                   tbl_filters[[dim]] <- NULL
                 } else {
                   tbl_filters[[dim]] <- val
@@ -503,7 +504,9 @@ new_dm_crossfilter_block <- function(
                 col_vals <- col_vals[!is.na(col_vals)]
                 data_min <- min(col_vals)
                 data_max <- max(col_vals)
-                if (val[1] <= data_min && val[2] >= data_max) {
+                eps <- as.numeric(data_max - data_min) * 0.001
+                if (as.numeric(val[1] - data_min) <= eps &&
+                    as.numeric(data_max - val[2]) <= eps) {
                   tbl_filters[[dim]] <- NULL
                 } else {
                   tbl_filters[[dim]] <- as.numeric(val)
@@ -647,6 +650,25 @@ new_dm_crossfilter_block <- function(
             )
           }
 
+          # --- Helper: compute SVG area path from density ---
+          # Returns an SVG path d-attribute string for a filled area chart
+          # vals: numeric vector, data_min/data_max: x-axis range
+          # svg_w/svg_h: viewBox dimensions, n: density grid points
+          density_to_svg_path <- function(vals, data_min, data_max,
+                                          svg_w = 300, svg_h = 60, n = 64) {
+            if (length(vals) < 2) return(NULL)
+            d <- stats::density(vals, n = n, from = data_min, to = data_max)
+            y_max <- max(d$y)
+            if (y_max == 0) return(NULL)
+            # Scale x to [0, svg_w], y to [svg_h, 0] (SVG y is inverted)
+            xs <- (d$x - data_min) / (data_max - data_min) * svg_w
+            ys <- svg_h - (d$y / y_max) * (svg_h * 0.9)  # 90% height max
+            # Build path: M start, L points, L bottom-right, L bottom-left, Z
+            pts <- paste(sprintf("L%.1f,%.1f", xs, ys), collapse = " ")
+            sprintf("M%.1f,%.1f %s L%.1f,%.1f L%.1f,%.1f Z",
+                    xs[1], ys[1], pts, xs[n], svg_h, xs[1], svg_h)
+          }
+
           # --- Build range slider for a numeric dimension in a specific table ---
           build_range_slider <- function(tbl_name, dim) {
             info <- dm_info()
@@ -656,83 +678,236 @@ new_dm_crossfilter_block <- function(
             full_vals <- full_vals[!is.na(full_vals)]
             shiny::req(length(full_vals) > 0)
 
-            full_min <- min(full_vals)
-            full_max <- max(full_vals)
-
             cf_df <- crossfilter_data_for_dim(tbl_name, dim)
             cf_vals <- cf_df[[dim]]
             cf_vals <- cf_vals[!is.na(cf_vals)]
 
-            cf_min <- if (length(cf_vals) > 0) min(cf_vals) else full_min
-            cf_max <- if (length(cf_vals) > 0) max(cf_vals) else full_max
-
-            range_span <- full_max - full_min
-            if (range_span > 0) {
-              left_pct <- (cf_min - full_min) / range_span * 100
-              width_pct <- (cf_max - cf_min) / range_span * 100
-            } else {
-              left_pct <- 0
-              width_pct <- 100
-            }
-
-            current_range <- r_range_filters()[[tbl_name]][[dim]]
-            slider_min <- if (!is.null(current_range)) current_range[1] else full_min
-            slider_max <- if (!is.null(current_range)) current_range[2] else full_max
-
-            is_integer <- all(full_vals == floor(full_vals))
-            step <- if (is_integer) 1 else NULL
-
-            if (!is.null(current_range)) {
-              n_match <- sum(cf_vals >= current_range[1] & cf_vals <= current_range[2])
+            if (!is.null(r_range_filters()[[tbl_name]][[dim]])) {
+              n_match <- sum(cf_vals >= r_range_filters()[[tbl_name]][[dim]][1] &
+                             cf_vals <= r_range_filters()[[tbl_name]][[dim]][2])
             } else {
               n_match <- length(cf_vals)
             }
 
-            slider_id <- ns(paste0("range_", tbl_name, "_", dim))
+            range_text <- paste0(n_match, " of ", length(cf_vals), " rows")
+            slider_uid <- paste0("drs_", tbl_name, "_", dim)
 
-            range_text <- if (cf_min == full_min && cf_max == full_max) {
-              paste0(n_match, " of ", length(cf_vals), " rows")
-            } else {
-              paste0(n_match, " of ", length(cf_vals), " rows | data: ", cf_min, "\u2013", cf_max)
+            # For < 2 unique values, show static text
+            if (length(unique(full_vals)) < 2) {
+              return(shiny::div(
+                style = "flex: 1; min-width: 200px; max-width: 350px;",
+                shiny::tags$div(
+                  style = "font-size: 11px; color: #888; margin-bottom: 2px;",
+                  range_text
+                ),
+                shiny::tags$div(
+                  style = "font-size: 12px; color: #666; padding: 8px 0;",
+                  paste0("Single value: ", unique(full_vals))
+                )
+              ))
+            }
+
+            full_min <- min(full_vals)
+            full_max <- max(full_vals)
+            is_integer <- all(full_vals == floor(full_vals))
+
+            current_range <- r_range_filters()[[tbl_name]][[dim]]
+            cur_lo <- if (!is.null(current_range)) current_range[1] else full_min
+            cur_hi <- if (!is.null(current_range)) current_range[2] else full_max
+
+            step_val <- if (is_integer) 1 else (full_max - full_min) / 200
+            min_label <- if (is_integer) format(as.integer(full_min), big.mark = ",") else format_number(full_min)
+            max_label <- if (is_integer) format(as.integer(full_max), big.mark = ",") else format_number(full_max)
+
+            # SVG density overlay
+            svg_w <- 300
+            svg_h <- 60
+            path_full <- density_to_svg_path(full_vals, full_min, full_max,
+                                              svg_w, svg_h)
+            path_cf <- density_to_svg_path(cf_vals, full_min, full_max,
+                                            svg_w, svg_h)
+
+            svg_tag <- if (!is.null(path_full)) {
+              paths <- list(
+                shiny::tags$path(
+                  d = path_full,
+                  fill = "rgba(200, 200, 200, 0.5)",
+                  stroke = "rgba(180, 180, 180, 0.8)",
+                  `stroke-width` = "1"
+                )
+              )
+              if (!is.null(path_cf)) {
+                paths <- c(paths, list(
+                  shiny::tags$path(
+                    d = path_cf,
+                    fill = "rgba(84, 112, 198, 0.4)",
+                    stroke = "#5470c6",
+                    `stroke-width` = "1"
+                  )
+                ))
+              }
+              shiny::tags$svg(
+                viewBox = sprintf("0 0 %s %s", svg_w, svg_h),
+                preserveAspectRatio = "none",
+                style = "width: 100%; height: 50px; display: block;",
+                shiny::tagList(paths)
+              )
             }
 
             shiny::div(
               style = "flex: 1; min-width: 200px; max-width: 350px;",
               shiny::tags$div(
-                style = "font-weight: 600; font-size: 14px; margin-bottom: 4px; color: #333;",
-                dim
-              ),
-              shiny::tags$div(
                 style = "font-size: 11px; color: #888; margin-bottom: 2px;",
                 range_text
               ),
+              svg_tag,
+              # Dual-handle range slider container
               shiny::tags$div(
-                style = "height: 6px; background: #e8e8e8; border-radius: 3px; margin-bottom: 4px; position: relative; overflow: hidden;",
+                id = slider_uid,
+                class = "dm-cf-dual-range",
+                style = "position: relative; height: 28px; margin: 0 0 4px 0;",
+                # Track background
                 shiny::tags$div(
-                  style = sprintf(
-                    "position: absolute; left: %.1f%%; width: %.1f%%; height: 100%%; background: #5470c6; border-radius: 3px; min-width: 3px;",
-                    left_pct, max(width_pct, 0.5)
-                  )
-                )
+                  class = "dm-cf-dual-range-track",
+                  style = "position: absolute; top: 12px; left: 0; right: 0; height: 4px; background: #e5e7eb; border-radius: 2px;"
+                ),
+                # Fill highlight
+                shiny::tags$div(
+                  class = "dm-cf-dual-range-fill",
+                  style = "position: absolute; top: 12px; height: 4px; background: #5470c6; border-radius: 2px;"
+                ),
+                # Lo handle
+                shiny::tags$input(
+                  type = "range",
+                  class = "dm-cf-dual-range-lo",
+                  min = full_min, max = full_max, value = cur_lo, step = step_val,
+                  style = "position: absolute; width: 100%; top: 0; height: 28px; margin: 0; padding: 0; background: transparent; pointer-events: none; -webkit-appearance: none; appearance: none; z-index: 3;"
+                ),
+                # Hi handle
+                shiny::tags$input(
+                  type = "range",
+                  class = "dm-cf-dual-range-hi",
+                  min = full_min, max = full_max, value = cur_hi, step = step_val,
+                  style = "position: absolute; width: 100%; top: 0; height: 28px; margin: 0; padding: 0; background: transparent; pointer-events: none; -webkit-appearance: none; appearance: none; z-index: 4;"
+                ),
+                # Tooltip bubbles
+                shiny::tags$span(class = "dm-cf-bubble dm-cf-bubble-lo"),
+                shiny::tags$span(class = "dm-cf-bubble dm-cf-bubble-hi")
               ),
-              shiny::sliderInput(
-                inputId = slider_id,
-                label = NULL,
-                min = full_min,
-                max = full_max,
-                value = c(slider_min, slider_max),
-                step = step,
-                width = "100%"
+              shiny::tags$div(
+                style = "display: flex; justify-content: space-between; font-size: 11px; color: #999; margin-top: -2px;",
+                shiny::span(min_label),
+                shiny::span(max_label)
               ),
+              # CSS + JS for this slider
+              shiny::tags$style(shiny::HTML(sprintf(
+                "
+                #%s input[type=range]::-webkit-slider-thumb {
+                  -webkit-appearance: none; appearance: none;
+                  width: 16px; height: 16px; border-radius: 50%%;
+                  background: #5470c6; border: 2px solid #fff;
+                  box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+                  cursor: pointer; pointer-events: auto;
+                }
+                #%s input[type=range]::-moz-range-thumb {
+                  width: 16px; height: 16px; border-radius: 50%%;
+                  background: #5470c6; border: 2px solid #fff;
+                  box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+                  cursor: pointer; pointer-events: auto;
+                }
+                #%s .dm-cf-bubble {
+                  position: absolute;
+                  top: -26px;
+                  transform: translateX(-50%%);
+                  background: #374151;
+                  color: #fff;
+                  font-size: 11px;
+                  font-weight: 500;
+                  padding: 2px 6px;
+                  border-radius: 4px;
+                  white-space: nowrap;
+                  pointer-events: none;
+                  opacity: 0;
+                  transition: opacity 0.15s;
+                  z-index: 10;
+                }
+                #%s .dm-cf-bubble::after {
+                  content: '';
+                  position: absolute;
+                  top: 100%%;
+                  left: 50%%;
+                  transform: translateX(-50%%);
+                  border: 4px solid transparent;
+                  border-top-color: #374151;
+                }
+                #%s:hover .dm-cf-bubble,
+                #%s.dm-cf-active .dm-cf-bubble {
+                  opacity: 1;
+                }
+                ",
+                slider_uid, slider_uid,
+                slider_uid, slider_uid,
+                slider_uid, slider_uid
+              ))),
               shiny::tags$script(shiny::HTML(sprintf(
                 "
-                $(document).on('shiny:inputchanged', function(event) {
-                  if (event.name === '%s') {
-                    Shiny.setInputValue('%s', {table: '%s', dim: '%s', value: event.value}, {priority: 'event'});
+                (function() {
+                  var el = document.getElementById('%s');
+                  if (!el) return;
+                  var lo = el.querySelector('.dm-cf-dual-range-lo');
+                  var hi = el.querySelector('.dm-cf-dual-range-hi');
+                  var fill = el.querySelector('.dm-cf-dual-range-fill');
+                  var bubLo = el.querySelector('.dm-cf-bubble-lo');
+                  var bubHi = el.querySelector('.dm-cf-bubble-hi');
+                  var dataMin = %s, dataMax = %s, isInt = %s;
+                  var inputId = '%s', tbl = '%s', dim = '%s';
+                  var debounce = null;
+
+                  function fmtNum(v) {
+                    if (isInt) return Math.round(v).toLocaleString();
+                    var abs = Math.abs(v), sign = v < 0 ? '-' : '';
+                    if (abs >= 1e6) return sign + (abs/1e6).toFixed(1) + 'M';
+                    if (abs >= 1e3) return sign + Math.round(abs/1e3) + 'K';
+                    return sign + abs.toFixed(1);
                   }
-                });
+
+                  function updateFill() {
+                    var loVal = parseFloat(lo.value), hiVal = parseFloat(hi.value);
+                    var range = dataMax - dataMin;
+                    if (range <= 0) return;
+                    var loPct = (loVal - dataMin) / range * 100;
+                    var hiPct = (hiVal - dataMin) / range * 100;
+                    fill.style.left = loPct + '%%';
+                    fill.style.width = (hiPct - loPct) + '%%';
+                    bubLo.textContent = fmtNum(loVal);
+                    bubHi.textContent = fmtNum(hiVal);
+                    bubLo.style.left = loPct + '%%';
+                    bubHi.style.left = hiPct + '%%';
+                  }
+
+                  function onInput() {
+                    var loVal = parseFloat(lo.value), hiVal = parseFloat(hi.value);
+                    if (loVal > hiVal) { lo.value = hiVal; loVal = hiVal; }
+                    if (hiVal < loVal) { hi.value = loVal; hiVal = loVal; }
+                    if (isInt) { loVal = Math.round(loVal); hiVal = Math.round(hiVal); }
+                    updateFill();
+                    clearTimeout(debounce);
+                    debounce = setTimeout(function() {
+                      Shiny.setInputValue(inputId, {table: tbl, dim: dim, value: [loVal, hiVal]}, {priority: 'event'});
+                    }, 1000);
+                  }
+
+                  lo.addEventListener('input', function() { el.classList.add('dm-cf-active'); onInput(); });
+                  hi.addEventListener('input', function() { el.classList.add('dm-cf-active'); onInput(); });
+                  lo.addEventListener('change', function() { el.classList.remove('dm-cf-active'); });
+                  hi.addEventListener('change', function() { el.classList.remove('dm-cf-active'); });
+                  updateFill();
+                })();
                 ",
-                slider_id, ns("range_change"), tbl_name, dim
+                slider_uid,
+                full_min, full_max,
+                tolower(as.character(is_integer)),
+                ns("range_change"), tbl_name, dim
               )))
             )
           }
@@ -747,29 +922,12 @@ new_dm_crossfilter_block <- function(
             shiny::req(length(full_vals) > 0)
 
             full_vals <- as.Date(full_vals)
-            full_min <- min(full_vals)
-            full_max <- max(full_vals)
 
             cf_df <- crossfilter_data_for_dim(tbl_name, dim)
             cf_vals <- as.Date(cf_df[[dim]])
             cf_vals <- cf_vals[!is.na(cf_vals)]
 
-            cf_min <- if (length(cf_vals) > 0) min(cf_vals) else full_min
-            cf_max <- if (length(cf_vals) > 0) max(cf_vals) else full_max
-
-            range_span <- as.numeric(full_max - full_min)
-            if (range_span > 0) {
-              left_pct <- as.numeric(cf_min - full_min) / range_span * 100
-              width_pct <- as.numeric(cf_max - cf_min) / range_span * 100
-            } else {
-              left_pct <- 0
-              width_pct <- 100
-            }
-
             current_range <- r_range_filters()[[tbl_name]][[dim]]
-            slider_min <- if (!is.null(current_range)) as.Date(current_range[1], origin = "1970-01-01") else full_min
-            slider_max <- if (!is.null(current_range)) as.Date(current_range[2], origin = "1970-01-01") else full_max
-
             if (!is.null(current_range)) {
               cr_min <- as.Date(current_range[1], origin = "1970-01-01")
               cr_max <- as.Date(current_range[2], origin = "1970-01-01")
@@ -778,46 +936,216 @@ new_dm_crossfilter_block <- function(
               n_match <- length(cf_vals)
             }
 
-            slider_id <- ns(paste0("date_", tbl_name, "_", dim))
-
             range_text <- paste0(n_match, " of ", length(cf_vals), " rows")
+            slider_uid <- paste0("dds_", tbl_name, "_", dim)
+
+            # For < 2 unique values, show static text
+            if (length(unique(full_vals)) < 2) {
+              return(shiny::div(
+                style = "flex: 1; min-width: 200px; max-width: 350px;",
+                shiny::tags$div(
+                  style = "font-size: 11px; color: #888; margin-bottom: 2px;",
+                  range_text
+                ),
+                shiny::tags$div(
+                  style = "font-size: 12px; color: #666; padding: 8px 0;",
+                  paste0("Single value: ", unique(full_vals))
+                )
+              ))
+            }
+
+            # Convert dates to numeric (days since epoch) for range inputs
+            full_min_num <- as.numeric(min(full_vals))
+            full_max_num <- as.numeric(max(full_vals))
+
+            cur_lo_num <- if (!is.null(current_range)) current_range[1] else full_min_num
+            cur_hi_num <- if (!is.null(current_range)) current_range[2] else full_max_num
+
+            min_label <- as.character(min(full_vals))
+            max_label <- as.character(max(full_vals))
+
+            # SVG density overlay (dates as numeric for density computation)
+            full_vals_num <- as.numeric(full_vals)
+            cf_vals_num <- as.numeric(cf_vals)
+            svg_w <- 300
+            svg_h <- 60
+            path_full <- density_to_svg_path(full_vals_num, full_min_num, full_max_num,
+                                              svg_w, svg_h)
+            path_cf <- density_to_svg_path(cf_vals_num, full_min_num, full_max_num,
+                                            svg_w, svg_h)
+
+            svg_tag <- if (!is.null(path_full)) {
+              paths <- list(
+                shiny::tags$path(
+                  d = path_full,
+                  fill = "rgba(200, 200, 200, 0.5)",
+                  stroke = "rgba(180, 180, 180, 0.8)",
+                  `stroke-width` = "1"
+                )
+              )
+              if (!is.null(path_cf)) {
+                paths <- c(paths, list(
+                  shiny::tags$path(
+                    d = path_cf,
+                    fill = "rgba(84, 112, 198, 0.4)",
+                    stroke = "#5470c6",
+                    `stroke-width` = "1"
+                  )
+                ))
+              }
+              shiny::tags$svg(
+                viewBox = sprintf("0 0 %s %s", svg_w, svg_h),
+                preserveAspectRatio = "none",
+                style = "width: 100%; height: 50px; display: block;",
+                shiny::tagList(paths)
+              )
+            }
 
             shiny::div(
               style = "flex: 1; min-width: 200px; max-width: 350px;",
               shiny::tags$div(
-                style = "font-weight: 600; font-size: 14px; margin-bottom: 4px; color: #333;",
-                dim
-              ),
-              shiny::tags$div(
                 style = "font-size: 11px; color: #888; margin-bottom: 2px;",
                 range_text
               ),
+              svg_tag,
+              # Dual-handle date slider container
               shiny::tags$div(
-                style = "height: 6px; background: #e8e8e8; border-radius: 3px; margin-bottom: 4px; position: relative; overflow: hidden;",
+                id = slider_uid,
+                class = "dm-cf-dual-range",
+                style = "position: relative; height: 28px; margin: 0 0 4px 0;",
                 shiny::tags$div(
-                  style = sprintf(
-                    "position: absolute; left: %.1f%%; width: %.1f%%; height: 100%%; background: #5470c6; border-radius: 3px; min-width: 3px;",
-                    left_pct, max(width_pct, 0.5)
-                  )
-                )
+                  class = "dm-cf-dual-range-track",
+                  style = "position: absolute; top: 12px; left: 0; right: 0; height: 4px; background: #e5e7eb; border-radius: 2px;"
+                ),
+                shiny::tags$div(
+                  class = "dm-cf-dual-range-fill",
+                  style = "position: absolute; top: 12px; height: 4px; background: #5470c6; border-radius: 2px;"
+                ),
+                shiny::tags$input(
+                  type = "range",
+                  class = "dm-cf-dual-range-lo",
+                  min = full_min_num, max = full_max_num, value = cur_lo_num, step = 1,
+                  style = "position: absolute; width: 100%; top: 0; height: 28px; margin: 0; padding: 0; background: transparent; pointer-events: none; -webkit-appearance: none; appearance: none; z-index: 3;"
+                ),
+                shiny::tags$input(
+                  type = "range",
+                  class = "dm-cf-dual-range-hi",
+                  min = full_min_num, max = full_max_num, value = cur_hi_num, step = 1,
+                  style = "position: absolute; width: 100%; top: 0; height: 28px; margin: 0; padding: 0; background: transparent; pointer-events: none; -webkit-appearance: none; appearance: none; z-index: 4;"
+                ),
+                # Tooltip bubbles
+                shiny::tags$span(class = "dm-cf-bubble dm-cf-bubble-lo"),
+                shiny::tags$span(class = "dm-cf-bubble dm-cf-bubble-hi")
               ),
-              shiny::sliderInput(
-                inputId = slider_id,
-                label = NULL,
-                min = full_min,
-                max = full_max,
-                value = c(slider_min, slider_max),
-                width = "100%"
+              shiny::tags$div(
+                style = "display: flex; justify-content: space-between; font-size: 11px; color: #999; margin-top: -2px;",
+                shiny::span(min_label),
+                shiny::span(max_label)
               ),
+              # CSS + JS for this slider
+              shiny::tags$style(shiny::HTML(sprintf(
+                "
+                #%s input[type=range]::-webkit-slider-thumb {
+                  -webkit-appearance: none; appearance: none;
+                  width: 16px; height: 16px; border-radius: 50%%;
+                  background: #5470c6; border: 2px solid #fff;
+                  box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+                  cursor: pointer; pointer-events: auto;
+                }
+                #%s input[type=range]::-moz-range-thumb {
+                  width: 16px; height: 16px; border-radius: 50%%;
+                  background: #5470c6; border: 2px solid #fff;
+                  box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+                  cursor: pointer; pointer-events: auto;
+                }
+                #%s .dm-cf-bubble {
+                  position: absolute;
+                  top: -26px;
+                  transform: translateX(-50%%);
+                  background: #374151;
+                  color: #fff;
+                  font-size: 11px;
+                  font-weight: 500;
+                  padding: 2px 6px;
+                  border-radius: 4px;
+                  white-space: nowrap;
+                  pointer-events: none;
+                  opacity: 0;
+                  transition: opacity 0.15s;
+                  z-index: 10;
+                }
+                #%s .dm-cf-bubble::after {
+                  content: '';
+                  position: absolute;
+                  top: 100%%;
+                  left: 50%%;
+                  transform: translateX(-50%%);
+                  border: 4px solid transparent;
+                  border-top-color: #374151;
+                }
+                #%s:hover .dm-cf-bubble,
+                #%s.dm-cf-active .dm-cf-bubble {
+                  opacity: 1;
+                }
+                ",
+                slider_uid, slider_uid,
+                slider_uid, slider_uid,
+                slider_uid, slider_uid
+              ))),
               shiny::tags$script(shiny::HTML(sprintf(
                 "
-                $(document).on('shiny:inputchanged', function(event) {
-                  if (event.name === '%s') {
-                    Shiny.setInputValue('%s', {table: '%s', dim: '%s', value: event.value}, {priority: 'event'});
+                (function() {
+                  var el = document.getElementById('%s');
+                  if (!el) return;
+                  var lo = el.querySelector('.dm-cf-dual-range-lo');
+                  var hi = el.querySelector('.dm-cf-dual-range-hi');
+                  var fill = el.querySelector('.dm-cf-dual-range-fill');
+                  var bubLo = el.querySelector('.dm-cf-bubble-lo');
+                  var bubHi = el.querySelector('.dm-cf-bubble-hi');
+                  var dataMin = %s, dataMax = %s;
+                  var inputId = '%s', tbl = '%s', dim = '%s';
+                  var debounce = null;
+
+                  function fmtDate(days) {
+                    var d = new Date(days * 86400000);
+                    return d.toISOString().slice(0, 10);
                   }
-                });
+
+                  function updateFill() {
+                    var loVal = parseFloat(lo.value), hiVal = parseFloat(hi.value);
+                    var range = dataMax - dataMin;
+                    if (range <= 0) return;
+                    var loPct = (loVal - dataMin) / range * 100;
+                    var hiPct = (hiVal - dataMin) / range * 100;
+                    fill.style.left = loPct + '%%';
+                    fill.style.width = (hiPct - loPct) + '%%';
+                    bubLo.textContent = fmtDate(loVal);
+                    bubHi.textContent = fmtDate(hiVal);
+                    bubLo.style.left = loPct + '%%';
+                    bubHi.style.left = hiPct + '%%';
+                  }
+
+                  function onInput() {
+                    var loVal = parseFloat(lo.value), hiVal = parseFloat(hi.value);
+                    if (loVal > hiVal) { lo.value = hiVal; loVal = hiVal; }
+                    if (hiVal < loVal) { hi.value = loVal; hiVal = loVal; }
+                    updateFill();
+                    clearTimeout(debounce);
+                    debounce = setTimeout(function() {
+                      Shiny.setInputValue(inputId, {table: tbl, dim: dim, value: [loVal, hiVal]}, {priority: 'event'});
+                    }, 1000);
+                  }
+
+                  lo.addEventListener('input', function() { el.classList.add('dm-cf-active'); onInput(); });
+                  hi.addEventListener('input', function() { el.classList.add('dm-cf-active'); onInput(); });
+                  lo.addEventListener('change', function() { el.classList.remove('dm-cf-active'); });
+                  hi.addEventListener('change', function() { el.classList.remove('dm-cf-active'); });
+                  updateFill();
+                })();
                 ",
-                slider_id, ns("date_change"), tbl_name, dim
+                slider_uid,
+                full_min_num, full_max_num,
+                ns("date_change"), tbl_name, dim
               )))
             )
           }
