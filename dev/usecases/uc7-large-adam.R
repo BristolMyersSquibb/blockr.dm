@@ -20,8 +20,8 @@ run_app(
   blocks = c(
     dm_raw      = new_dm_read_block(path = adam_dir),
     dm_obj      = new_dm_block(infer_keys = TRUE),
-    crossfilter = new_dm_crossfilter_block(),
-    result      = new_dm_pull_block(table = "adsl")
+    result      = new_dm_pull_block(table = "adsl"),
+    crossfilter = new_dm_crossfilter_block()
   ),
   links = c(
     new_link("dm_raw", "dm_obj", "data"),

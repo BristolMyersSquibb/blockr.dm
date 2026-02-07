@@ -214,16 +214,34 @@ new_dm_crossfilter_block <- function(
             )
           })
 
-          # --- DuckDB acceleration (when available) ---
-          use_duckdb <- requireNamespace("duckdb", quietly = TRUE) &&
+          # --- Backend detection + reactive selector ---
+          has_duckdb <- requireNamespace("duckdb", quietly = TRUE) &&
             requireNamespace("DBI", quietly = TRUE)
-          duck_con <- if (use_duckdb) {
+          has_duckplyr <- requireNamespace("duckplyr", quietly = TRUE)
+
+          available_backends <- c(
+            "dplyr",
+            if (has_duckdb) "duckdb",
+            if (has_duckplyr) "duckplyr"
+          )
+          default_backend <- if (has_duckdb) "duckdb" else if (has_duckplyr) "duckplyr" else "dplyr"
+          r_backend <- shiny::reactiveVal(default_backend)
+
+          shiny::observeEvent(input$backend_switch, {
+            val <- input$backend_switch
+            if (!is.null(val) && val %in% available_backends) {
+              r_backend(val)
+            }
+          }, ignoreInit = TRUE)
+
+          # --- DuckDB connection (when available) ---
+          duck_con <- if (has_duckdb) {
             DBI::dbConnect(duckdb::duckdb(), dbdir = ":memory:")
           } else {
             NULL
           }
 
-          if (use_duckdb) {
+          if (has_duckdb) {
             shiny::observe({
               info <- dm_info()
               for (nm in info$table_names) {
@@ -235,6 +253,32 @@ new_dm_crossfilter_block <- function(
               if (!is.null(duck_con)) {
                 try(DBI::dbDisconnect(duck_con, shutdown = TRUE), silent = TRUE)
               }
+            })
+          }
+
+          # --- Duckplyr tables (when available) ---
+          r_duck_tables <- shiny::reactiveVal(NULL)
+          r_col_classes <- shiny::reactiveVal(NULL)
+
+          if (has_duckplyr) {
+            shiny::observe({
+              info <- dm_info()
+              col_classes <- build_col_classes(info$tables)
+              duck_tables <- lapply(
+                stats::setNames(info$table_names, info$table_names),
+                function(nm) {
+                  df <- info$tables[[nm]]
+                  # Strip non-essential column attributes (duckplyr rejects them)
+                  for (cn in names(df)) {
+                    a <- attributes(df[[cn]])
+                    keep <- intersect(names(a), c("class", "levels", "names", "dim", "tzone"))
+                    attributes(df[[cn]]) <- a[keep]
+                  }
+                  duckplyr::as_duckdb_tibble(df)
+                }
+              )
+              r_duck_tables(duck_tables)
+              r_col_classes(col_classes)
             })
           }
 
@@ -331,12 +375,13 @@ new_dm_crossfilter_block <- function(
           })
 
           # --- Cross-table crossfilter data for a specific dimension ---
-          # Dispatches to DuckDB SQL backend when available, falls back to dplyr
+          # Dispatches to selected backend, falls back to dplyr on error
           crossfilter_data_for_dim <- function(tbl_name, exclude_dim) {
             info <- dm_info()
             cf <- r_filters()
             rf <- r_range_filters()
-            if (use_duckdb) {
+            backend <- r_backend()
+            if (backend == "duckdb") {
               result <- tryCatch(
                 duckdb_crossfilter_data(
                   duck_con, info$tables, info$table_names, find_key_column,
@@ -345,6 +390,19 @@ new_dm_crossfilter_block <- function(
                 error = function(e) NULL
               )
               if (!is.null(result)) return(result)
+            } else if (backend == "duckplyr") {
+              dt <- r_duck_tables()
+              cc <- r_col_classes()
+              if (!is.null(dt)) {
+                result <- tryCatch(
+                  duckplyr_crossfilter_data(
+                    dt, cc, find_key_column,
+                    tbl_name, exclude_dim, cf, rf
+                  ),
+                  error = function(e) NULL
+                )
+                if (!is.null(result)) return(result)
+              }
             }
             dplyr_crossfilter_data(
               info$tables, find_key_column, tbl_name, exclude_dim, cf, rf
@@ -352,12 +410,12 @@ new_dm_crossfilter_block <- function(
           }
 
           # --- Aggregated counts for a categorical dimension ---
-          # Uses SQL agg push-down when DuckDB is available
           crossfilter_agg_for_dim <- function(tbl_name, dim) {
             info <- dm_info()
             cf <- r_filters()
             rf <- r_range_filters()
-            if (use_duckdb) {
+            backend <- r_backend()
+            if (backend == "duckdb") {
               result <- tryCatch(
                 duckdb_crossfilter_agg(
                   duck_con, info$tables, info$table_names, find_key_column,
@@ -366,18 +424,36 @@ new_dm_crossfilter_block <- function(
                 error = function(e) NULL
               )
               if (!is.null(result)) return(result)
+            } else if (backend == "duckplyr") {
+              dt <- r_duck_tables()
+              cc <- r_col_classes()
+              if (!is.null(dt)) {
+                result <- tryCatch(
+                  duckplyr_crossfilter_agg(
+                    dt, cc, find_key_column,
+                    tbl_name, dim, cf, rf
+                  ),
+                  error = function(e) NULL
+                )
+                if (!is.null(result)) return(result)
+              }
             }
             dplyr_crossfilter_agg(
               info$tables, find_key_column, tbl_name, dim, cf, rf
             )
           }
 
-          # --- Fully filtered row counts ---
+          # --- Fully filtered row counts (with timing) ---
           filtered_row_count <- shiny::reactive({
             info <- dm_info()
             cf <- r_filters()
             rf <- r_range_filters()
-            if (use_duckdb) {
+            backend <- r_backend()
+
+            t0 <- proc.time()[["elapsed"]]
+
+            result <- NULL
+            if (backend == "duckdb") {
               result <- tryCatch(
                 duckdb_crossfilter_counts(
                   duck_con, info$tables, info$table_names, find_key_column,
@@ -385,11 +461,27 @@ new_dm_crossfilter_block <- function(
                 ),
                 error = function(e) NULL
               )
-              if (!is.null(result)) return(result)
+            } else if (backend == "duckplyr") {
+              dt <- r_duck_tables()
+              cc <- r_col_classes()
+              if (!is.null(dt)) {
+                result <- tryCatch(
+                  duckplyr_crossfilter_counts(
+                    dt, cc, find_key_column, info$table_names, cf, rf
+                  ),
+                  error = function(e) NULL
+                )
+              }
             }
-            dplyr_crossfilter_counts(
-              info$tables, find_key_column, info$table_names, cf, rf
-            )
+            if (is.null(result)) {
+              result <- dplyr_crossfilter_counts(
+                info$tables, find_key_column, info$table_names, cf, rf
+              )
+            }
+
+            elapsed_ms <- round((proc.time()[["elapsed"]] - t0) * 1000)
+            result$timing_ms <- elapsed_ms
+            result
           })
 
           # --- Handle row clicks ---
@@ -1536,6 +1628,28 @@ new_dm_crossfilter_block <- function(
               )
             }
 
+            backend <- r_backend()
+            timing_text <- if (!is.null(counts$timing_ms)) paste0(counts$timing_ms, "ms") else ""
+
+            # Build <option> tags for the backend dropdown
+            option_tags <- paste0(
+              vapply(available_backends, function(b) {
+                sel <- if (b == backend) ' selected' else ''
+                sprintf('<option value="%s"%s>%s</option>', b, sel, b)
+              }, character(1)),
+              collapse = ""
+            )
+
+            backend_input_id <- ns("backend_switch")
+
+            # Style colors per backend
+            badge_style <- switch(
+              backend,
+              duckdb = "color: #b45309; background: #fef3c7;",
+              duckplyr = "color: #7c3aed; background: #f3e8ff;",
+              "color: #6b7280; background: #f3f4f6;"
+            )
+
             shiny::div(
               style = "display: flex; align-items: center; gap: 10px; margin: 12px 0 8px 0;",
               shiny::span(
@@ -1551,18 +1665,26 @@ new_dm_crossfilter_block <- function(
                   style = "font-size: 0.7rem; padding: 1px 6px; opacity: 0.6;"
                 )
               },
-              shiny::span(
-                style = paste0(
-                  "font-size: 10px; padding: 1px 6px; border-radius: 4px; ",
-                  "font-weight: 500; letter-spacing: 0.03em; ",
-                  if (use_duckdb) {
-                    "color: #b45309; background: #fef3c7;"
-                  } else {
-                    "color: #6b7280; background: #f3f4f6;"
-                  }
+              shiny::tags$select(
+                onchange = sprintf(
+                  "Shiny.setInputValue('%s', this.value, {priority: 'event'});",
+                  backend_input_id
                 ),
-                if (use_duckdb) "duckdb" else "dplyr"
-              )
+                style = paste0(
+                  "font-size: 10px; padding: 1px 4px; border-radius: 4px; ",
+                  "font-weight: 500; letter-spacing: 0.03em; ",
+                  "border: 1px solid #e5e7eb; cursor: pointer; ",
+                  "appearance: auto; min-width: 60px; ",
+                  badge_style
+                ),
+                shiny::HTML(option_tags)
+              ),
+              if (nzchar(timing_text)) {
+                shiny::span(
+                  style = "font-size: 10px; color: #9ca3af; font-variant-numeric: tabular-nums;",
+                  timing_text
+                )
+              }
             )
           })
 
