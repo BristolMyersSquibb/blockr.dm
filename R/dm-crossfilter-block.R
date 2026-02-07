@@ -226,6 +226,7 @@ new_dm_crossfilter_block <- function(
           )
           default_backend <- if (has_duckdb) "duckdb" else if (has_duckplyr) "duckplyr" else "dplyr"
           r_backend <- shiny::reactiveVal(default_backend)
+          r_last_timing <- shiny::reactiveVal(NULL)
 
           shiny::observeEvent(input$backend_switch, {
             val <- input$backend_switch
@@ -443,14 +444,12 @@ new_dm_crossfilter_block <- function(
             )
           }
 
-          # --- Fully filtered row counts (with timing) ---
+          # --- Fully filtered row counts ---
           filtered_row_count <- shiny::reactive({
             info <- dm_info()
             cf <- r_filters()
             rf <- r_range_filters()
             backend <- r_backend()
-
-            t0 <- proc.time()[["elapsed"]]
 
             result <- NULL
             if (backend == "duckdb") {
@@ -478,9 +477,6 @@ new_dm_crossfilter_block <- function(
                 info$tables, find_key_column, info$table_names, cf, rf
               )
             }
-
-            elapsed_ms <- round((proc.time()[["elapsed"]] - t0) * 1000)
-            result$timing_ms <- elapsed_ms
             result
           })
 
@@ -1438,6 +1434,9 @@ new_dm_crossfilter_block <- function(
 
           # --- Render per-table UI ---
           output$tables_grid <- shiny::renderUI({
+            t0 <- proc.time()[["elapsed"]]
+            on.exit(r_last_timing(round((proc.time()[["elapsed"]] - t0) * 1000)))
+
             col_info <- column_info_per_table()
             info <- dm_info()
             active <- r_active_dims()
@@ -1629,7 +1628,8 @@ new_dm_crossfilter_block <- function(
             }
 
             backend <- r_backend()
-            timing_text <- if (!is.null(counts$timing_ms)) paste0(counts$timing_ms, "ms") else ""
+            timing <- r_last_timing()
+            timing_text <- if (!is.null(timing)) paste0(timing, "ms") else ""
 
             # Build <option> tags for the backend dropdown
             option_tags <- paste0(

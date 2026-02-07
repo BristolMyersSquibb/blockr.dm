@@ -21,7 +21,9 @@ run_app(
     dm_raw      = new_dm_read_block(path = adam_dir),
     dm_obj      = new_dm_block(infer_keys = TRUE),
     result      = new_dm_pull_block(table = "adsl"),
-    crossfilter = new_dm_crossfilter_block()
+    crossfilter = new_dm_crossfilter_block(
+      active_dims = list(adsl = c("SEX", "AGE"), adae = c("AESEV"))
+    )
   ),
   links = c(
     new_link("dm_raw", "dm_obj", "data"),
