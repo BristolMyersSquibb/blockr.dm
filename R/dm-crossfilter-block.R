@@ -257,12 +257,21 @@ new_dm_crossfilter_block <- function(
               is_range_dim <- is_numeric & !is_low_cardinality
               is_date_dim <- is_date
 
-              # Exclude key columns from dimensions
+              # Exclude all key columns (PK + all FK cols) from dimensions
               key_col <- find_key_column(tbl_name)
-              if (!is.null(key_col)) {
-                is_dimension[key_col] <- FALSE
-                is_range_dim[key_col] <- FALSE
-                is_date_dim[key_col] <- FALSE
+              fk_rows <- info$fks[info$fks$child_table == tbl_name, ]
+              all_fk_cols <- if (nrow(fk_rows) > 0) {
+                unique(unlist(fk_rows$child_fk_cols))
+              } else {
+                character()
+              }
+              exclude_cols <- unique(c(key_col, all_fk_cols))
+              for (ec in exclude_cols) {
+                if (ec %in% names(is_dimension)) {
+                  is_dimension[ec] <- FALSE
+                  is_range_dim[ec] <- FALSE
+                  is_date_dim[ec] <- FALSE
+                }
               }
 
               result[[tbl_name]] <- list(
