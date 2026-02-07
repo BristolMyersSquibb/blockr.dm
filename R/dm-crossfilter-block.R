@@ -274,11 +274,21 @@ new_dm_crossfilter_block <- function(
                 }
               }
 
+              tbl_label <- attr(df, "label")
+              if (is.null(tbl_label)) tbl_label <- ""
+
+              col_labels <- vapply(names(df), function(cn) {
+                lbl <- attr(df[[cn]], "label")
+                if (is.null(lbl)) "" else lbl
+              }, character(1))
+
               result[[tbl_name]] <- list(
                 dimensions = names(df)[is_dimension],
                 range_dimensions = names(df)[is_range_dim],
                 date_dimensions = names(df)[is_date_dim],
-                measures = names(df)[is_numeric & !is_low_cardinality]
+                measures = names(df)[is_numeric & !is_low_cardinality],
+                labels = col_labels,
+                table_label = tbl_label
               )
             }
             result
@@ -1161,6 +1171,34 @@ new_dm_crossfilter_block <- function(
             NULL
           }
 
+          # --- Helper: format table name with label ---
+          format_tbl_label <- function(tbl_name) {
+            col_info <- column_info_per_table()
+            lbl <- col_info[[tbl_name]]$table_label
+            if (is.null(lbl) || lbl == "") return(toupper(tbl_name))
+            shiny::tagList(
+              toupper(tbl_name),
+              shiny::span(
+                style = "font-weight: 400; font-size: 0.85em; color: #6b7280; margin-left: 6px; text-transform: none; letter-spacing: normal;",
+                lbl
+              )
+            )
+          }
+
+          # --- Helper: format column name with label ---
+          format_col_label <- function(tbl_name, col_name) {
+            col_info <- column_info_per_table()
+            lbl <- col_info[[tbl_name]]$labels[[col_name]]
+            if (is.null(lbl) || lbl == "") return(col_name)
+            shiny::tagList(
+              shiny::span(style = "font-weight: 600;", col_name),
+              shiny::span(
+                style = "font-size: 0.85em; color: #999; margin-left: 6px;",
+                lbl
+              )
+            )
+          }
+
           # --- Observer: "Add filter" selectize input ---
           shiny::observeEvent(input$add_filter, {
             req <- input$add_filter
@@ -1267,7 +1305,12 @@ new_dm_crossfilter_block <- function(
               active_cols <- active[[tbl_name]] %||% character()
               available <- setdiff(all_filterable, active_cols)
               if (has_search) {
-                available <- available[grepl(search_lower, tolower(available), fixed = TRUE)]
+                tbl_labels <- tbl_info$labels
+                available <- available[vapply(available, function(col) {
+                  grepl(search_lower, tolower(col), fixed = TRUE) ||
+                    (!is.null(tbl_labels[[col]]) &&
+                     grepl(search_lower, tolower(tbl_labels[[col]]), fixed = TRUE))
+                }, logical(1))]
               }
               if (length(available) > 0) {
                 groups[[tbl_name]] <- available
@@ -1327,12 +1370,12 @@ new_dm_crossfilter_block <- function(
                     add_filter_id, tbl_name, col_name, search_input_id, focus_state_id
                   ),
                   type_icon(dtype),
-                  shiny::span(class = "dm-cf-search-item-name", col_name),
+                  shiny::span(class = "dm-cf-search-item-name", format_col_label(tbl_name, col_name)),
                   type_badge(dtype)
                 )
               })
               shiny::tagList(
-                shiny::div(class = "dm-cf-search-group-header", toupper(tbl_name)),
+                shiny::div(class = "dm-cf-search-group-header", format_tbl_label(tbl_name)),
                 col_items
               )
             })
@@ -1362,7 +1405,7 @@ new_dm_crossfilter_block <- function(
                 class = "dm-cf-filter-card",
                 shiny::div(
                   class = "dm-cf-filter-card-header",
-                  shiny::span(class = "dm-cf-filter-card-label", dim_name),
+                  shiny::span(class = "dm-cf-filter-card-label", format_col_label(tbl_name, dim_name)),
                   shiny::tags$button(
                     type = "button",
                     class = "dm-cf-remove-btn",
@@ -1452,7 +1495,7 @@ new_dm_crossfilter_block <- function(
                 class = "dm-cf-table-section",
                 shiny::div(
                   class = "dm-cf-table-header",
-                  toupper(tbl_name),
+                  format_tbl_label(tbl_name),
                   shiny::span(
                     class = "dm-cf-table-header-count",
                     paste0(nrow(info$tables[[tbl_name]]), " rows")
