@@ -558,7 +558,7 @@ new_dm_crossfilter_block <- function(
 
             tbl <- change$table
             dim <- change$dim
-            val <- as.Date(change$value)
+            val <- as.Date(as.numeric(change$value), origin = "1970-01-01")
 
             if (!is.null(dim) && length(val) == 2) {
               current <- r_range_filters()
@@ -778,20 +778,22 @@ new_dm_crossfilter_block <- function(
             min_label <- if (is_integer) format(as.integer(full_min), big.mark = ",") else format_number(full_min)
             max_label <- if (is_integer) format(as.integer(full_max), big.mark = ",") else format_number(full_max)
 
-            # SVG density overlay
+            # SVG density overlay (blue only when filters are active)
+            has_any_filter <- length(r_filters()) > 0 || length(r_range_filters()) > 0
             svg_w <- 300
-            svg_h <- 60
+            svg_h <- 100
             path_full <- density_to_svg_path(full_vals, full_min, full_max,
                                               svg_w, svg_h)
-            path_cf <- density_to_svg_path(cf_vals, full_min, full_max,
-                                            svg_w, svg_h)
+            path_cf <- if (has_any_filter) {
+              density_to_svg_path(cf_vals, full_min, full_max, svg_w, svg_h)
+            }
 
             svg_tag <- if (!is.null(path_full)) {
               paths <- list(
                 shiny::tags$path(
                   d = path_full,
-                  fill = "rgba(200, 200, 200, 0.5)",
-                  stroke = "rgba(180, 180, 180, 0.8)",
+                  fill = "rgba(200, 200, 200, 0.6)",
+                  stroke = "rgba(160, 160, 160, 0.8)",
                   `stroke-width` = "1"
                 )
               )
@@ -799,7 +801,7 @@ new_dm_crossfilter_block <- function(
                 paths <- c(paths, list(
                   shiny::tags$path(
                     d = path_cf,
-                    fill = "rgba(84, 112, 198, 0.4)",
+                    fill = "rgba(84, 112, 198, 0.55)",
                     stroke = "#5470c6",
                     `stroke-width` = "1"
                   )
@@ -808,7 +810,7 @@ new_dm_crossfilter_block <- function(
               shiny::tags$svg(
                 viewBox = sprintf("0 0 %s %s", svg_w, svg_h),
                 preserveAspectRatio = "none",
-                style = "width: 100%; height: 50px; display: block;",
+                style = "width: 100%; height: 80px; display: block;",
                 shiny::tagList(paths)
               )
             }
@@ -1023,22 +1025,24 @@ new_dm_crossfilter_block <- function(
             min_label <- as.character(min(full_vals))
             max_label <- as.character(max(full_vals))
 
-            # SVG density overlay (dates as numeric for density computation)
+            # SVG density overlay (blue only when filters are active)
+            has_any_filter <- length(r_filters()) > 0 || length(r_range_filters()) > 0
             full_vals_num <- as.numeric(full_vals)
             cf_vals_num <- as.numeric(cf_vals)
             svg_w <- 300
-            svg_h <- 60
+            svg_h <- 100
             path_full <- density_to_svg_path(full_vals_num, full_min_num, full_max_num,
                                               svg_w, svg_h)
-            path_cf <- density_to_svg_path(cf_vals_num, full_min_num, full_max_num,
-                                            svg_w, svg_h)
+            path_cf <- if (has_any_filter) {
+              density_to_svg_path(cf_vals_num, full_min_num, full_max_num, svg_w, svg_h)
+            }
 
             svg_tag <- if (!is.null(path_full)) {
               paths <- list(
                 shiny::tags$path(
                   d = path_full,
-                  fill = "rgba(200, 200, 200, 0.5)",
-                  stroke = "rgba(180, 180, 180, 0.8)",
+                  fill = "rgba(200, 200, 200, 0.6)",
+                  stroke = "rgba(160, 160, 160, 0.8)",
                   `stroke-width` = "1"
                 )
               )
@@ -1046,7 +1050,7 @@ new_dm_crossfilter_block <- function(
                 paths <- c(paths, list(
                   shiny::tags$path(
                     d = path_cf,
-                    fill = "rgba(84, 112, 198, 0.4)",
+                    fill = "rgba(84, 112, 198, 0.55)",
                     stroke = "#5470c6",
                     `stroke-width` = "1"
                   )
@@ -1055,7 +1059,7 @@ new_dm_crossfilter_block <- function(
               shiny::tags$svg(
                 viewBox = sprintf("0 0 %s %s", svg_w, svg_h),
                 preserveAspectRatio = "none",
-                style = "width: 100%; height: 50px; display: block;",
+                style = "width: 100%; height: 80px; display: block;",
                 shiny::tagList(paths)
               )
             }
