@@ -1,3 +1,125 @@
+# --- CSS for dm crossfilter block ---
+dm_crossfilter_search_css <- function() {
+  shiny::tags$style(shiny::HTML("
+    .dm-cf-search-wrapper {
+      position: relative;
+      margin-bottom: 12px;
+    }
+    .dm-cf-search-icon {
+      position: absolute;
+      left: 12px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--blockr-grey-400, #9ca3af);
+      pointer-events: none;
+      display: flex;
+      align-items: center;
+    }
+    .dm-cf-search-input {
+      width: 100%;
+      padding: 10px 12px 10px 40px;
+      font-size: 14px;
+      background: var(--blockr-grey-50, #f9fafb);
+      border: 1px solid var(--blockr-color-border, #e5e7eb);
+      border-radius: 8px;
+      color: var(--blockr-color-text-primary, #111827);
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+      box-sizing: border-box;
+    }
+    .dm-cf-search-input:focus {
+      outline: none;
+      border-color: var(--blockr-blue-500, #3b82f6);
+      box-shadow: 0 0 0 3px var(--blockr-blue-100, #dbeafe);
+    }
+    .dm-cf-search-results {
+      margin-bottom: 12px;
+      border: 1px solid var(--blockr-color-border, #e5e7eb);
+      border-radius: 8px;
+      overflow: hidden;
+      max-height: 300px;
+      overflow-y: auto;
+    }
+    .dm-cf-search-group-header {
+      padding: 6px 14px;
+      font-size: var(--blockr-font-size-xs, 0.75rem);
+      font-weight: var(--blockr-font-weight-semibold, 600);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--blockr-color-text-muted, #6b7280);
+      background: var(--blockr-color-bg-subtle, #f9fafb);
+      border-bottom: 1px solid var(--blockr-color-border, #e5e7eb);
+    }
+    .dm-cf-search-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 14px;
+      font-size: var(--blockr-font-size-sm, 0.875rem);
+      cursor: pointer;
+      border-bottom: 1px solid var(--blockr-color-border, #e5e7eb);
+      transition: background-color 0.1s ease;
+    }
+    .dm-cf-search-item:last-child {
+      border-bottom: none;
+    }
+    .dm-cf-search-item:hover {
+      background: var(--blockr-color-bg-hover, #f3f4f6);
+    }
+    .dm-cf-search-item-type {
+      font-size: var(--blockr-font-size-xs, 0.75rem);
+      color: var(--blockr-color-text-muted, #6b7280);
+    }
+    .dm-cf-search-empty {
+      padding: 16px;
+      text-align: center;
+      color: var(--blockr-color-text-muted, #6b7280);
+      font-style: italic;
+    }
+    .dm-cf-table-section {
+      margin-bottom: 20px;
+    }
+    .dm-cf-table-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      border-bottom: 2px solid var(--blockr-color-border, #e5e7eb);
+      padding-bottom: 4px;
+      margin-bottom: 10px;
+    }
+    .dm-cf-table-header-name {
+      font-weight: var(--blockr-font-weight-semibold, 600);
+      font-size: 15px;
+      color: var(--blockr-color-text-primary, #111827);
+    }
+    .dm-cf-table-header-count {
+      font-size: var(--blockr-font-size-xs, 0.75rem);
+      color: var(--blockr-color-text-muted, #6b7280);
+    }
+    .dm-cf-filter-card {
+      position: relative;
+    }
+    .dm-cf-remove-btn {
+      position: absolute;
+      top: 0;
+      right: 0;
+      z-index: 10;
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 16px;
+      color: var(--blockr-color-text-muted, #6b7280);
+      padding: 2px 6px;
+      line-height: 1;
+      border-radius: 4px;
+      transition: background-color 0.15s ease, color 0.15s ease;
+    }
+    .dm-cf-remove-btn:hover {
+      background: var(--blockr-color-bg-hover, #f3f4f6);
+      color: var(--blockr-color-text-primary, #111827);
+    }
+  "))
+}
+
 #' dm Crossfilter Block
 #'
 #' A crossfilter block that accepts a dm object, shows per-table filter panels,
@@ -714,6 +836,76 @@ new_dm_crossfilter_block <- function(
             }
           }, ignoreInit = TRUE)
 
+          # --- Debounced search input (plain input with shiny-input-text) ---
+          search_term <- shiny::reactive(input$search_input) |> shiny::debounce(150)
+
+          # --- Search results rendered inline below the search bar ---
+          output$search_results <- shiny::renderUI({
+            term <- search_term()
+            if (is.null(term) || !nzchar(trimws(term))) return(NULL)
+
+            col_info <- column_info_per_table()
+            info <- dm_info()
+            active <- r_active_dims()
+            search_lower <- tolower(trimws(term))
+
+            groups <- list()
+            for (tbl_name in info$table_names) {
+              tbl_info <- col_info[[tbl_name]]
+              if (is.null(tbl_info)) next
+              all_filterable <- c(
+                tbl_info$dimensions,
+                tbl_info$range_dimensions,
+                tbl_info$date_dimensions
+              )
+              active_cols <- active[[tbl_name]] %||% character()
+              available <- setdiff(all_filterable, active_cols)
+              matching <- available[grepl(search_lower, tolower(available), fixed = TRUE)]
+              if (length(matching) > 0) {
+                groups[[tbl_name]] <- matching
+              }
+            }
+
+            if (length(groups) == 0) {
+              return(shiny::div(
+                class = "dm-cf-search-results",
+                shiny::div(class = "dm-cf-search-empty", "No matching columns")
+              ))
+            }
+
+            search_input_id <- ns("search_input")
+            add_filter_id <- ns("add_filter")
+
+            items <- lapply(names(groups), function(tbl_name) {
+              cols <- groups[[tbl_name]]
+              col_items <- lapply(cols, function(col_name) {
+                dtype <- get_dim_type(tbl_name, col_name)
+                type_label <- if (is.null(dtype)) "" else switch(
+                  dtype,
+                  "categorical" = "Categorical",
+                  "range" = "Numeric",
+                  "date" = "Date",
+                  ""
+                )
+                shiny::div(
+                  class = "dm-cf-search-item",
+                  onclick = sprintf(
+                    "Shiny.setInputValue('%s', {table:'%s', dim:'%s'}, {priority:'event'}); var el=document.getElementById('%s'); el.value=''; $(el).trigger('input');",
+                    add_filter_id, tbl_name, col_name, search_input_id
+                  ),
+                  shiny::span(col_name),
+                  shiny::span(class = "dm-cf-search-item-type", type_label)
+                )
+              })
+              shiny::tagList(
+                shiny::div(class = "dm-cf-search-group-header", tbl_name),
+                col_items
+              )
+            })
+
+            shiny::div(class = "dm-cf-search-results", items)
+          })
+
           # --- Render per-table UI ---
           output$tables_grid <- shiny::renderUI({
             col_info <- column_info_per_table()
@@ -727,6 +919,25 @@ new_dm_crossfilter_block <- function(
               ))
             }
 
+            # Build widget with remove button wrapper
+            wrap_with_remove <- function(tbl_name, dim_name, widget) {
+              shiny::div(
+                class = "dm-cf-filter-card",
+                shiny::tags$button(
+                  type = "button",
+                  class = "dm-cf-remove-btn",
+                  title = paste0("Remove ", dim_name, " filter"),
+                  onclick = sprintf(
+                    "Shiny.setInputValue('%s', {table: '%s', dim: '%s'}, {priority: 'event'});",
+                    ns("remove_filter"), tbl_name, dim_name
+                  ),
+                  shiny::HTML("&times;")
+                ),
+                widget
+              )
+            }
+
+            # Only show tables that have active filters
             table_panels <- lapply(info$table_names, function(tbl_name) {
               tbl_info <- col_info[[tbl_name]]
               if (is.null(tbl_info)) return(NULL)
@@ -736,47 +947,11 @@ new_dm_crossfilter_block <- function(
                 tbl_info$range_dimensions,
                 tbl_info$date_dimensions
               )
-              if (length(all_filterable) == 0) return(NULL)
-
               active_cols <- active[[tbl_name]] %||% character()
-              # Only show columns that are still valid
               active_cols <- intersect(active_cols, all_filterable)
-              available_cols <- setdiff(all_filterable, active_cols)
+              if (length(active_cols) == 0) return(NULL)
 
-              # Build "Add filter" selectize
-              add_filter_id <- ns(paste0("add_filter_", tbl_name))
-              choices <- stats::setNames(available_cols, available_cols)
-
-              add_filter_ui <- shiny::div(
-                style = "display: inline-block; min-width: 180px; vertical-align: middle;",
-                shiny::selectizeInput(
-                  inputId = add_filter_id,
-                  label = NULL,
-                  choices = c("Add filter..." = "", choices),
-                  selected = "",
-                  width = "180px",
-                  options = list(
-                    placeholder = "Add filter...",
-                    onInitialize = I('function() { this.setValue(""); }')
-                  )
-                ),
-                shiny::tags$script(shiny::HTML(sprintf(
-                  "
-                  $(document).on('change', '#%s', function() {
-                    var val = $(this).val();
-                    if (val && val !== '') {
-                      Shiny.setInputValue('%s', {table: '%s', dim: val}, {priority: 'event'});
-                      var selectize = $(this)[0].selectize;
-                      if (selectize) { selectize.setValue('', true); }
-                    }
-                  });
-                  ",
-                  add_filter_id, ns("add_filter"), tbl_name
-                )))
-              )
-
-              # Build filter widgets for active columns
-              parts <- list()
+              # Classify active columns by type
               range_cols <- character()
               date_cols <- character()
               cat_cols <- character()
@@ -792,25 +967,9 @@ new_dm_crossfilter_block <- function(
                 }
               }
 
-              # Build widget with × button wrapper
-              wrap_with_remove <- function(tbl_name, dim_name, widget) {
-                shiny::div(
-                  style = "position: relative;",
-                  shiny::tags$button(
-                    type = "button",
-                    style = "position: absolute; top: 0; right: 0; z-index: 10; background: none; border: none; cursor: pointer; font-size: 16px; color: #999; padding: 2px 6px; line-height: 1;",
-                    title = paste0("Remove ", dim_name, " filter"),
-                    onclick = sprintf(
-                      "Shiny.setInputValue('%s', {table: '%s', dim: '%s'}, {priority: 'event'});",
-                      ns("remove_filter"), tbl_name, dim_name
-                    ),
-                    shiny::HTML("&times;")
-                  ),
-                  widget
-                )
-              }
+              # Build filter widgets
+              parts <- list()
 
-              # Range sliders
               if (length(range_cols) > 0) {
                 parts <- c(parts, list(
                   shiny::div(
@@ -822,7 +981,6 @@ new_dm_crossfilter_block <- function(
                 ))
               }
 
-              # Date sliders
               if (length(date_cols) > 0) {
                 parts <- c(parts, list(
                   shiny::div(
@@ -834,7 +992,6 @@ new_dm_crossfilter_block <- function(
                 ))
               }
 
-              # Dimension tables (categorical)
               if (length(cat_cols) > 0) {
                 parts <- c(parts, list(
                   shiny::div(
@@ -849,38 +1006,27 @@ new_dm_crossfilter_block <- function(
                 ))
               }
 
-              # No filters message
-              if (length(active_cols) == 0) {
-                parts <- list(
-                  shiny::div(
-                    style = "padding: 8px 0; color: #999; font-size: 13px; font-style: italic;",
-                    "No filters active"
-                  )
-                )
-              }
-
-              # Table section with header + add filter dropdown
+              # Table section with header
               shiny::div(
-                style = "margin-bottom: 20px;",
-                shiny::tags$div(
-                  style = "display: flex; align-items: center; gap: 12px; border-bottom: 2px solid #ddd; padding-bottom: 4px; margin-bottom: 10px;",
-                  shiny::tags$span(
-                    style = "font-weight: 700; font-size: 15px; color: #444;",
-                    tbl_name
-                  ),
-                  add_filter_ui
+                class = "dm-cf-table-section",
+                shiny::div(
+                  class = "dm-cf-table-header",
+                  shiny::span(class = "dm-cf-table-header-name", tbl_name),
+                  shiny::span(
+                    class = "dm-cf-table-header-count",
+                    paste0(nrow(info$tables[[tbl_name]]), " rows")
+                  )
                 ),
                 shiny::tagList(parts)
               )
             })
 
-            # Remove NULLs
             table_panels <- Filter(Negate(is.null), table_panels)
 
             if (length(table_panels) == 0) {
               return(shiny::div(
-                style = "padding: 20px; text-align: center; color: #666;",
-                "No filterable columns found in dm tables"
+                style = "padding: 20px; text-align: center; color: var(--blockr-color-text-muted, #6b7280); font-style: italic;",
+                "No filters active. Use the search bar above to add filters."
               ))
             }
 
@@ -938,7 +1084,7 @@ new_dm_crossfilter_block <- function(
               )
             } else {
               status_text <- paste0(
-                "No filters active - click on rows to filter (",
+                "No filters active (",
                 format(counts$total, big.mark = ","), " rows)"
               )
             }
@@ -1050,12 +1196,35 @@ new_dm_crossfilter_block <- function(
     ui = function(id) {
       ns <- shiny::NS(id)
 
+      # SVG search icon (16x16)
+      search_icon <- shiny::HTML(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="7" r="4.5"/><line x1="10.2" y1="10.2" x2="14" y2="14"/></svg>'
+      )
+
       shiny::tagList(
         shiny::div(
           class = "dm-crossfilter-container",
           style = "padding: 10px;",
-          shiny::uiOutput(ns("tables_grid")),
-          shiny::uiOutput(ns("filter_status"))
+          dm_crossfilter_search_css(),
+          # Search bar — plain input with shiny-input-text for auto-binding
+          shiny::tags$div(
+            class = "dm-cf-search-wrapper",
+            shiny::tags$span(
+              class = "dm-cf-search-icon",
+              search_icon
+            ),
+            shiny::tags$input(
+              type = "text",
+              id = ns("search_input"),
+              class = "dm-cf-search-input shiny-input-text",
+              placeholder = "Search columns to add filter...",
+              autocomplete = "off"
+            )
+          ),
+          # Search results (rendered server-side when typing)
+          shiny::uiOutput(ns("search_results")),
+          shiny::uiOutput(ns("filter_status")),
+          shiny::uiOutput(ns("tables_grid"))
         )
       )
     },
