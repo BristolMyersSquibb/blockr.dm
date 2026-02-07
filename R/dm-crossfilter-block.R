@@ -36,25 +36,25 @@ dm_crossfilter_search_css <- function() {
       border: 1px solid var(--blockr-color-border, #e5e7eb);
       border-radius: 8px;
       overflow: hidden;
-      max-height: 300px;
+      max-height: 400px;
       overflow-y: auto;
     }
     .dm-cf-search-group-header {
-      padding: 6px 14px;
-      font-size: var(--blockr-font-size-xs, 0.75rem);
+      padding: 8px 14px;
+      font-size: 13px;
       font-weight: var(--blockr-font-weight-semibold, 600);
       text-transform: uppercase;
       letter-spacing: 0.05em;
-      color: var(--blockr-color-text-muted, #6b7280);
-      background: var(--blockr-color-bg-subtle, #f9fafb);
-      border-bottom: 1px solid var(--blockr-color-border, #e5e7eb);
+      color: var(--blockr-blue-600, #2563eb);
+      background: var(--blockr-blue-50, #eff6ff);
+      border-bottom: 2px solid var(--blockr-blue-400, #60a5fa);
     }
     .dm-cf-search-item {
       display: flex;
       align-items: center;
-      justify-content: space-between;
-      padding: 8px 14px;
-      font-size: var(--blockr-font-size-sm, 0.875rem);
+      gap: 10px;
+      padding: 10px 14px;
+      font-size: 14px;
       cursor: pointer;
       border-bottom: 1px solid var(--blockr-color-border, #e5e7eb);
       transition: background-color 0.1s ease;
@@ -65,9 +65,35 @@ dm_crossfilter_search_css <- function() {
     .dm-cf-search-item:hover {
       background: var(--blockr-color-bg-hover, #f3f4f6);
     }
-    .dm-cf-search-item-type {
-      font-size: var(--blockr-font-size-xs, 0.75rem);
-      color: var(--blockr-color-text-muted, #6b7280);
+    .dm-cf-search-item-icon {
+      color: var(--blockr-grey-400, #9ca3af);
+      flex-shrink: 0;
+      width: 20px;
+      text-align: center;
+      font-size: 16px;
+    }
+    .dm-cf-search-item-name {
+      flex: 1;
+      font-weight: 500;
+    }
+    .dm-cf-search-item-badge {
+      font-size: 12px;
+      padding: 2px 10px;
+      border-radius: 9999px;
+      font-weight: 500;
+      flex-shrink: 0;
+    }
+    .dm-cf-badge-categorical {
+      color: #7c3aed;
+      background: #f3e8ff;
+    }
+    .dm-cf-badge-numeric {
+      color: #059669;
+      background: #ecfdf5;
+    }
+    .dm-cf-badge-date {
+      color: #d97706;
+      background: #fffbeb;
     }
     .dm-cf-search-empty {
       padding: 16px;
@@ -82,40 +108,52 @@ dm_crossfilter_search_css <- function() {
       display: flex;
       align-items: center;
       gap: 8px;
-      border-bottom: 2px solid var(--blockr-color-border, #e5e7eb);
-      padding-bottom: 4px;
+      padding: 8px 14px;
+      font-size: 13px;
+      font-weight: var(--blockr-font-weight-semibold, 600);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--blockr-blue-600, #2563eb);
+      background: var(--blockr-blue-50, #eff6ff);
+      border-bottom: 2px solid var(--blockr-blue-400, #60a5fa);
       margin-bottom: 10px;
     }
-    .dm-cf-table-header-name {
-      font-weight: var(--blockr-font-weight-semibold, 600);
-      font-size: 15px;
-      color: var(--blockr-color-text-primary, #111827);
-    }
     .dm-cf-table-header-count {
-      font-size: var(--blockr-font-size-xs, 0.75rem);
+      font-size: 11px;
+      font-weight: 400;
       color: var(--blockr-color-text-muted, #6b7280);
     }
     .dm-cf-filter-card {
       position: relative;
     }
+    .dm-cf-filter-card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 4px;
+    }
+    .dm-cf-filter-card-label {
+      font-weight: 600;
+      font-size: 14px;
+      color: var(--blockr-color-text-primary, #111827);
+    }
     .dm-cf-remove-btn {
-      position: absolute;
-      top: 0;
-      right: 0;
-      z-index: 10;
-      background: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      padding: 0;
+      background: transparent;
       border: none;
+      border-radius: 6px;
+      color: var(--blockr-grey-400, #9ca3af);
       cursor: pointer;
-      font-size: 16px;
-      color: var(--blockr-color-text-muted, #6b7280);
-      padding: 2px 6px;
-      line-height: 1;
-      border-radius: 4px;
-      transition: background-color 0.15s ease, color 0.15s ease;
+      transition: background-color 0.15s, color 0.15s;
     }
     .dm-cf-remove-btn:hover {
-      background: var(--blockr-color-bg-hover, #f3f4f6);
-      color: var(--blockr-color-text-primary, #111827);
+      background: var(--blockr-grey-100, #f3f4f6);
+      color: var(--blockr-grey-700, #374151);
     }
   "))
 }
@@ -839,15 +877,46 @@ new_dm_crossfilter_block <- function(
           # --- Debounced search input (plain input with shiny-input-text) ---
           search_term <- shiny::reactive(input$search_input) |> shiny::debounce(150)
 
+          # --- Track search focus state ---
+          search_focused <- shiny::reactiveVal(FALSE)
+
+          shiny::observeEvent(input$search_focus_state, {
+            search_focused(isTRUE(input$search_focus_state))
+          }, ignoreInit = TRUE)
+
+          # --- Bind focus/blur events (rendered once, always present) ---
+          output$search_init <- shiny::renderUI({
+            shiny::tags$script(shiny::HTML(sprintf(
+              "
+              (function() {
+                var el = document.getElementById('%s');
+                if (!el || el._dmCfBound) return;
+                el._dmCfBound = true;
+                el.addEventListener('focus', function() {
+                  Shiny.setInputValue('%s', true);
+                });
+                el.addEventListener('blur', function() {
+                  setTimeout(function() { Shiny.setInputValue('%s', false); }, 200);
+                });
+              })();
+              ",
+              ns("search_input"), ns("search_focus_state"), ns("search_focus_state")
+            )))
+          })
+
           # --- Search results rendered inline below the search bar ---
           output$search_results <- shiny::renderUI({
+            focused <- search_focused()
+            if (!isTRUE(focused)) return(NULL)
+
             term <- search_term()
-            if (is.null(term) || !nzchar(trimws(term))) return(NULL)
+            has_search <- !is.null(term) && nzchar(trimws(term))
 
             col_info <- column_info_per_table()
             info <- dm_info()
             active <- r_active_dims()
-            search_lower <- tolower(trimws(term))
+
+            search_lower <- if (has_search) tolower(trimws(term)) else ""
 
             groups <- list()
             for (tbl_name in info$table_names) {
@@ -860,45 +929,73 @@ new_dm_crossfilter_block <- function(
               )
               active_cols <- active[[tbl_name]] %||% character()
               available <- setdiff(all_filterable, active_cols)
-              matching <- available[grepl(search_lower, tolower(available), fixed = TRUE)]
-              if (length(matching) > 0) {
-                groups[[tbl_name]] <- matching
+              if (has_search) {
+                available <- available[grepl(search_lower, tolower(available), fixed = TRUE)]
+              }
+              if (length(available) > 0) {
+                groups[[tbl_name]] <- available
               }
             }
 
             if (length(groups) == 0) {
-              return(shiny::div(
-                class = "dm-cf-search-results",
-                shiny::div(class = "dm-cf-search-empty", "No matching columns")
-              ))
+              if (has_search) {
+                return(shiny::div(
+                  class = "dm-cf-search-results",
+                  shiny::div(class = "dm-cf-search-empty", "No matching columns")
+                ))
+              }
+              return(NULL)
             }
 
             search_input_id <- ns("search_input")
             add_filter_id <- ns("add_filter")
+            focus_state_id <- ns("search_focus_state")
+
+            # Type icon + badge helpers
+            type_icon <- function(dtype) {
+              icon_char <- if (is.null(dtype)) "\u2026" else switch(
+                dtype,
+                "categorical" = "\u2261",
+                "range" = "#",
+                "date" = "\u25f4",
+                "\u2026"
+              )
+              shiny::span(class = "dm-cf-search-item-icon", icon_char)
+            }
+
+            type_badge <- function(dtype) {
+              if (is.null(dtype)) return(NULL)
+              info <- switch(
+                dtype,
+                "categorical" = list(label = "Categorical", class = "dm-cf-badge-categorical"),
+                "range" = list(label = "Numeric", class = "dm-cf-badge-numeric"),
+                "date" = list(label = "Date", class = "dm-cf-badge-date"),
+                NULL
+              )
+              if (is.null(info)) return(NULL)
+              shiny::span(
+                class = paste("dm-cf-search-item-badge", info$class),
+                info$label
+              )
+            }
 
             items <- lapply(names(groups), function(tbl_name) {
               cols <- groups[[tbl_name]]
               col_items <- lapply(cols, function(col_name) {
                 dtype <- get_dim_type(tbl_name, col_name)
-                type_label <- if (is.null(dtype)) "" else switch(
-                  dtype,
-                  "categorical" = "Categorical",
-                  "range" = "Numeric",
-                  "date" = "Date",
-                  ""
-                )
                 shiny::div(
                   class = "dm-cf-search-item",
                   onclick = sprintf(
-                    "Shiny.setInputValue('%s', {table:'%s', dim:'%s'}, {priority:'event'}); var el=document.getElementById('%s'); el.value=''; $(el).trigger('input');",
-                    add_filter_id, tbl_name, col_name, search_input_id
+                    "Shiny.setInputValue('%s', {table:'%s', dim:'%s'}, {priority:'event'}); var el=document.getElementById('%s'); el.value=''; $(el).trigger('input'); el.blur(); Shiny.setInputValue('%s', false);",
+                    add_filter_id, tbl_name, col_name, search_input_id, focus_state_id
                   ),
-                  shiny::span(col_name),
-                  shiny::span(class = "dm-cf-search-item-type", type_label)
+                  type_icon(dtype),
+                  shiny::span(class = "dm-cf-search-item-name", col_name),
+                  type_badge(dtype)
                 )
               })
               shiny::tagList(
-                shiny::div(class = "dm-cf-search-group-header", tbl_name),
+                shiny::div(class = "dm-cf-search-group-header", toupper(tbl_name)),
                 col_items
               )
             })
@@ -919,19 +1016,26 @@ new_dm_crossfilter_block <- function(
               ))
             }
 
-            # Build widget with remove button wrapper
+            # SVG X icon for remove button (matches blockr-btn-icon pattern)
+            x_icon_svg <- '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708z"/></svg>'
+
+            # Build widget with header (label + remove button) above widget
             wrap_with_remove <- function(tbl_name, dim_name, widget) {
               shiny::div(
                 class = "dm-cf-filter-card",
-                shiny::tags$button(
-                  type = "button",
-                  class = "dm-cf-remove-btn",
-                  title = paste0("Remove ", dim_name, " filter"),
-                  onclick = sprintf(
-                    "Shiny.setInputValue('%s', {table: '%s', dim: '%s'}, {priority: 'event'});",
-                    ns("remove_filter"), tbl_name, dim_name
-                  ),
-                  shiny::HTML("&times;")
+                shiny::div(
+                  class = "dm-cf-filter-card-header",
+                  shiny::span(class = "dm-cf-filter-card-label", dim_name),
+                  shiny::tags$button(
+                    type = "button",
+                    class = "dm-cf-remove-btn",
+                    title = paste0("Remove ", dim_name, " filter"),
+                    onclick = sprintf(
+                      "Shiny.setInputValue('%s', {table: '%s', dim: '%s'}, {priority: 'event'});",
+                      ns("remove_filter"), tbl_name, dim_name
+                    ),
+                    shiny::HTML(x_icon_svg)
+                  )
                 ),
                 widget
               )
@@ -1011,7 +1115,7 @@ new_dm_crossfilter_block <- function(
                 class = "dm-cf-table-section",
                 shiny::div(
                   class = "dm-cf-table-header",
-                  shiny::span(class = "dm-cf-table-header-name", tbl_name),
+                  toupper(tbl_name),
                   shiny::span(
                     class = "dm-cf-table-header-count",
                     paste0(nrow(info$tables[[tbl_name]]), " rows")
@@ -1222,6 +1326,8 @@ new_dm_crossfilter_block <- function(
             )
           ),
           # Search results (rendered server-side when typing)
+          # Invisible output to bind focus/blur events on search input
+          shiny::uiOutput(ns("search_init")),
           shiny::uiOutput(ns("search_results")),
           shiny::uiOutput(ns("filter_status")),
           shiny::uiOutput(ns("tables_grid"))
