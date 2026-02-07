@@ -158,7 +158,7 @@ dm_crossfilter_search_css <- function() {
   "))
 }
 
-dm_crossfilter_server_factory <- function(active_dims, filters, range_filters) {
+dm_crossfilter_server_factory <- function(active_dims, filters, range_filters, measure) {
   function(id, data) {
     shiny::moduleServer(
       id,
@@ -204,6 +204,13 @@ dm_crossfilter_server_factory <- function(active_dims, filters, range_filters) {
             val <- input$backend_switch
             if (!is.null(val) && val %in% available_backends) {
               r_backend(val)
+            }
+          }, ignoreInit = TRUE)
+
+          shiny::observeEvent(input$measure_switch, {
+            val <- input$measure_switch
+            if (!is.null(val)) {
+              r_measure(val)
             }
           }, ignoreInit = TRUE)
 
@@ -339,6 +346,7 @@ dm_crossfilter_server_factory <- function(active_dims, filters, range_filters) {
           r_active_dims <- shiny::reactiveVal(active_dims)
           r_filters <- shiny::reactiveVal(filters)
           r_range_filters <- shiny::reactiveVal(range_filters)
+          r_measure <- shiny::reactiveVal(measure %||% ".count")
 
           # Clear all filters
           shiny::observeEvent(input$clear_filters, {
@@ -414,6 +422,73 @@ dm_crossfilter_server_factory <- function(active_dims, filters, range_filters) {
             dplyr_crossfilter_agg(
               info$tables, find_key_column, tbl_name, dim, cf, rf
             )
+          }
+
+          # --- Aggregated measure for a categorical dimension ---
+          # Uses crossfilter_data_for_dim() for the cross-table filtering
+          # then does a lightweight SUM aggregation on top
+          crossfilter_agg_for_dim_measure <- function(tbl_name, dim,
+                                                       measure_table,
+                                                       measure_col) {
+            cf_data <- crossfilter_data_for_dim(tbl_name, dim)
+
+            if (measure_table == tbl_name) {
+              # Same table: simple SUM
+              if (!measure_col %in% names(cf_data)) {
+                return(data.frame(
+                  x = character(0), .value = numeric(0),
+                  stringsAsFactors = FALSE
+                ))
+              }
+              agg <- dplyr::summarise(
+                cf_data,
+                .value = sum(.data[[measure_col]], na.rm = TRUE),
+                .by = dplyr::all_of(dim)
+              )
+            } else {
+              # Cross-table: join dim→key mapping to measure table, then SUM
+              key_col <- find_key_column(tbl_name)
+              measure_key_col <- find_key_column(measure_table)
+
+              if (is.null(key_col) || is.null(measure_key_col)) {
+                # No key relationship — fall back to count
+                return(NULL)
+              }
+
+              # Build dim→key mapping from crossfiltered data
+              keep_cols <- intersect(c(key_col, dim), names(cf_data))
+              dim_keys <- unique(cf_data[, keep_cols, drop = FALSE])
+              allowed_keys <- unique(cf_data[[key_col]])
+
+              # Get measure table data, apply its own filters, restrict to allowed keys
+              info <- dm_info()
+              measure_df <- info$tables[[measure_table]]
+              measure_filtered <- apply_crossfilter_filters(
+                measure_df,
+                r_filters()[[measure_table]] %||% list(),
+                r_range_filters()[[measure_table]] %||% list()
+              )
+              measure_filtered <- dplyr::filter(
+                measure_filtered,
+                .data[[measure_key_col]] %in% allowed_keys
+              )
+
+              # Join and aggregate
+              by_spec <- stats::setNames(key_col, measure_key_col)
+              joined <- dplyr::inner_join(
+                measure_filtered[, c(measure_key_col, measure_col), drop = FALSE],
+                dim_keys,
+                by = by_spec
+              )
+              agg <- dplyr::summarise(
+                joined,
+                .value = sum(.data[[measure_col]], na.rm = TRUE),
+                .by = dplyr::all_of(dim)
+              )
+            }
+
+            agg[[dim]] <- as.character(agg[[dim]])
+            dplyr::arrange(agg, dplyr::desc(.data[[".value"]]))
           }
 
           # --- Fully filtered row counts ---
@@ -577,20 +652,49 @@ dm_crossfilter_server_factory <- function(active_dims, filters, range_filters) {
 
           # --- Build filter table for a dimension in a specific table ---
           build_filter_table <- function(tbl_name, dim) {
-            agg <- crossfilter_agg_for_dim(tbl_name, dim)
+            measure <- r_measure()
+            use_measure <- !is.null(measure) && measure != ".count"
+
+            if (use_measure) {
+              # Parse "table.column" measure spec
+              dot_pos <- regexpr("\\.", measure)
+              measure_table <- substr(measure, 1, dot_pos - 1)
+              measure_col <- substr(measure, dot_pos + 1, nchar(measure))
+
+              agg <- crossfilter_agg_for_dim_measure(
+                tbl_name, dim, measure_table, measure_col
+              )
+              # NULL means no key relationship — fall back to count
+              if (is.null(agg)) {
+                use_measure <- FALSE
+              }
+            }
+
+            if (!use_measure) {
+              agg <- crossfilter_agg_for_dim(tbl_name, dim)
+            }
+
+            value_col <- if (use_measure) ".value" else ".count"
+            col_header <- if (use_measure) {
+              dot_pos <- regexpr("\\.", measure)
+              mc <- substr(measure, dot_pos + 1, nchar(measure))
+              paste0("Sum of ", mc)
+            } else {
+              "Count"
+            }
 
             if (nrow(agg) == 0) {
-              # Show empty table with dim column and zero counts
+              # Show empty table with dim column and zero values
               info <- dm_info()
               full_df <- info$tables[[tbl_name]]
               all_vals <- unique(as.character(full_df[[dim]]))
               agg <- data.frame(
                 x = all_vals,
-                .count = rep(0L, length(all_vals)),
+                v = rep(0, length(all_vals)),
                 .selected = rep(FALSE, length(all_vals)),
                 stringsAsFactors = FALSE
               )
-              names(agg)[1] <- dim
+              names(agg) <- c(dim, value_col, ".selected")
             } else {
               current_filter <- r_filters()[[tbl_name]][[dim]]
               has_filter <- !is.null(current_filter) && length(current_filter) > 0
@@ -601,11 +705,11 @@ dm_crossfilter_server_factory <- function(active_dims, filters, range_filters) {
               }
             }
 
-            value_col <- ".count"
-
             current_filter <- r_filters()[[tbl_name]][[dim]]
             has_filter <- !is.null(current_filter) && length(current_filter) > 0
 
+            # Detect if values can be negative (for diverging bars)
+            has_negative <- any(agg[[value_col]] < 0, na.rm = TRUE)
             max_abs_val <- max(abs(agg[[value_col]]), na.rm = TRUE)
             if (is.na(max_abs_val) || max_abs_val == 0) max_abs_val <- 1
 
@@ -627,35 +731,68 @@ dm_crossfilter_server_factory <- function(active_dims, filters, range_filters) {
             )
 
             columns_list[[value_col]] <- reactable::colDef(
-              name = "Count",
+              name = col_header,
               minWidth = 120,
               align = "right",
               cell = function(value, index) {
                 is_selected <- agg$.selected[index]
                 pct <- abs(value) / max_abs_val * 100
-                bar_color <- if (has_filter && !is_selected) {
-                  "rgba(84, 112, 198, 0.2)"
-                } else {
-                  "#5470c6"
-                }
                 text_color <- if (has_filter && !is_selected) "#999" else "#333"
 
-                shiny::div(
-                  style = "display: flex; align-items: center; justify-content: flex-end; gap: 6px;",
+                if (has_negative) {
+                  # Diverging bar: negative goes left, positive goes right
+                  bar_color <- if (has_filter && !is_selected) {
+                    if (value < 0) "rgba(198, 84, 84, 0.2)" else "rgba(84, 112, 198, 0.2)"
+                  } else {
+                    if (value < 0) "#c65454" else "#5470c6"
+                  }
+                  half_pct <- pct / 2
+                  bar_left <- if (value < 0) paste0(50 - half_pct, "%") else "50%"
+                  bar_width <- paste0(half_pct, "%")
+
                   shiny::div(
-                    style = "flex: 1; max-width: 80px; height: 14px; background: #f0f0f0; border-radius: 2px; overflow: hidden;",
+                    style = "display: flex; align-items: center; justify-content: flex-end; gap: 6px;",
                     shiny::div(
-                      style = sprintf(
-                        "height: 100%%; width: %.1f%%; background: %s;",
-                        pct, bar_color
+                      style = "flex: 1; max-width: 80px; height: 14px; background: #f0f0f0; border-radius: 2px; overflow: hidden; position: relative;",
+                      # Center line
+                      shiny::div(style = "position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: #ccc;"),
+                      shiny::div(
+                        style = sprintf(
+                          "position: absolute; top: 0; height: 100%%; left: %s; width: %s; background: %s;",
+                          bar_left, bar_width, bar_color
+                        )
                       )
+                    ),
+                    shiny::span(
+                      style = sprintf("color: %s; font-size: 12px; width: 48px; text-align: right;", text_color),
+                      format_number(value)
                     )
-                  ),
-                  shiny::span(
-                    style = sprintf("color: %s; font-size: 12px; width: 38px; text-align: right;", text_color),
-                    format_number(value)
                   )
-                )
+                } else {
+                  # Standard unidirectional bar
+                  bar_color <- if (has_filter && !is_selected) {
+                    "rgba(84, 112, 198, 0.2)"
+                  } else {
+                    "#5470c6"
+                  }
+
+                  shiny::div(
+                    style = "display: flex; align-items: center; justify-content: flex-end; gap: 6px;",
+                    shiny::div(
+                      style = "flex: 1; max-width: 80px; height: 14px; background: #f0f0f0; border-radius: 2px; overflow: hidden;",
+                      shiny::div(
+                        style = sprintf(
+                          "height: 100%%; width: %.1f%%; background: %s;",
+                          pct, bar_color
+                        )
+                      )
+                    ),
+                    shiny::span(
+                      style = sprintf("color: %s; font-size: 12px; width: 38px; text-align: right;", text_color),
+                      format_number(value)
+                    )
+                  )
+                }
               }
             )
 
@@ -1627,6 +1764,7 @@ dm_crossfilter_server_factory <- function(active_dims, filters, range_filters) {
             )
 
             backend_input_id <- ns("backend_switch")
+            measure_input_id <- ns("measure_switch")
 
             # Style colors per backend
             badge_style <- switch(
@@ -1636,8 +1774,38 @@ dm_crossfilter_server_factory <- function(active_dims, filters, range_filters) {
               "color: #6b7280; background: #f3f4f6;"
             )
 
+            # Build measure choices from column_info_per_table
+            col_info <- column_info_per_table()
+            current_measure <- r_measure()
+            measure_choices <- ".count"
+            measure_labels <- "Count"
+            for (tbl in names(col_info)) {
+              m_cols <- col_info[[tbl]]$measures
+              if (length(m_cols) > 0) {
+                measure_choices <- c(
+                  measure_choices,
+                  paste0(tbl, ".", m_cols)
+                )
+                measure_labels <- c(
+                  measure_labels,
+                  paste0(tbl, ": ", m_cols)
+                )
+              }
+            }
+
+            measure_option_tags <- paste0(
+              vapply(seq_along(measure_choices), function(i) {
+                sel <- if (measure_choices[i] == current_measure) ' selected' else ''
+                sprintf(
+                  '<option value="%s"%s>%s</option>',
+                  measure_choices[i], sel, measure_labels[i]
+                )
+              }, character(1)),
+              collapse = ""
+            )
+
             shiny::div(
-              style = "display: flex; align-items: center; gap: 10px; margin: 12px 0 8px 0;",
+              style = "display: flex; align-items: center; gap: 10px; margin: 12px 0 8px 0; flex-wrap: wrap;",
               shiny::span(
                 class = "text-muted",
                 style = "font-size: 0.8rem;",
@@ -1651,6 +1819,24 @@ dm_crossfilter_server_factory <- function(active_dims, filters, range_filters) {
                   style = "font-size: 0.7rem; padding: 1px 6px; opacity: 0.6;"
                 )
               },
+              # Measure selector
+              if (length(measure_choices) > 1) {
+                shiny::tags$select(
+                  onchange = sprintf(
+                    "Shiny.setInputValue('%s', this.value, {priority: 'event'});",
+                    measure_input_id
+                  ),
+                  style = paste0(
+                    "font-size: 10px; padding: 1px 4px; border-radius: 4px; ",
+                    "font-weight: 500; letter-spacing: 0.03em; ",
+                    "border: 1px solid #e5e7eb; cursor: pointer; ",
+                    "appearance: auto; min-width: 70px; ",
+                    "color: #059669; background: #ecfdf5;"
+                  ),
+                  shiny::HTML(measure_option_tags)
+                )
+              },
+              # Backend selector
               shiny::tags$select(
                 onchange = sprintf(
                   "Shiny.setInputValue('%s', this.value, {priority: 'event'});",
@@ -1754,7 +1940,8 @@ dm_crossfilter_server_factory <- function(active_dims, filters, range_filters) {
             state = list(
               active_dims = r_active_dims,
               filters = r_filters,
-              range_filters = r_range_filters
+              range_filters = r_range_filters,
+              measure = r_measure
             )
           )
         }
@@ -1817,6 +2004,10 @@ dm_crossfilter_ui <- function(id) {
 #' @param range_filters Named list of per-table range filters. Each element is
 #'   a named list of numeric(2) vectors.
 #'   E.g., `list(adsl = list(AGE = c(65, 80)))`
+#' @param measure Measure column to aggregate in categorical filters, as
+#'   `"table.column"` (e.g., `"sales.amount"`). Defaults to `NULL` (row count).
+#'   When set, categorical filter bars show `SUM(column)` per dimension value
+#'   instead of row counts.
 #' @param ... Forwarded to [blockr.core::new_transform_block()]
 #'
 #' @return A blockr transform block that returns a filtered dm object
@@ -1826,17 +2017,16 @@ new_dm_crossfilter_block <- function(
     active_dims = list(),
     filters = list(),
     range_filters = list(),
+    measure = NULL,
     ...
 ) {
   blockr.core::new_transform_block(
-    server = dm_crossfilter_server_factory(active_dims, filters, range_filters),
+    server = dm_crossfilter_server_factory(active_dims, filters, range_filters, measure),
     ui = dm_crossfilter_ui,
-    dat_valid = function(data) {
-      if (!inherits(data, "dm")) {
-        stop("Input must be a dm object")
-      }
-    },
-    allow_empty_state = c("active_dims", "filters", "range_filters"),
+    # Note: dat_valid intentionally omitted to avoid double evaluation on startup.
+    # The server already validates via shiny::req(inherits(dm_obj, "dm")).
+    # See https://github.com/blockr-org/blockr.core/issues/XXX
+    allow_empty_state = c("active_dims", "filters", "range_filters", "measure"),
     class = "dm_crossfilter_block",
     ...
   )
