@@ -5,6 +5,10 @@
 #' For example, filtering AESEV=SEVERE in ADAE reduces the subject set visible
 #' in ADLB and ADSL panels.
 #'
+#' @param active_dims Named list of per-table active filter columns. Each element
+#'   is a character vector of column names to show as filter widgets.
+#'   E.g., `list(adsl_data = c("SEX", "AGE"), adlb_data = c("PARAMCD"))`
+#'   Start with an empty list (default) to show no filters initially.
 #' @param filters Named list of per-table categorical filters. Each element is
 #'   itself a named list of character vectors.
 #'   E.g., `list(adsl = list(SEX = c("F")), adae = list(AESEV = c("SEVERE")))`
@@ -17,6 +21,7 @@
 #'
 #' @export
 new_dm_crossfilter_block <- function(
+    active_dims = list(),
     filters = list(),
     range_filters = list(),
     ...
@@ -81,35 +86,43 @@ new_dm_crossfilter_block <- function(
               if (!is.data.frame(df) || ncol(df) == 0) next
 
               is_numeric <- vapply(df, is.numeric, logical(1))
+              is_date <- vapply(df, function(col) {
+                inherits(col, c("Date", "POSIXct", "POSIXlt"))
+              }, logical(1))
               is_low_cardinality <- vapply(df, function(col) {
                 length(unique(col)) <= 10
               }, logical(1))
 
-              is_dimension <- !is_numeric | (is_numeric & is_low_cardinality)
+              is_dimension <- (!is_numeric & !is_date) | (is_numeric & is_low_cardinality)
               is_range_dim <- is_numeric & !is_low_cardinality
+              is_date_dim <- is_date
 
               # Exclude key columns from dimensions
               key_col <- find_key_column(tbl_name)
               if (!is.null(key_col)) {
                 is_dimension[key_col] <- FALSE
                 is_range_dim[key_col] <- FALSE
+                is_date_dim[key_col] <- FALSE
               }
 
               result[[tbl_name]] <- list(
                 dimensions = names(df)[is_dimension],
                 range_dimensions = names(df)[is_range_dim],
+                date_dimensions = names(df)[is_date_dim],
                 measures = names(df)[is_numeric & !is_low_cardinality]
               )
             }
             result
           })
 
-          # --- State: per-table filters ---
+          # --- State: per-table active dims + filters ---
+          r_active_dims <- shiny::reactiveVal(active_dims)
           r_filters <- shiny::reactiveVal(filters)
           r_range_filters <- shiny::reactiveVal(range_filters)
 
           # Clear all filters
           shiny::observeEvent(input$clear_filters, {
+            r_active_dims(list())
             r_filters(list())
             r_range_filters(list())
           })
@@ -125,7 +138,14 @@ new_dm_crossfilter_block <- function(
             for (dim in names(rng_filters)) {
               rng <- rng_filters[[dim]]
               if (!is.null(rng) && length(rng) == 2 && dim %in% names(df)) {
-                df <- dplyr::filter(df, dplyr::between(.data[[dim]], rng[1], rng[2]))
+                col <- df[[dim]]
+                if (inherits(col, c("Date", "POSIXct", "POSIXlt"))) {
+                  rng_lo <- as.Date(rng[1], origin = "1970-01-01")
+                  rng_hi <- as.Date(rng[2], origin = "1970-01-01")
+                  df <- dplyr::filter(df, .data[[dim]] >= rng_lo & .data[[dim]] <= rng_hi)
+                } else {
+                  df <- dplyr::filter(df, dplyr::between(.data[[dim]], rng[1], rng[2]))
+                }
               }
             }
             df
@@ -282,6 +302,45 @@ new_dm_crossfilter_block <- function(
                 }
               } else {
                 tbl_filters[[dim]] <- val
+              }
+
+              if (length(tbl_filters) == 0) {
+                current[[tbl]] <- NULL
+              } else {
+                current[[tbl]] <- tbl_filters
+              }
+              r_range_filters(current)
+            }
+          }, ignoreInit = TRUE)
+
+          # --- Handle date slider changes ---
+          shiny::observeEvent(input$date_change, {
+            change <- input$date_change
+            if (is.null(change)) return()
+
+            tbl <- change$table
+            dim <- change$dim
+            val <- as.Date(change$value)
+
+            if (!is.null(dim) && length(val) == 2) {
+              current <- r_range_filters()
+              tbl_filters <- current[[tbl]] %||% list()
+
+              # Get full data range to detect reset
+              info <- dm_info()
+              df <- info$tables[[tbl]]
+              if (dim %in% names(df)) {
+                col_vals <- as.Date(df[[dim]])
+                col_vals <- col_vals[!is.na(col_vals)]
+                data_min <- min(col_vals)
+                data_max <- max(col_vals)
+                if (val[1] <= data_min && val[2] >= data_max) {
+                  tbl_filters[[dim]] <- NULL
+                } else {
+                  tbl_filters[[dim]] <- as.numeric(val)
+                }
+              } else {
+                tbl_filters[[dim]] <- as.numeric(val)
               }
 
               if (length(tbl_filters) == 0) {
@@ -509,10 +568,157 @@ new_dm_crossfilter_block <- function(
             )
           }
 
+          # --- Build date slider for a date dimension in a specific table ---
+          build_date_slider <- function(tbl_name, dim) {
+            info <- dm_info()
+            full_df <- info$tables[[tbl_name]]
+            shiny::req(is.data.frame(full_df))
+            full_vals <- full_df[[dim]]
+            full_vals <- full_vals[!is.na(full_vals)]
+            shiny::req(length(full_vals) > 0)
+
+            full_vals <- as.Date(full_vals)
+            full_min <- min(full_vals)
+            full_max <- max(full_vals)
+
+            cf_df <- crossfilter_data_for_dim(tbl_name, dim)
+            cf_vals <- as.Date(cf_df[[dim]])
+            cf_vals <- cf_vals[!is.na(cf_vals)]
+
+            cf_min <- if (length(cf_vals) > 0) min(cf_vals) else full_min
+            cf_max <- if (length(cf_vals) > 0) max(cf_vals) else full_max
+
+            range_span <- as.numeric(full_max - full_min)
+            if (range_span > 0) {
+              left_pct <- as.numeric(cf_min - full_min) / range_span * 100
+              width_pct <- as.numeric(cf_max - cf_min) / range_span * 100
+            } else {
+              left_pct <- 0
+              width_pct <- 100
+            }
+
+            current_range <- r_range_filters()[[tbl_name]][[dim]]
+            slider_min <- if (!is.null(current_range)) as.Date(current_range[1], origin = "1970-01-01") else full_min
+            slider_max <- if (!is.null(current_range)) as.Date(current_range[2], origin = "1970-01-01") else full_max
+
+            if (!is.null(current_range)) {
+              cr_min <- as.Date(current_range[1], origin = "1970-01-01")
+              cr_max <- as.Date(current_range[2], origin = "1970-01-01")
+              n_match <- sum(cf_vals >= cr_min & cf_vals <= cr_max)
+            } else {
+              n_match <- length(cf_vals)
+            }
+
+            slider_id <- ns(paste0("date_", tbl_name, "_", dim))
+
+            range_text <- paste0(n_match, " of ", length(cf_vals), " rows")
+
+            shiny::div(
+              style = "flex: 1; min-width: 200px; max-width: 350px;",
+              shiny::tags$div(
+                style = "font-weight: 600; font-size: 14px; margin-bottom: 4px; color: #333;",
+                dim
+              ),
+              shiny::tags$div(
+                style = "font-size: 11px; color: #888; margin-bottom: 2px;",
+                range_text
+              ),
+              shiny::tags$div(
+                style = "height: 6px; background: #e8e8e8; border-radius: 3px; margin-bottom: 4px; position: relative; overflow: hidden;",
+                shiny::tags$div(
+                  style = sprintf(
+                    "position: absolute; left: %.1f%%; width: %.1f%%; height: 100%%; background: #5470c6; border-radius: 3px; min-width: 3px;",
+                    left_pct, max(width_pct, 0.5)
+                  )
+                )
+              ),
+              shiny::sliderInput(
+                inputId = slider_id,
+                label = NULL,
+                min = full_min,
+                max = full_max,
+                value = c(slider_min, slider_max),
+                width = "100%"
+              ),
+              shiny::tags$script(shiny::HTML(sprintf(
+                "
+                $(document).on('shiny:inputchanged', function(event) {
+                  if (event.name === '%s') {
+                    Shiny.setInputValue('%s', {table: '%s', dim: '%s', value: event.value}, {priority: 'event'});
+                  }
+                });
+                ",
+                slider_id, ns("date_change"), tbl_name, dim
+              )))
+            )
+          }
+
+          # --- Helper: get filter type for a column in a table ---
+          get_dim_type <- function(tbl_name, dim_name) {
+            col_info <- column_info_per_table()
+            tbl_info <- col_info[[tbl_name]]
+            if (is.null(tbl_info)) return(NULL)
+            if (dim_name %in% tbl_info$date_dimensions) return("date")
+            if (dim_name %in% tbl_info$range_dimensions) return("range")
+            if (dim_name %in% tbl_info$dimensions) return("categorical")
+            NULL
+          }
+
+          # --- Observer: "Add filter" selectize input ---
+          shiny::observeEvent(input$add_filter, {
+            req <- input$add_filter
+            if (is.null(req)) return()
+            tbl <- req$table
+            dim_name <- req$dim
+            if (is.null(tbl) || is.null(dim_name) || dim_name == "") return()
+
+            current <- r_active_dims()
+            tbl_dims <- current[[tbl]] %||% character()
+            if (!dim_name %in% tbl_dims) {
+              current[[tbl]] <- c(tbl_dims, dim_name)
+              r_active_dims(current)
+            }
+          }, ignoreInit = TRUE)
+
+          # --- Observer: remove filter (× button) ---
+          shiny::observeEvent(input$remove_filter, {
+            req <- input$remove_filter
+            if (is.null(req)) return()
+            tbl <- req$table
+            dim_name <- req$dim
+            if (is.null(tbl) || is.null(dim_name)) return()
+
+            # Remove from active dims
+            current <- r_active_dims()
+            tbl_dims <- current[[tbl]] %||% character()
+            tbl_dims <- setdiff(tbl_dims, dim_name)
+            if (length(tbl_dims) == 0) {
+              current[[tbl]] <- NULL
+            } else {
+              current[[tbl]] <- tbl_dims
+            }
+            r_active_dims(current)
+
+            # Clear filter values for removed dim
+            cat_f <- r_filters()
+            if (!is.null(cat_f[[tbl]][[dim_name]])) {
+              cat_f[[tbl]][[dim_name]] <- NULL
+              if (length(cat_f[[tbl]]) == 0) cat_f[[tbl]] <- NULL
+              r_filters(cat_f)
+            }
+            rng_f <- r_range_filters()
+            if (!is.null(rng_f[[tbl]][[dim_name]])) {
+              rng_f[[tbl]][[dim_name]] <- NULL
+              if (length(rng_f[[tbl]]) == 0) rng_f[[tbl]] <- NULL
+              r_range_filters(rng_f)
+            }
+          }, ignoreInit = TRUE)
+
           # --- Render per-table UI ---
           output$tables_grid <- shiny::renderUI({
             col_info <- column_info_per_table()
             info <- dm_info()
+            active <- r_active_dims()
 
             if (length(info$table_names) == 0) {
               return(shiny::div(
@@ -525,43 +731,144 @@ new_dm_crossfilter_block <- function(
               tbl_info <- col_info[[tbl_name]]
               if (is.null(tbl_info)) return(NULL)
 
-              dims <- tbl_info$dimensions
-              range_dims <- tbl_info$range_dimensions
-              if (length(dims) == 0 && length(range_dims) == 0) return(NULL)
+              all_filterable <- c(
+                tbl_info$dimensions,
+                tbl_info$range_dimensions,
+                tbl_info$date_dimensions
+              )
+              if (length(all_filterable) == 0) return(NULL)
 
+              active_cols <- active[[tbl_name]] %||% character()
+              # Only show columns that are still valid
+              active_cols <- intersect(active_cols, all_filterable)
+              available_cols <- setdiff(all_filterable, active_cols)
+
+              # Build "Add filter" selectize
+              add_filter_id <- ns(paste0("add_filter_", tbl_name))
+              choices <- stats::setNames(available_cols, available_cols)
+
+              add_filter_ui <- shiny::div(
+                style = "display: inline-block; min-width: 180px; vertical-align: middle;",
+                shiny::selectizeInput(
+                  inputId = add_filter_id,
+                  label = NULL,
+                  choices = c("Add filter..." = "", choices),
+                  selected = "",
+                  width = "180px",
+                  options = list(
+                    placeholder = "Add filter...",
+                    onInitialize = I('function() { this.setValue(""); }')
+                  )
+                ),
+                shiny::tags$script(shiny::HTML(sprintf(
+                  "
+                  $(document).on('change', '#%s', function() {
+                    var val = $(this).val();
+                    if (val && val !== '') {
+                      Shiny.setInputValue('%s', {table: '%s', dim: val}, {priority: 'event'});
+                      var selectize = $(this)[0].selectize;
+                      if (selectize) { selectize.setValue('', true); }
+                    }
+                  });
+                  ",
+                  add_filter_id, ns("add_filter"), tbl_name
+                )))
+              )
+
+              # Build filter widgets for active columns
               parts <- list()
+              range_cols <- character()
+              date_cols <- character()
+              cat_cols <- character()
+
+              for (col in active_cols) {
+                dtype <- get_dim_type(tbl_name, col)
+                if (identical(dtype, "range")) {
+                  range_cols <- c(range_cols, col)
+                } else if (identical(dtype, "date")) {
+                  date_cols <- c(date_cols, col)
+                } else {
+                  cat_cols <- c(cat_cols, col)
+                }
+              }
+
+              # Build widget with × button wrapper
+              wrap_with_remove <- function(tbl_name, dim_name, widget) {
+                shiny::div(
+                  style = "position: relative;",
+                  shiny::tags$button(
+                    type = "button",
+                    style = "position: absolute; top: 0; right: 0; z-index: 10; background: none; border: none; cursor: pointer; font-size: 16px; color: #999; padding: 2px 6px; line-height: 1;",
+                    title = paste0("Remove ", dim_name, " filter"),
+                    onclick = sprintf(
+                      "Shiny.setInputValue('%s', {table: '%s', dim: '%s'}, {priority: 'event'});",
+                      ns("remove_filter"), tbl_name, dim_name
+                    ),
+                    shiny::HTML("&times;")
+                  ),
+                  widget
+                )
+              }
 
               # Range sliders
-              if (length(range_dims) > 0) {
+              if (length(range_cols) > 0) {
                 parts <- c(parts, list(
                   shiny::div(
                     style = "display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 12px;",
-                    lapply(range_dims, function(dim) build_range_slider(tbl_name, dim))
+                    lapply(range_cols, function(dim) {
+                      wrap_with_remove(tbl_name, dim, build_range_slider(tbl_name, dim))
+                    })
                   )
                 ))
               }
 
-              # Dimension tables
-              if (length(dims) > 0) {
+              # Date sliders
+              if (length(date_cols) > 0) {
+                parts <- c(parts, list(
+                  shiny::div(
+                    style = "display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 12px;",
+                    lapply(date_cols, function(dim) {
+                      wrap_with_remove(tbl_name, dim, build_date_slider(tbl_name, dim))
+                    })
+                  )
+                ))
+              }
+
+              # Dimension tables (categorical)
+              if (length(cat_cols) > 0) {
                 parts <- c(parts, list(
                   shiny::div(
                     style = "display: flex; flex-wrap: wrap; gap: 16px;",
-                    lapply(dims, function(dim) {
+                    lapply(cat_cols, function(dim) {
                       shiny::div(
                         style = "flex: 1; min-width: 250px; max-width: 400px;",
-                        build_filter_table(tbl_name, dim)
+                        wrap_with_remove(tbl_name, dim, build_filter_table(tbl_name, dim))
                       )
                     })
                   )
                 ))
               }
 
-              # Table section with header
+              # No filters message
+              if (length(active_cols) == 0) {
+                parts <- list(
+                  shiny::div(
+                    style = "padding: 8px 0; color: #999; font-size: 13px; font-style: italic;",
+                    "No filters active"
+                  )
+                )
+              }
+
+              # Table section with header + add filter dropdown
               shiny::div(
                 style = "margin-bottom: 20px;",
                 shiny::tags$div(
-                  style = "font-weight: 700; font-size: 15px; color: #444; border-bottom: 2px solid #ddd; padding-bottom: 4px; margin-bottom: 10px;",
-                  tbl_name
+                  style = "display: flex; align-items: center; gap: 12px; border-bottom: 2px solid #ddd; padding-bottom: 4px; margin-bottom: 10px;",
+                  shiny::tags$span(
+                    style = "font-weight: 700; font-size: 15px; color: #444;",
+                    tbl_name
+                  ),
+                  add_filter_ui
                 ),
                 shiny::tagList(parts)
               )
@@ -605,8 +912,20 @@ new_dm_crossfilter_block <- function(
                 tbl_f <- rng_filters[[tbl]]
                 for (dim in names(tbl_f)) {
                   rng <- tbl_f[[dim]]
+                  # Format date ranges as dates, not raw numerics
+                  info <- dm_info()
+                  tbl_df <- info$tables[[tbl]]
+                  is_date_col <- dim %in% names(tbl_df) &&
+                    inherits(tbl_df[[dim]], c("Date", "POSIXct", "POSIXlt"))
+                  if (is_date_col) {
+                    lo_str <- as.character(as.Date(rng[1], origin = "1970-01-01"))
+                    hi_str <- as.character(as.Date(rng[2], origin = "1970-01-01"))
+                  } else {
+                    lo_str <- rng[1]
+                    hi_str <- rng[2]
+                  }
                   parts <- c(parts, paste0(
-                    tbl, ".", dim, " [", rng[1], ", ", rng[2], "]"
+                    tbl, ".", dim, " [", lo_str, ", ", hi_str, "]"
                   ))
                 }
               }
@@ -675,11 +994,23 @@ new_dm_crossfilter_block <- function(
                 # Range filters for this table
                 tbl_rng <- rng_filters[[tbl]]
                 if (!is.null(tbl_rng)) {
+                  # Detect which dims are date columns
+                  info <- dm_info()
+                  tbl_df <- info$tables[[tbl]]
                   for (dim in names(tbl_rng)) {
                     rng <- tbl_rng[[dim]]
                     if (!is.null(rng) && length(rng) == 2) {
-                      lo <- call(">=", as.name(dim), rng[1])
-                      hi <- call("<=", as.name(dim), rng[2])
+                      is_date_col <- dim %in% names(tbl_df) &&
+                        inherits(tbl_df[[dim]], c("Date", "POSIXct", "POSIXlt"))
+                      if (is_date_col) {
+                        lo_val <- call("as.Date", as.character(as.Date(rng[1], origin = "1970-01-01")))
+                        hi_val <- call("as.Date", as.character(as.Date(rng[2], origin = "1970-01-01")))
+                      } else {
+                        lo_val <- rng[1]
+                        hi_val <- rng[2]
+                      }
+                      lo <- call(">=", as.name(dim), lo_val)
+                      hi <- call("<=", as.name(dim), hi_val)
                       conditions <- c(conditions, list(call("&", lo, hi)))
                     }
                   }
@@ -708,6 +1039,7 @@ new_dm_crossfilter_block <- function(
               call
             }),
             state = list(
+              active_dims = r_active_dims,
               filters = r_filters,
               range_filters = r_range_filters
             )
@@ -732,7 +1064,7 @@ new_dm_crossfilter_block <- function(
         stop("Input must be a dm object")
       }
     },
-    allow_empty_state = c("filters", "range_filters"),
+    allow_empty_state = c("active_dims", "filters", "range_filters"),
     class = "dm_crossfilter_block",
     ...
   )

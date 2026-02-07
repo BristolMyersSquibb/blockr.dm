@@ -81,7 +81,13 @@ run_app(
     adlb_data   = new_static_block(data = adlb),
     adcm_data   = new_static_block(data = adcm),
     dm_obj      = new_dm_block(),
-    crossfilter = new_dm_crossfilter_block(),
+    crossfilter = new_dm_crossfilter_block(
+      active_dims = list(
+        adlb_data = c("PARAMCD", "AVAL"),
+        adsl_data = c("SEX", "AGE"),
+        adcm_data = c("CMCLAS")
+      )
+    ),
     result      = new_dm_pull_block(table = "adcm_data")
   ),
   links = c(
