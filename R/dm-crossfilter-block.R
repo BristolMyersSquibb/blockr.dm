@@ -214,6 +214,30 @@ new_dm_crossfilter_block <- function(
             )
           })
 
+          # --- DuckDB acceleration (when available) ---
+          use_duckdb <- requireNamespace("duckdb", quietly = TRUE) &&
+            requireNamespace("DBI", quietly = TRUE)
+          duck_con <- if (use_duckdb) {
+            DBI::dbConnect(duckdb::duckdb(), dbdir = ":memory:")
+          } else {
+            NULL
+          }
+
+          if (use_duckdb) {
+            shiny::observe({
+              info <- dm_info()
+              for (nm in info$table_names) {
+                duckdb::duckdb_register(duck_con, nm, info$tables[[nm]],
+                                         overwrite = TRUE)
+              }
+            })
+            session$onSessionEnded(function() {
+              if (!is.null(duck_con)) {
+                try(DBI::dbDisconnect(duck_con, shutdown = TRUE), silent = TRUE)
+              }
+            })
+          }
+
           # --- Find the key column linking a table to the rest ---
           # Returns the column name used for cross-table joins (e.g. "USUBJID")
           find_key_column <- function(tbl_name) {
@@ -306,120 +330,66 @@ new_dm_crossfilter_block <- function(
             r_range_filters(list())
           })
 
-          # --- Apply categorical + range filters to a single data frame ---
-          apply_filters <- function(df, cat_filters, rng_filters) {
-            for (dim in names(cat_filters)) {
-              val <- cat_filters[[dim]]
-              if (!is.null(val) && length(val) > 0 && dim %in% names(df)) {
-                df <- dplyr::filter(df, .data[[dim]] %in% val)
-              }
-            }
-            for (dim in names(rng_filters)) {
-              rng <- rng_filters[[dim]]
-              if (!is.null(rng) && length(rng) == 2 && dim %in% names(df)) {
-                col <- df[[dim]]
-                if (inherits(col, c("Date", "POSIXct", "POSIXlt"))) {
-                  rng_lo <- as.Date(rng[1], origin = "1970-01-01")
-                  rng_hi <- as.Date(rng[2], origin = "1970-01-01")
-                  df <- dplyr::filter(df, .data[[dim]] >= rng_lo & .data[[dim]] <= rng_hi)
-                } else {
-                  df <- dplyr::filter(df, dplyr::between(.data[[dim]], rng[1], rng[2]))
-                }
-              }
-            }
-            df
-          }
-
-          # --- Compute key set for a table after applying its local filters ---
-          # If exclude_dim is provided, skip that dimension's filter
-          compute_key_set <- function(tbl_name, exclude_dim = NULL) {
-            info <- dm_info()
-            df <- info$tables[[tbl_name]]
-            key_col <- find_key_column(tbl_name)
-            if (is.null(key_col)) return(NULL)
-
-            cat_f <- r_filters()[[tbl_name]] %||% list()
-            rng_f <- r_range_filters()[[tbl_name]] %||% list()
-
-            # Remove excluded dimension
-            if (!is.null(exclude_dim)) {
-              cat_f[[exclude_dim]] <- NULL
-              rng_f[[exclude_dim]] <- NULL
-            }
-
-            df <- apply_filters(df, cat_f, rng_f)
-            unique(df[[key_col]])
-          }
-
           # --- Cross-table crossfilter data for a specific dimension ---
-          # Returns the data for tbl_name filtered by:
-          #   - All OTHER tables' key sets (full filters)
-          #   - This table's filters EXCEPT exclude_dim
+          # Dispatches to DuckDB SQL backend when available, falls back to dplyr
           crossfilter_data_for_dim <- function(tbl_name, exclude_dim) {
             info <- dm_info()
-            df <- info$tables[[tbl_name]]
-            key_col <- find_key_column(tbl_name)
-
-            # Get this table's key set without exclude_dim
-            own_keys <- compute_key_set(tbl_name, exclude_dim = exclude_dim)
-
-            # Intersect with all other tables' key sets (full filters)
-            for (other_tbl in info$table_names) {
-              if (other_tbl == tbl_name) next
-              other_key_col <- find_key_column(other_tbl)
-              if (is.null(other_key_col)) next
-              other_keys <- compute_key_set(other_tbl)
-              if (!is.null(other_keys) && !is.null(own_keys)) {
-                own_keys <- intersect(own_keys, other_keys)
-              }
+            cf <- r_filters()
+            rf <- r_range_filters()
+            if (use_duckdb) {
+              result <- tryCatch(
+                duckdb_crossfilter_data(
+                  duck_con, info$tables, info$table_names, find_key_column,
+                  tbl_name, exclude_dim, cf, rf
+                ),
+                error = function(e) NULL
+              )
+              if (!is.null(result)) return(result)
             }
-
-            # Filter to allowed keys
-            if (!is.null(key_col) && !is.null(own_keys)) {
-              df <- dplyr::filter(df, .data[[key_col]] %in% own_keys)
-            }
-
-            # Apply this table's local filters except exclude_dim
-            cat_f <- r_filters()[[tbl_name]] %||% list()
-            rng_f <- r_range_filters()[[tbl_name]] %||% list()
-            cat_f[[exclude_dim]] <- NULL
-            rng_f[[exclude_dim]] <- NULL
-
-            apply_filters(df, cat_f, rng_f)
+            dplyr_crossfilter_data(
+              info$tables, find_key_column, tbl_name, exclude_dim, cf, rf
+            )
           }
 
-          # --- Fully filtered data for expression output ---
-          # Applies all filters from all tables via key intersection
+          # --- Aggregated counts for a categorical dimension ---
+          # Uses SQL agg push-down when DuckDB is available
+          crossfilter_agg_for_dim <- function(tbl_name, dim) {
+            info <- dm_info()
+            cf <- r_filters()
+            rf <- r_range_filters()
+            if (use_duckdb) {
+              result <- tryCatch(
+                duckdb_crossfilter_agg(
+                  duck_con, info$tables, info$table_names, find_key_column,
+                  tbl_name, dim, cf, rf
+                ),
+                error = function(e) NULL
+              )
+              if (!is.null(result)) return(result)
+            }
+            dplyr_crossfilter_agg(
+              info$tables, find_key_column, tbl_name, dim, cf, rf
+            )
+          }
+
+          # --- Fully filtered row counts ---
           filtered_row_count <- shiny::reactive({
             info <- dm_info()
-            total <- 0
-            filtered <- 0
-            for (tbl_name in info$table_names) {
-              df <- info$tables[[tbl_name]]
-              total <- total + nrow(df)
-
-              key_col <- find_key_column(tbl_name)
-              cat_f <- r_filters()[[tbl_name]] %||% list()
-              rng_f <- r_range_filters()[[tbl_name]] %||% list()
-
-              result_df <- apply_filters(df, cat_f, rng_f)
-
-              # Cross-table key filtering
-              if (!is.null(key_col)) {
-                own_keys <- unique(result_df[[key_col]])
-                for (other_tbl in info$table_names) {
-                  if (other_tbl == tbl_name) next
-                  other_keys <- compute_key_set(other_tbl)
-                  if (!is.null(other_keys)) {
-                    own_keys <- intersect(own_keys, other_keys)
-                  }
-                }
-                result_df <- dplyr::filter(result_df, .data[[key_col]] %in% own_keys)
-              }
-
-              filtered <- filtered + nrow(result_df)
+            cf <- r_filters()
+            rf <- r_range_filters()
+            if (use_duckdb) {
+              result <- tryCatch(
+                duckdb_crossfilter_counts(
+                  duck_con, info$tables, info$table_names, find_key_column,
+                  cf, rf
+                ),
+                error = function(e) NULL
+              )
+              if (!is.null(result)) return(result)
             }
-            list(total = total, filtered = filtered, n_tables = length(info$table_names))
+            dplyr_crossfilter_counts(
+              info$tables, find_key_column, info$table_names, cf, rf
+            )
           })
 
           # --- Handle row clicks ---
@@ -547,9 +517,9 @@ new_dm_crossfilter_block <- function(
 
           # --- Build filter table for a dimension in a specific table ---
           build_filter_table <- function(tbl_name, dim) {
-            df <- crossfilter_data_for_dim(tbl_name, dim)
+            agg <- crossfilter_agg_for_dim(tbl_name, dim)
 
-            if (nrow(df) == 0) {
+            if (nrow(agg) == 0) {
               # Show empty table with dim column and zero counts
               info <- dm_info()
               full_df <- info$tables[[tbl_name]]
@@ -562,15 +532,6 @@ new_dm_crossfilter_block <- function(
               )
               names(agg)[1] <- dim
             } else {
-              # Always aggregate by count for dm crossfilter
-              agg <- dplyr::summarise(
-                df,
-                .count = dplyr::n(),
-                .by = dplyr::all_of(dim)
-              )
-              agg <- dplyr::mutate(agg, !!dim := as.character(.data[[dim]]))
-              agg <- dplyr::arrange(agg, dplyr::desc(.data[[".count"]]))
-
               current_filter <- r_filters()[[tbl_name]][[dim]]
               has_filter <- !is.null(current_filter) && length(current_filter) > 0
               agg$.selected <- if (has_filter) {
@@ -1589,7 +1550,19 @@ new_dm_crossfilter_block <- function(
                   class = "btn btn-outline-secondary btn-sm",
                   style = "font-size: 0.7rem; padding: 1px 6px; opacity: 0.6;"
                 )
-              }
+              },
+              shiny::span(
+                style = paste0(
+                  "font-size: 10px; padding: 1px 6px; border-radius: 4px; ",
+                  "font-weight: 500; letter-spacing: 0.03em; ",
+                  if (use_duckdb) {
+                    "color: #b45309; background: #fef3c7;"
+                  } else {
+                    "color: #6b7280; background: #f3f4f6;"
+                  }
+                ),
+                if (use_duckdb) "duckdb" else "dplyr"
+              )
             )
           })
 

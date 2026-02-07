@@ -4,9 +4,19 @@
 \alias{new_dm_crossfilter_block}
 \title{dm Crossfilter Block}
 \usage{
-new_dm_crossfilter_block(filters = list(), range_filters = list(), ...)
+new_dm_crossfilter_block(
+  active_dims = list(),
+  filters = list(),
+  range_filters = list(),
+  ...
+)
 }
 \arguments{
+\item{active_dims}{Named list of per-table active filter columns. Each element
+is a character vector of column names to show as filter widgets.
+E.g., \code{list(adsl_data = c("SEX", "AGE"), adlb_data = c("PARAMCD"))}
+Start with an empty list (default) to show no filters initially.}
+
 \item{filters}{Named list of per-table categorical filters. Each element is
 itself a named list of character vectors.
 E.g., \code{list(adsl = list(SEX = c("F")), adae = list(AESEV = c("SEVERE")))}}

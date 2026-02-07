@@ -42,6 +42,8 @@ Suggests:
     blockr,
     blockr.dag,
     blockr.dock,
+    DBI,
+    duckdb,
     qs,
     rio,
     testthat (>= 3.0.0),
