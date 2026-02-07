@@ -342,6 +342,7 @@ new_dm_read_block <- function(
               input_type <- r_input_type()
               path_val <- current_path[1]
               selected <- r_selected_tables()
+              shiny::req(!is.null(selected))
 
               dm_read_expr(path_val, input_type, selected)
             }),

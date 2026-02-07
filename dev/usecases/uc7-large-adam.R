@@ -9,10 +9,17 @@
 # Source: safetyData R package (CDISC Pilot 01 study)
 # Labels preserved via parquet.
 
+pkgload::load_all("../blockr.core")
+pkgload::load_all("../blockr.dock")
+pkgload::load_all("../blockr.dm")
+
+
 library(blockr)
 library(blockr.dag)
 
-pkgload::load_all("../blockr.dm")
+
+# Enable debug logging to trace double evaluation
+options(blockr.log_level = "debug")
 
 adam_dir <- system.file("extdata", "adam", package = "blockr.dm")
 

@@ -194,7 +194,8 @@ dm_crossfilter_server_factory <- function(active_dims, filters, range_filters, m
           available_backends <- c(
             "dplyr",
             if (has_duckdb) "duckdb",
-            if (has_duckplyr) "duckplyr"
+            if (has_duckplyr) "duckplyr",
+            "dm"
           )
           default_backend <- if (has_duckdb) "duckdb" else if (has_duckplyr) "duckplyr" else "dplyr"
           r_backend <- shiny::reactiveVal(default_backend)
@@ -384,6 +385,12 @@ dm_crossfilter_server_factory <- function(active_dims, filters, range_filters, m
                 )
                 if (!is.null(result)) return(result)
               }
+            } else if (backend == "dm") {
+              result <- tryCatch(
+                dm_crossfilter_data(data(), tbl_name, exclude_dim, cf, rf),
+                error = function(e) NULL
+              )
+              if (!is.null(result)) return(result)
             }
             dplyr_crossfilter_data(
               info$tables, find_key_column, tbl_name, exclude_dim, cf, rf
@@ -418,6 +425,12 @@ dm_crossfilter_server_factory <- function(active_dims, filters, range_filters, m
                 )
                 if (!is.null(result)) return(result)
               }
+            } else if (backend == "dm") {
+              result <- tryCatch(
+                dm_crossfilter_agg(data(), tbl_name, dim, cf, rf),
+                error = function(e) NULL
+              )
+              if (!is.null(result)) return(result)
             }
             dplyr_crossfilter_agg(
               info$tables, find_key_column, tbl_name, dim, cf, rf
@@ -518,6 +531,11 @@ dm_crossfilter_server_factory <- function(active_dims, filters, range_filters, m
                   error = function(e) NULL
                 )
               }
+            } else if (backend == "dm") {
+              result <- tryCatch(
+                dm_crossfilter_counts(data(), info$table_names, cf, rf),
+                error = function(e) NULL
+              )
             }
             if (is.null(result)) {
               result <- dplyr_crossfilter_counts(
@@ -1771,6 +1789,7 @@ dm_crossfilter_server_factory <- function(active_dims, filters, range_filters, m
               backend,
               duckdb = "color: #b45309; background: #fef3c7;",
               duckplyr = "color: #7c3aed; background: #f3e8ff;",
+              dm = "color: #0369a1; background: #e0f2fe;",
               "color: #6b7280; background: #f3f4f6;"
             )
 

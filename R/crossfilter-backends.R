@@ -576,6 +576,162 @@ duckplyr_crossfilter_counts <- function(duck_tables, col_classes, key_col_fn,
   list(total = total, filtered = filtered, n_tables = length(table_names))
 }
 
+# ============================================================================
+# Backend 4: dm (dm::dm_filter for FK-aware filter propagation)
+# ============================================================================
+
+#' Build per-table filter expressions for dm::dm_filter
+#'
+#' Constructs a named list of rlang quosures suitable for splicing into
+#' `dm::dm_filter()`. Each element is a single combined expression for one table.
+#' @param cat_filters Named list of per-table categorical filters
+#' @param rng_filters Named list of per-table range filters
+#' @param tables Named list of data frames (for date column detection)
+#' @param exclude_tbl Table name whose `exclude_dim` should be skipped
+#' @param exclude_dim Dimension to exclude from `exclude_tbl`'s conditions
+#' @return Named list of expressions (one per table that has active filters)
+#' @keywords internal
+build_dm_filter_exprs <- function(cat_filters, rng_filters, tables,
+                                  exclude_tbl = NULL, exclude_dim = NULL) {
+  all_tables <- unique(c(names(cat_filters), names(rng_filters)))
+  result <- list()
+
+  for (tbl in all_tables) {
+    cat_f <- cat_filters[[tbl]] %||% list()
+    rng_f <- rng_filters[[tbl]] %||% list()
+
+    # Exclude the target dimension from the target table
+    if (!is.null(exclude_tbl) && tbl == exclude_tbl && !is.null(exclude_dim)) {
+      cat_f[[exclude_dim]] <- NULL
+      rng_f[[exclude_dim]] <- NULL
+    }
+
+    conditions <- list()
+
+    for (dim in names(cat_f)) {
+      val <- cat_f[[dim]]
+      if (!is.null(val) && length(val) > 0) {
+        conditions <- c(conditions, list(rlang::expr(!!rlang::sym(dim) %in% !!val)))
+      }
+    }
+
+    for (dim in names(rng_f)) {
+      rng <- rng_f[[dim]]
+      if (!is.null(rng) && length(rng) == 2) {
+        is_date <- FALSE
+        if (!is.null(tables) && !is.null(tables[[tbl]])) {
+          col <- tables[[tbl]][[dim]]
+          is_date <- inherits(col, c("Date", "POSIXct", "POSIXlt"))
+        }
+        if (is_date) {
+          rng_lo <- as.Date(rng[1], origin = "1970-01-01")
+          rng_hi <- as.Date(rng[2], origin = "1970-01-01")
+          conditions <- c(conditions, list(
+            rlang::expr(!!rlang::sym(dim) >= !!rng_lo & !!rlang::sym(dim) <= !!rng_hi)
+          ))
+        } else {
+          lo <- rng[1]
+          hi <- rng[2]
+          conditions <- c(conditions, list(
+            rlang::expr(!!rlang::sym(dim) >= !!lo & !!rlang::sym(dim) <= !!hi)
+          ))
+        }
+      }
+    }
+
+    if (length(conditions) > 0) {
+      if (length(conditions) == 1) {
+        result[[tbl]] <- conditions[[1]]
+      } else {
+        result[[tbl]] <- Reduce(function(a, b) rlang::expr(!!a & !!b), conditions)
+      }
+    }
+  }
+  result
+}
+
+#' Compute crossfilter-filtered data for a table (dm backend)
+#'
+#' Uses `dm::dm_filter()` to propagate filters via FK relationships,
+#' then extracts and returns the target table.
+#' @param dm_obj A dm object
+#' @param tbl_name Target table name
+#' @param exclude_dim Dimension to exclude from own-table filters
+#' @param cat_filters Named list of per-table categorical filters
+#' @param rng_filters Named list of per-table range filters
+#' @return Filtered data frame
+#' @keywords internal
+dm_crossfilter_data <- function(dm_obj, tbl_name, exclude_dim,
+                                cat_filters, rng_filters) {
+  tables <- stats::setNames(
+    lapply(names(dm::dm_get_tables(dm_obj)), function(nm) dm_obj[[nm]]),
+    names(dm::dm_get_tables(dm_obj))
+  )
+  filter_exprs <- build_dm_filter_exprs(
+    cat_filters, rng_filters, tables,
+    exclude_tbl = tbl_name, exclude_dim = exclude_dim
+  )
+
+  if (length(filter_exprs) > 0) {
+    dm_call <- rlang::expr(dm::dm_filter(dm_obj, !!!filter_exprs))
+    dm_filtered <- rlang::eval_tidy(dm_call)
+  } else {
+    dm_filtered <- dm_obj
+  }
+
+  dplyr::collect(dm_filtered[[tbl_name]])
+}
+
+#' Compute aggregated counts for a categorical dimension (dm backend)
+#'
+#' @inheritParams dm_crossfilter_data
+#' @param dim The categorical dimension column name
+#' @return Data frame with columns: dim, .count
+#' @keywords internal
+dm_crossfilter_agg <- function(dm_obj, tbl_name, dim,
+                               cat_filters, rng_filters) {
+  df <- dm_crossfilter_data(dm_obj, tbl_name, dim, cat_filters, rng_filters)
+  if (nrow(df) == 0) {
+    return(data.frame(x = character(0), .count = integer(0),
+                      stringsAsFactors = FALSE))
+  }
+  agg <- dplyr::summarise(df, .count = dplyr::n(),
+                           .by = dplyr::all_of(dim))
+  agg <- dplyr::mutate(agg, !!dim := as.character(.data[[dim]]))
+  dplyr::arrange(agg, dplyr::desc(.data[[".count"]]))
+}
+
+#' Compute filtered row counts per table (dm backend)
+#'
+#' @inheritParams dm_crossfilter_data
+#' @param table_names Character vector of table names to count
+#' @return List with total, filtered, n_tables
+#' @keywords internal
+dm_crossfilter_counts <- function(dm_obj, table_names,
+                                  cat_filters, rng_filters) {
+  tables <- stats::setNames(
+    lapply(table_names, function(nm) dm_obj[[nm]]),
+    table_names
+  )
+  filter_exprs <- build_dm_filter_exprs(cat_filters, rng_filters, tables)
+
+  if (length(filter_exprs) > 0) {
+    dm_call <- rlang::expr(dm::dm_filter(dm_obj, !!!filter_exprs))
+    dm_filtered <- rlang::eval_tidy(dm_call)
+  } else {
+    dm_filtered <- dm_obj
+  }
+
+  total <- 0L
+  filtered <- 0L
+  for (tbl_name in table_names) {
+    total <- total + nrow(tables[[tbl_name]])
+    filtered <- filtered + nrow(dplyr::collect(dm_filtered[[tbl_name]]))
+  }
+  list(total = total, filtered = filtered, n_tables = length(table_names))
+}
+
+
 #' Build column class map from a list of data frames
 #'
 #' Pre-computes the class of each column so that duckplyr filters can detect
