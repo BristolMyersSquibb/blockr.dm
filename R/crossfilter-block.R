@@ -50,7 +50,7 @@ new_crossfilter_block <- function(
     list()
   }
 
-  dm_server <- dm_crossfilter_server_factory(active_dims, dm_filters, dm_range_filters)
+  dm_server <- dm_crossfilter_server_factory(active_dims, dm_filters, dm_range_filters, measure = NULL)
 
   blockr.core::new_transform_block(
     server = function(id, data) {

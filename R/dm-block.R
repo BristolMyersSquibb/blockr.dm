@@ -295,7 +295,7 @@ new_dm_block <- function(infer_keys = TRUE, ...) {
                 col_sym <- as.name(pk$column)
                 # Wrap result in dm_add_pk call
                 result_expr <- bquote(
-                  dm::dm_add_pk(.(inner), .(tbl), .(col)),
+                  dm::dm_add_pk(.(inner), .(tbl), .(col), force = TRUE),
                   list(inner = result_expr, tbl = table_sym, col = col_sym)
                 )
               }
