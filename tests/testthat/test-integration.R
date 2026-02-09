@@ -33,13 +33,13 @@ test_that("full ADaM workflow works end-to-end", {
       dm_keys1 = new_dm_add_keys_block(
         pk_table = "adsl_data",
         pk_column = "USUBJID",
-        fk_table = "adlb_data",
+        fk_tables = "adlb_data",
         fk_column = "USUBJID"
       ),
       dm_keys2 = new_dm_add_keys_block(
         pk_table = "adsl_data",
         pk_column = "USUBJID",
-        fk_table = "adae_data",
+        fk_tables = "adae_data",
         fk_column = "USUBJID"
       ),
       filtered_dm = new_dm_filter_block(
@@ -131,7 +131,7 @@ test_that("dm workflow with flatten block works", {
       dm_keys = new_dm_add_keys_block(
         pk_table = "subjects_data",
         pk_column = "id",
-        fk_table = "orders_data",
+        fk_tables = "orders_data",
         fk_column = "subject_id"
       ),
       flattened = new_dm_flatten_block(

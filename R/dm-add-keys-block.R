@@ -2,11 +2,12 @@
 #'
 #' This block adds primary and foreign key relationships to a dm object.
 #' It allows selecting a table and column to set as primary key, and
-#' optionally link it as a foreign key from another table.
+#' optionally link it as a foreign key from one or more other tables.
 #'
 #' @param pk_table Character, the table to add primary key to. Default "".
 #' @param pk_column Character, the column to use as primary key. Default "".
-#' @param fk_table Character, the table containing the foreign key. Default "".
+#' @param fk_tables Character vector, tables containing the foreign key.
+#'   Default `character(0)`.
 #' @param fk_column Character, the column to use as foreign key. Default "".
 #' @param ... Forwarded to [blockr.core::new_transform_block()]
 #'
@@ -20,11 +21,11 @@
 #' and a foreign key in other tables (ADAE, ADLB, etc.).
 #'
 #' @examples
-#' # Add USUBJID as key linking ADSL to ADAE
+#' # Add USUBJID as key linking ADSL to multiple tables
 #' new_dm_add_keys_block(
 #'   pk_table = "adsl",
 #'   pk_column = "USUBJID",
-#'   fk_table = "adae",
+#'   fk_tables = c("adae", "adlb"),
 #'   fk_column = "USUBJID"
 #' )
 #'
@@ -32,7 +33,7 @@
 new_dm_add_keys_block <- function(
   pk_table = "",
   pk_column = "",
-  fk_table = "",
+  fk_tables = character(0),
   fk_column = "",
   ...
 ) {
@@ -45,13 +46,15 @@ new_dm_add_keys_block <- function(
           # Reactive values
           r_pk_table <- shiny::reactiveVal(pk_table)
           r_pk_column <- shiny::reactiveVal(pk_column)
-          r_fk_table <- shiny::reactiveVal(fk_table)
+          r_fk_tables <- shiny::reactiveVal(fk_tables)
           r_fk_column <- shiny::reactiveVal(fk_column)
 
           # Update reactives from inputs
           shiny::observeEvent(input$pk_table, r_pk_table(input$pk_table))
           shiny::observeEvent(input$pk_column, r_pk_column(input$pk_column))
-          shiny::observeEvent(input$fk_table, r_fk_table(input$fk_table))
+          shiny::observeEvent(input$fk_tables, {
+            r_fk_tables(input$fk_tables %||% character(0))
+          }, ignoreNULL = FALSE, ignoreInit = TRUE)
           shiny::observeEvent(input$fk_column, r_fk_column(input$fk_column))
 
           # Update table choices when dm changes
@@ -66,10 +69,14 @@ new_dm_add_keys_block <- function(
               shiny::updateSelectInput(session, "pk_table", choices = tables, selected = selected_pk)
               r_pk_table(selected_pk)
 
-              # Update FK table (allow empty)
-              current_fk <- r_fk_table()
-              selected_fk <- if (current_fk %in% tables) current_fk else ""
-              shiny::updateSelectInput(session, "fk_table", choices = c("", tables), selected = selected_fk)
+              # Update FK tables (multi-select)
+              current_fk <- r_fk_tables()
+              selected_fk <- current_fk[current_fk %in% tables]
+              shiny::updateSelectizeInput(
+                session, "fk_tables",
+                choices = tables,
+                selected = selected_fk
+              )
             }
           })
 
@@ -92,21 +99,32 @@ new_dm_add_keys_block <- function(
             }
           })
 
-          # Update FK column choices when fk_table changes
-          shiny::observeEvent(list(data(), r_fk_table()), {
+          # Update FK column choices when fk_tables changes
+          shiny::observeEvent(list(data(), r_fk_tables()), {
             dm_obj <- data()
-            tbl <- r_fk_table()
-            if (inherits(dm_obj, "dm") && nzchar(tbl)) {
-              tbl_data <- tryCatch(
-                dm::pull_tbl(dm_obj, !!tbl),
-                error = function(e) NULL
-              )
-              if (!is.null(tbl_data)) {
-                cols <- colnames(tbl_data)
-                current <- r_fk_column()
-                selected <- if (current %in% cols) current else cols[1]
-                shiny::updateSelectInput(session, "fk_column", choices = c("", cols), selected = selected)
+            tbls <- r_fk_tables()
+            if (inherits(dm_obj, "dm") && length(tbls) > 0) {
+              # Show columns common to ALL selected FK tables
+              common_cols <- NULL
+              for (tbl in tbls) {
+                tbl_data <- tryCatch(
+                  dm::pull_tbl(dm_obj, !!tbl),
+                  error = function(e) NULL
+                )
+                if (is.null(tbl_data)) next
+                if (is.null(common_cols)) {
+                  common_cols <- colnames(tbl_data)
+                } else {
+                  common_cols <- intersect(common_cols, colnames(tbl_data))
+                }
               }
+              if (!is.null(common_cols) && length(common_cols) > 0) {
+                current <- r_fk_column()
+                selected <- if (current %in% common_cols) current else common_cols[1]
+                shiny::updateSelectInput(session, "fk_column", choices = c("", common_cols), selected = selected)
+              }
+            } else {
+              shiny::updateSelectInput(session, "fk_column", choices = character(), selected = "")
             }
           })
 
@@ -114,66 +132,41 @@ new_dm_add_keys_block <- function(
             expr = shiny::reactive({
               pk_tbl <- r_pk_table()
               pk_col <- r_pk_column()
-              fk_tbl <- r_fk_table()
+              fk_tbls <- r_fk_tables()
               fk_col <- r_fk_column()
 
               shiny::req(pk_tbl, nzchar(pk_tbl), pk_col, nzchar(pk_col))
 
-              # Check if PK already exists in the dm object
-              dm_obj <- data()
-              pk_exists <- FALSE
-              if (inherits(dm_obj, "dm")) {
-                existing_pks <- tryCatch(
-                  dm::dm_get_all_pks(dm_obj),
-                  error = function(e) data.frame(table = character())
+              # Start with adding PK (force = TRUE to allow overwrite)
+              result_expr <- bquote(
+                dm::dm_add_pk(data, .(pk_tbl_sym), .(pk_col_sym), force = TRUE),
+                list(
+                  pk_tbl_sym = as.name(pk_tbl),
+                  pk_col_sym = as.name(pk_col)
                 )
-                pk_exists <- pk_tbl %in% existing_pks$table
+              )
+
+              # Chain dm_add_fk for each FK table
+              if (length(fk_tbls) > 0 && nzchar(fk_col)) {
+                for (fk_tbl in fk_tbls) {
+                  result_expr <- bquote(
+                    dm::dm_add_fk(.(inner), .(fk_tbl_sym), .(fk_col_sym), .(pk_tbl_sym)),
+                    list(
+                      inner = result_expr,
+                      fk_tbl_sym = as.name(fk_tbl),
+                      fk_col_sym = as.name(fk_col),
+                      pk_tbl_sym = as.name(pk_tbl)
+                    )
+                  )
+                }
               }
 
-              if (nzchar(fk_tbl) && nzchar(fk_col)) {
-                if (pk_exists) {
-                  # PK already exists, only add FK
-                  bquote(
-                    dm::dm_add_fk(data, .(fk_tbl_sym), .(fk_col_sym), .(pk_tbl_sym)),
-                    list(
-                      pk_tbl_sym = as.name(pk_tbl),
-                      fk_tbl_sym = as.name(fk_tbl),
-                      fk_col_sym = as.name(fk_col)
-                    )
-                  )
-                } else {
-                  # Add both PK and FK
-                  bquote(
-                    dm::dm_add_pk(data, .(pk_tbl_sym), .(pk_col_sym)) |>
-                      dm::dm_add_fk(.(fk_tbl_sym), .(fk_col_sym), .(pk_tbl_sym)),
-                    list(
-                      pk_tbl_sym = as.name(pk_tbl),
-                      pk_col_sym = as.name(pk_col),
-                      fk_tbl_sym = as.name(fk_tbl),
-                      fk_col_sym = as.name(fk_col)
-                    )
-                  )
-                }
-              } else {
-                if (pk_exists) {
-                  # PK exists, nothing to do - return identity
-                  quote(data)
-                } else {
-                  # Add only PK
-                  bquote(
-                    dm::dm_add_pk(data, .(pk_tbl_sym), .(pk_col_sym)),
-                    list(
-                      pk_tbl_sym = as.name(pk_tbl),
-                      pk_col_sym = as.name(pk_col)
-                    )
-                  )
-                }
-              }
+              result_expr
             }),
             state = list(
               pk_table = r_pk_table,
               pk_column = r_pk_column,
-              fk_table = r_fk_table,
+              fk_tables = r_fk_tables,
               fk_column = r_fk_column
             )
           )
@@ -213,16 +206,17 @@ new_dm_add_keys_block <- function(
             ),
             shiny::div(
               class = "block-section",
-              shiny::tags$h4("Foreign Key (optional)"),
+              shiny::tags$h4("Foreign Keys (optional)"),
               shiny::div(
                 class = "block-section-grid",
                 shiny::div(
                   class = "block-input-wrapper",
-                  shiny::selectInput(
-                    shiny::NS(id, "fk_table"),
-                    label = "Table",
-                    choices = if (nzchar(fk_table)) fk_table else character(),
-                    selected = fk_table
+                  shiny::selectizeInput(
+                    shiny::NS(id, "fk_tables"),
+                    label = "Tables",
+                    choices = if (length(fk_tables) > 0) fk_tables else character(),
+                    selected = fk_tables,
+                    multiple = TRUE
                   )
                 ),
                 shiny::div(
@@ -240,7 +234,7 @@ new_dm_add_keys_block <- function(
         )
       )
     },
-    allow_empty_state = c("fk_table", "fk_column"),
+    allow_empty_state = c("fk_tables", "fk_column"),
     class = "dm_add_keys_block",
     ...
   )

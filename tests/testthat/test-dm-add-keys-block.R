@@ -9,7 +9,7 @@ test_that("dm_add_keys block constructor", {
  block2 <- new_dm_add_keys_block(
    pk_table = "adsl",
    pk_column = "USUBJID",
-   fk_table = "adae",
+   fk_tables = "adae",
    fk_column = "USUBJID"
  )
  expect_s3_class(block2, "dm_add_keys_block")
@@ -51,7 +51,7 @@ test_that("dm_add_keys block adds primary and foreign key", {
  block <- new_dm_add_keys_block(
    pk_table = "subjects",
    pk_column = "id",
-   fk_table = "events",
+   fk_tables = "events",
    fk_column = "subject_id"
  )
 
@@ -88,7 +88,7 @@ test_that("dm_add_keys block state includes all parameters", {
  block <- new_dm_add_keys_block(
    pk_table = "adsl",
    pk_column = "USUBJID",
-   fk_table = "adae",
+   fk_tables = "adae",
    fk_column = "USUBJID"
  )
 
@@ -105,7 +105,7 @@ test_that("dm_add_keys block state includes all parameters", {
      state <- session$returned$state
      expect_true("pk_table" %in% names(state))
      expect_true("pk_column" %in% names(state))
-     expect_true("fk_table" %in% names(state))
+     expect_true("fk_tables" %in% names(state))
      expect_true("fk_column" %in% names(state))
 
      # Values should match constructor
