@@ -44,6 +44,7 @@ Suggests:
     blockr.dock,
     DBI,
     duckdb,
+    duckplyr,
     qs,
     rio,
     testthat (>= 3.0.0),

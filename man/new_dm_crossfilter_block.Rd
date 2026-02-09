@@ -8,6 +8,7 @@ new_dm_crossfilter_block(
   active_dims = list(),
   filters = list(),
   range_filters = list(),
+  measure = NULL,
   ...
 )
 }
@@ -24,6 +25,11 @@ E.g., \code{list(adsl = list(SEX = c("F")), adae = list(AESEV = c("SEVERE")))}}
 \item{range_filters}{Named list of per-table range filters. Each element is
 a named list of numeric(2) vectors.
 E.g., \code{list(adsl = list(AGE = c(65, 80)))}}
+
+\item{measure}{Measure column to aggregate in categorical filters, as
+\code{"table.column"} (e.g., \code{"sales.amount"}). Defaults to \code{NULL} (row count).
+When set, categorical filter bars show \code{SUM(column)} per dimension value
+instead of row counts.}
 
 \item{...}{Forwarded to \code{\link[blockr.core:new_transform_block]{blockr.core::new_transform_block()}}}
 }

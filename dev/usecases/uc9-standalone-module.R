@@ -5,7 +5,6 @@
 #
 # The module takes a dm object as input and returns a reactive filtered dm.
 
-pkgload::load_all("../blockr.core")
 pkgload::load_all("../blockr.dm")
 
 library(shiny)
