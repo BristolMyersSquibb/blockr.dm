@@ -11,6 +11,9 @@ library(blockr)
 library(blockr.dag)
 library(blockr.dm)
 library(dplyr)
+pkgload::load_all("../blockr.bi")
+pkgload::load_all("../blockr.dm")
+pkgload::load_all("../blockr.dag")
 
 # =============================================================================
 # Create test data with DATES (simulating ADaM structure)
