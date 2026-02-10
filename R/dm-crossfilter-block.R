@@ -251,6 +251,10 @@ dm_crossfilter_server_factory <- function(active_dims, filters, range_filters, m
                   df <- info$tables[[nm]]
                   # Strip non-essential column attributes (duckplyr rejects them)
                   for (cn in names(df)) {
+                    # Convert factors to character (duckplyr doesn't support factors)
+                    if (is.factor(df[[cn]])) {
+                      df[[cn]] <- as.character(df[[cn]])
+                    }
                     a <- attributes(df[[cn]])
                     keep <- intersect(names(a), c("class", "levels", "names", "dim", "tzone"))
                     attributes(df[[cn]]) <- a[keep]
@@ -344,10 +348,15 @@ dm_crossfilter_server_factory <- function(active_dims, filters, range_filters, m
           })
 
           # --- State: per-table active dims + filters ---
-          r_active_dims <- shiny::reactiveVal(active_dims)
-          r_filters <- shiny::reactiveVal(filters)
-          r_range_filters <- shiny::reactiveVal(range_filters)
-          r_measure <- shiny::reactiveVal(measure %||% ".count")
+          # as_rv: if x is already a reactiveVal (injected by external_ctrl),
+          # reuse it; otherwise create a fresh one.
+          as_rv <- function(x, default = x) {
+            if (inherits(x, "reactiveVal")) x else shiny::reactiveVal(default)
+          }
+          r_active_dims <- as_rv(active_dims)
+          r_filters <- as_rv(filters)
+          r_range_filters <- as_rv(range_filters)
+          r_measure <- as_rv(measure, measure %||% ".count")
 
           # Clear all filters
           shiny::observeEvent(input$clear_filters, {
@@ -2046,6 +2055,7 @@ new_dm_crossfilter_block <- function(
     # The server already validates via shiny::req(inherits(dm_obj, "dm")).
     # See https://github.com/blockr-org/blockr.core/issues/XXX
     allow_empty_state = c("active_dims", "filters", "range_filters", "measure"),
+    external_ctrl = TRUE,
     class = "dm_crossfilter_block",
     ...
   )

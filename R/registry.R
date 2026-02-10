@@ -76,6 +76,38 @@ register_dm_blocks <- function() {
       "sliders",
       "sliders2"
     ),
+    arguments = list(
+      NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+      # crossfilter_block (pos 11):
+      c(
+        filters = "Categorical filters. Object: column name -> array of selected values (strings)",
+        range_filters = "Range filters for numeric columns. Object: column name -> [min, max]",
+        active_dims = "Active filter columns. Object with key \".tbl\" -> array of column names"
+      ),
+      # dm_crossfilter_block (pos 12):
+      c(
+        active_dims = "Per-table active filter columns. Object: table name -> array of column names",
+        filters = "Per-table categorical filters. Object: table name -> {column -> array of values (strings)}",
+        range_filters = "Per-table range filters. Object: table name -> {column -> [min, max]}",
+        measure = "Aggregation measure as \"table.column\" string, or null for row counts"
+      )
+    ),
+    examples = list(
+      NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+      # crossfilter_block (pos 11):
+      paste0(
+        'Categorical: {"filters": {"Species": ["setosa", "virginica"]}}\n',
+        'Numeric range: {"range_filters": {"Sepal.Length": [5, 7]}}\n',
+        'Active dims: {"active_dims": {".tbl": ["Species", "Sepal.Width"]}}'
+      ),
+      # dm_crossfilter_block (pos 12):
+      paste0(
+        'Filter one table: {"filters": {"adsl": {"SEX": ["F"]}}}\n',
+        'Range + categorical: {"filters": {"adae": {"AESEV": ["MILD", "SEVERE"]}}, ',
+        '"range_filters": {"adsl": {"AGE": [40, 60]}}}\n',
+        'Set active dims: {"active_dims": {"adsl": ["SEX", "AGE"], "adae": ["AESEV"]}}'
+      )
+    ),
     package = utils::packageName(),
     overwrite = TRUE
   )

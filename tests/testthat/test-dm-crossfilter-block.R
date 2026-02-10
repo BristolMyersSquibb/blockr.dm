@@ -397,3 +397,78 @@ test_that("dm_crossfilter_block full state round-trip", {
     args = list(x = block, data = list(data = function() test_dm))
   )
 })
+
+# ==============================================================================
+# external_ctrl: state is writable reactiveVals
+# ==============================================================================
+
+test_that("dm_crossfilter_block state vars are reactiveVals (external_ctrl)", {
+  block <- new_dm_crossfilter_block()
+  test_dm <- make_test_dm()
+
+  testServer(
+    blockr.core:::get_s3_method("block_server", block),
+    {
+      session$flushReact()
+
+      state <- session$returned$state
+      # With external_ctrl = TRUE, state vars should be reactiveVals
+      expect_true(inherits(state$filters, "reactiveVal"))
+      expect_true(inherits(state$range_filters, "reactiveVal"))
+      expect_true(inherits(state$active_dims, "reactiveVal"))
+    },
+    args = list(x = block, data = list(data = function() test_dm))
+  )
+})
+
+test_that("dm_crossfilter_block writing filters reactiveVal updates result", {
+  block <- new_dm_crossfilter_block()
+  test_dm <- make_test_dm()
+
+  testServer(
+    blockr.core:::get_s3_method("block_server", block),
+    {
+      session$flushReact()
+
+      # Initially no filters: all 5 subjects
+      result <- session$returned$result()
+      adsl <- dm::pull_tbl(result, adsl)
+      expect_equal(nrow(adsl), 5)
+
+      # Simulate AI setting filters (write to reactiveVal)
+      state <- session$returned$state
+      state$filters(list(adsl = list(SEX = "F")))
+      session$flushReact()
+
+      result2 <- session$returned$result()
+      adsl2 <- dm::pull_tbl(result2, adsl)
+      expect_equal(nrow(adsl2), 2)
+      expect_true(all(adsl2$SEX == "F"))
+    },
+    args = list(x = block, data = list(data = function() test_dm))
+  )
+})
+
+test_that("dm_crossfilter_block writing range_filters reactiveVal updates result", {
+  block <- new_dm_crossfilter_block()
+  test_dm <- make_test_dm()
+
+  testServer(
+    blockr.core:::get_s3_method("block_server", block),
+    {
+      session$flushReact()
+
+      # Simulate AI setting range filter
+      state <- session$returned$state
+      state$range_filters(list(adsl = list(AGE = c(40, 55))))
+      session$flushReact()
+
+      result <- session$returned$result()
+      adsl <- dm::pull_tbl(result, adsl)
+      expect_true(all(adsl$AGE >= 40 & adsl$AGE <= 55))
+      # SUBJ-1 (45) and SUBJ-2 (52) match
+      expect_equal(nrow(adsl), 2)
+    },
+    args = list(x = block, data = list(data = function() test_dm))
+  )
+})

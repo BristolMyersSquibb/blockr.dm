@@ -42,18 +42,69 @@ new_crossfilter_block <- function(
     active_dims = list(),
     ...
 ) {
-  # Convert flat filters to per-table format for the dm crossfilter engine
-  dm_filters <- if (length(filters) > 0) list(.tbl = filters) else list()
-  dm_range_filters <- if (length(range_filters) > 0) {
-    list(.tbl = range_filters)
-  } else {
-    list()
-  }
-
-  dm_server <- dm_crossfilter_server_factory(active_dims, dm_filters, dm_range_filters, measure = NULL)
-
   blockr.core::new_transform_block(
     server = function(id, data) {
+      # After external_ctrl injection: filters, range_filters, active_dims
+      # may be reactiveVals (AI-controllable) or plain values (standalone).
+      is_reactive <- inherits(filters, "reactiveVal")
+
+      if (is_reactive) {
+        # Create per-table reactiveVals for the dm crossfilter engine
+        dm_rv_filters <- shiny::reactiveVal(
+          if (length(shiny::isolate(filters())) > 0) {
+            list(.tbl = shiny::isolate(filters()))
+          } else {
+            list()
+          }
+        )
+        dm_rv_range_filters <- shiny::reactiveVal(
+          if (length(shiny::isolate(range_filters())) > 0) {
+            list(.tbl = shiny::isolate(range_filters()))
+          } else {
+            list()
+          }
+        )
+
+        # Sync flat → per-table (AI sets flat filters → dm engine gets per-table)
+        shiny::observeEvent(filters(), {
+          val <- if (length(filters()) > 0) list(.tbl = filters()) else list()
+          if (!identical(dm_rv_filters(), val)) dm_rv_filters(val)
+        })
+        shiny::observeEvent(range_filters(), {
+          val <- if (length(range_filters()) > 0) {
+            list(.tbl = range_filters())
+          } else {
+            list()
+          }
+          if (!identical(dm_rv_range_filters(), val)) dm_rv_range_filters(val)
+        })
+
+        # Sync per-table → flat (user UI changes → flat reactiveVals)
+        shiny::observeEvent(dm_rv_filters(), {
+          flat <- dm_rv_filters()[[".tbl"]] %||% list()
+          if (!identical(filters(), flat)) filters(flat)
+        })
+        shiny::observeEvent(dm_rv_range_filters(), {
+          flat <- dm_rv_range_filters()[[".tbl"]] %||% list()
+          if (!identical(range_filters(), flat)) range_filters(flat)
+        })
+
+        dm_server <- dm_crossfilter_server_factory(
+          active_dims, dm_rv_filters, dm_rv_range_filters, measure = NULL
+        )
+      } else {
+        # Original non-reactive path
+        dm_filters <- if (length(filters) > 0) list(.tbl = filters) else list()
+        dm_range_filters <- if (length(range_filters) > 0) {
+          list(.tbl = range_filters)
+        } else {
+          list()
+        }
+        dm_server <- dm_crossfilter_server_factory(
+          active_dims, dm_filters, dm_range_filters, measure = NULL
+        )
+      }
+
       # Wrap data frame as a single-table dm, delegate to dm crossfilter
       dm_data <- shiny::reactive({
         df <- data()
@@ -81,19 +132,27 @@ new_crossfilter_block <- function(
         as.call(list(quote(dplyr::filter), quote(data), cond))
       })
 
-      # Convert state: unwrap per-table format back to flat
-      dm_state <- result$state
-      result$state <- list(
-        active_dims = dm_state$active_dims,
-        filters = function() {
-          f <- dm_state$filters()
-          f[[".tbl"]] %||% list()
-        },
-        range_filters = function() {
-          f <- dm_state$range_filters()
-          f[[".tbl"]] %||% list()
-        }
-      )
+      # State: use injected reactiveVals if available, otherwise unwrap from dm
+      if (is_reactive) {
+        result$state <- list(
+          active_dims = active_dims,
+          filters = filters,
+          range_filters = range_filters
+        )
+      } else {
+        dm_state <- result$state
+        result$state <- list(
+          active_dims = dm_state$active_dims,
+          filters = function() {
+            f <- dm_state$filters()
+            f[[".tbl"]] %||% list()
+          },
+          range_filters = function() {
+            f <- dm_state$range_filters()
+            f[[".tbl"]] %||% list()
+          }
+        )
+      }
 
       result
     },
@@ -104,6 +163,7 @@ new_crossfilter_block <- function(
       }
     },
     allow_empty_state = c("active_dims", "filters", "range_filters"),
+    external_ctrl = TRUE,
     class = "crossfilter_block",
     ...
   )
