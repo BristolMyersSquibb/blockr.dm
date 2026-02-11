@@ -472,3 +472,264 @@ test_that("dm_crossfilter_block writing range_filters reactiveVal updates result
     args = list(x = block, data = list(data = function() test_dm))
   )
 })
+
+
+# ==============================================================================
+# Lookup backend unit tests
+# ==============================================================================
+
+make_test_tables <- function() {
+  adsl <- data.frame(
+    USUBJID = paste0("SUBJ-", 1:5),
+    SEX = c("M", "F", "M", "F", "M"),
+    AGE = c(45, 52, 38, 61, 29),
+    stringsAsFactors = FALSE
+  )
+  adae <- data.frame(
+    USUBJID = c("SUBJ-1", "SUBJ-1", "SUBJ-2", "SUBJ-3", "SUBJ-4"),
+    AESEV = c("MILD", "SEVERE", "MODERATE", "MILD", "SEVERE"),
+    stringsAsFactors = FALSE
+  )
+  list(adsl = adsl, adae = adae)
+}
+
+make_test_pks_fks <- function() {
+  dm_obj <- make_test_dm()
+  list(
+    pks = dm::dm_get_all_pks(dm_obj),
+    fks = dm::dm_get_all_fks(dm_obj)
+  )
+}
+
+test_that("build_crossfilter_lookups returns NULL with no FKs", {
+  tables <- make_test_tables()
+  pks_fks <- make_test_pks_fks()
+  empty_fks <- pks_fks$fks[0, ]
+  result <- build_crossfilter_lookups(
+    tables, list(adsl = "SEX"), pks_fks$pks, empty_fks
+  )
+  expect_null(result)
+})
+
+test_that("build_crossfilter_lookups returns NULL with no active dims", {
+  tables <- make_test_tables()
+  pks_fks <- make_test_pks_fks()
+  result <- build_crossfilter_lookups(
+    tables, list(), pks_fks$pks, pks_fks$fks
+  )
+  expect_null(result)
+})
+
+test_that("build_crossfilter_lookups builds correct lookup for parent+child", {
+  tables <- make_test_tables()
+  pks_fks <- make_test_pks_fks()
+  active_dims <- list(adsl = c("SEX"), adae = c("AESEV"))
+
+  info <- build_crossfilter_lookups(
+    tables, active_dims, pks_fks$pks, pks_fks$fks
+  )
+
+  expect_false(is.null(info))
+  expect_equal(info$parent_table, "adsl")
+  expect_equal(info$child_tables, "adae")
+  expect_equal(info$parent_key, "USUBJID")
+  expect_equal(info$child_fk_cols[["adae"]], "USUBJID")
+
+  # Lookup should have child + parent columns
+  lookup <- info$lookups[["adae"]]
+  expect_true("USUBJID" %in% names(lookup))
+  expect_true("AESEV" %in% names(lookup))
+  expect_true("SEX" %in% names(lookup))
+  expect_equal(nrow(lookup), nrow(tables$adae))
+
+  # dim_source mapping
+  expect_equal(info$dim_source[["SEX"]], "adsl")
+  expect_equal(info$dim_source[["AESEV"]], "adae")
+})
+
+test_that("lookup_crossfilter_agg matches dplyr backend for child dim", {
+  tables <- make_test_tables()
+  pks_fks <- make_test_pks_fks()
+  active_dims <- list(adsl = c("SEX"), adae = c("AESEV"))
+  cat_filters <- list(adsl = list(SEX = "F"))
+  rng_filters <- list()
+
+  find_key <- function(tbl) {
+    if (tbl == "adsl") "USUBJID" else "USUBJID"
+  }
+
+  info <- build_crossfilter_lookups(
+    tables, active_dims, pks_fks$pks, pks_fks$fks
+  )
+
+  # Lookup agg for AESEV (child dim)
+  lookup_result <- lookup_crossfilter_agg(
+    info, "adae", "AESEV", cat_filters, rng_filters
+  )
+
+  # dplyr agg for comparison
+  dplyr_result <- dplyr_crossfilter_agg(
+    tables, find_key, "adae", "AESEV", cat_filters, rng_filters
+  )
+
+  # Sort both for comparison
+  lookup_sorted <- lookup_result[order(lookup_result$AESEV), ]
+  dplyr_sorted <- dplyr_result[order(dplyr_result$AESEV), ]
+
+  expect_equal(lookup_sorted$AESEV, dplyr_sorted$AESEV)
+  expect_equal(lookup_sorted$.count, dplyr_sorted$.count)
+})
+
+test_that("lookup_crossfilter_agg matches dplyr for parent dim", {
+  tables <- make_test_tables()
+  pks_fks <- make_test_pks_fks()
+  active_dims <- list(adsl = c("SEX"), adae = c("AESEV"))
+  cat_filters <- list(adae = list(AESEV = "SEVERE"))
+  rng_filters <- list()
+
+  find_key <- function(tbl) "USUBJID"
+
+  info <- build_crossfilter_lookups(
+    tables, active_dims, pks_fks$pks, pks_fks$fks
+  )
+
+  # Lookup agg for SEX (parent dim)
+  lookup_result <- lookup_crossfilter_agg(
+    info, "adsl", "SEX", cat_filters, rng_filters
+  )
+
+  # dplyr agg for comparison
+  dplyr_result <- dplyr_crossfilter_agg(
+    tables, find_key, "adsl", "SEX", cat_filters, rng_filters
+  )
+
+  lookup_sorted <- lookup_result[order(lookup_result$SEX), ]
+  dplyr_sorted <- dplyr_result[order(dplyr_result$SEX), ]
+
+  expect_equal(lookup_sorted$SEX, dplyr_sorted$SEX)
+  expect_equal(lookup_sorted$.count, dplyr_sorted$.count)
+})
+
+test_that("lookup_crossfilter_counts matches dplyr backend", {
+  tables <- make_test_tables()
+  pks_fks <- make_test_pks_fks()
+  active_dims <- list(adsl = c("SEX"), adae = c("AESEV"))
+  cat_filters <- list(adsl = list(SEX = "F"))
+  rng_filters <- list()
+
+  find_key <- function(tbl) "USUBJID"
+
+  info <- build_crossfilter_lookups(
+    tables, active_dims, pks_fks$pks, pks_fks$fks
+  )
+
+  lookup_counts <- lookup_crossfilter_counts(
+    info, tables, c("adsl", "adae"), cat_filters, rng_filters
+  )
+
+  dplyr_counts <- dplyr_crossfilter_counts(
+    tables, find_key, c("adsl", "adae"), cat_filters, rng_filters
+  )
+
+  expect_equal(lookup_counts$total, dplyr_counts$total)
+  expect_equal(lookup_counts$filtered, dplyr_counts$filtered)
+  expect_equal(lookup_counts$n_tables, dplyr_counts$n_tables)
+})
+
+test_that("lookup_crossfilter_data matches dplyr for child table", {
+  tables <- make_test_tables()
+  pks_fks <- make_test_pks_fks()
+  active_dims <- list(adsl = c("SEX"), adae = c("AESEV"))
+  cat_filters <- list(adsl = list(SEX = "F"))
+  rng_filters <- list()
+
+  find_key <- function(tbl) "USUBJID"
+
+  info <- build_crossfilter_lookups(
+    tables, active_dims, pks_fks$pks, pks_fks$fks
+  )
+
+  # Data for AESEV dim (child), excludes AESEV from own filters
+  lookup_data <- lookup_crossfilter_data(
+    info, "adae", "AESEV", cat_filters, rng_filters
+  )
+
+  dplyr_data <- dplyr_crossfilter_data(
+    tables, find_key, "adae", "AESEV", cat_filters, rng_filters
+  )
+
+  # Same key set
+  expect_equal(
+    sort(unique(lookup_data$USUBJID)),
+    sort(unique(dplyr_data$USUBJID))
+  )
+  # Same row count
+  expect_equal(nrow(lookup_data), nrow(dplyr_data))
+})
+
+test_that("lookup with no filters returns all data", {
+  tables <- make_test_tables()
+  pks_fks <- make_test_pks_fks()
+  active_dims <- list(adsl = c("SEX"), adae = c("AESEV"))
+
+  info <- build_crossfilter_lookups(
+    tables, active_dims, pks_fks$pks, pks_fks$fks
+  )
+
+  # No filters → all rows
+  counts <- lookup_crossfilter_counts(
+    info, tables, c("adsl", "adae"), list(), list()
+  )
+  # SUBJ-5 has no AEs, so key intersection is SUBJ-1..4
+  # adsl: 4 subjects, adae: 5 rows (all for SUBJ-1..4)
+  expect_equal(counts$filtered, 4 + 5)
+  expect_equal(counts$total, 5 + 5)
+})
+
+test_that("lookup multi-child sibling intersection", {
+  # Parent + 2 children
+  adsl <- data.frame(
+    USUBJID = paste0("S", 1:4),
+    SEX = c("M", "F", "M", "F"),
+    stringsAsFactors = FALSE
+  )
+  adae <- data.frame(
+    USUBJID = c("S1", "S2", "S3"),
+    AESEV = c("MILD", "SEVERE", "MILD"),
+    stringsAsFactors = FALSE
+  )
+  adlb <- data.frame(
+    USUBJID = c("S2", "S3", "S4"),
+    PARAMCD = c("ALT", "AST", "ALT"),
+    stringsAsFactors = FALSE
+  )
+  tables <- list(adsl = adsl, adae = adae, adlb = adlb)
+
+  dm_obj <- dm::dm(adsl = adsl, adae = adae, adlb = adlb) |>
+    dm::dm_add_pk(adsl, USUBJID) |>
+    dm::dm_add_fk(adae, USUBJID, adsl) |>
+    dm::dm_add_fk(adlb, USUBJID, adsl)
+
+  pks <- dm::dm_get_all_pks(dm_obj)
+  fks <- dm::dm_get_all_fks(dm_obj)
+  active_dims <- list(adsl = "SEX", adae = "AESEV", adlb = "PARAMCD")
+
+  info <- build_crossfilter_lookups(tables, active_dims, pks, fks)
+  expect_equal(length(info$lookups), 2)  # one per child
+
+  find_key <- function(tbl) "USUBJID"
+
+  # Filter AESEV=SEVERE → only S2 has severe AEs
+  # S2 is in adlb → allowed keys = {S2}
+  cat_filters <- list(adae = list(AESEV = "SEVERE"))
+
+  lookup_counts <- lookup_crossfilter_counts(
+    info, tables, c("adsl", "adae", "adlb"), cat_filters, list()
+  )
+  dplyr_counts <- dplyr_crossfilter_counts(
+    tables, find_key, c("adsl", "adae", "adlb"), cat_filters, list()
+  )
+
+  expect_equal(lookup_counts$total, dplyr_counts$total)
+  expect_equal(lookup_counts$filtered, dplyr_counts$filtered)
+})

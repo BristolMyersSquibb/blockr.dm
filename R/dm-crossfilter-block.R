@@ -192,12 +192,13 @@ dm_crossfilter_server_factory <- function(active_dims, filters, range_filters, m
           has_duckplyr <- requireNamespace("duckplyr", quietly = TRUE)
 
           available_backends <- c(
+            "lookup",
             "dplyr",
             if (has_duckdb) "duckdb",
             if (has_duckplyr) "duckplyr",
             "dm"
           )
-          default_backend <- if (has_duckdb) "duckdb" else if (has_duckplyr) "duckplyr" else "dplyr"
+          default_backend <- "lookup"
           r_backend <- shiny::reactiveVal(default_backend)
           r_last_timing <- shiny::reactiveVal(NULL)
 
@@ -358,6 +359,16 @@ dm_crossfilter_server_factory <- function(active_dims, filters, range_filters, m
           r_range_filters <- as_rv(range_filters)
           r_measure <- as_rv(measure, measure %||% ".count")
 
+          # --- Precomputed lookup tables (invalidates on data/dims/measure, NOT on filter values) ---
+          r_lookup_info <- shiny::reactive({
+            info <- dm_info()
+            active <- r_active_dims()
+            measure <- r_measure()
+            build_crossfilter_lookups(
+              info$tables, active, info$pks, info$fks, measure
+            )
+          })
+
           # Clear all filters
           shiny::observeEvent(input$clear_filters, {
             r_active_dims(list())
@@ -368,6 +379,18 @@ dm_crossfilter_server_factory <- function(active_dims, filters, range_filters, m
           # --- Cross-table crossfilter data for a specific dimension ---
           # Dispatches to selected backend, falls back to dplyr on error
           crossfilter_data_for_dim <- function(tbl_name, exclude_dim) {
+            # Use lookup backend (avoids semi-joins entirely)
+            if (r_backend() == "lookup") {
+              lookup_info <- r_lookup_info()
+              if (!is.null(lookup_info)) {
+                result <- tryCatch(
+                  lookup_crossfilter_data(lookup_info, tbl_name, exclude_dim,
+                                           r_filters(), r_range_filters()),
+                  error = function(e) NULL
+                )
+                if (!is.null(result)) return(result)
+              }
+            }
             info <- dm_info()
             cf <- r_filters()
             rf <- r_range_filters()
@@ -408,6 +431,18 @@ dm_crossfilter_server_factory <- function(active_dims, filters, range_filters, m
 
           # --- Aggregated counts for a categorical dimension ---
           crossfilter_agg_for_dim <- function(tbl_name, dim) {
+            # Use lookup backend (avoids semi-joins entirely)
+            if (r_backend() == "lookup") {
+              lookup_info <- r_lookup_info()
+              if (!is.null(lookup_info)) {
+                result <- tryCatch(
+                  lookup_crossfilter_agg(lookup_info, tbl_name, dim,
+                                          r_filters(), r_range_filters()),
+                  error = function(e) NULL
+                )
+                if (!is.null(result)) return(result)
+              }
+            }
             info <- dm_info()
             cf <- r_filters()
             rf <- r_range_filters()
@@ -515,6 +550,20 @@ dm_crossfilter_server_factory <- function(active_dims, filters, range_filters, m
 
           # --- Fully filtered row counts ---
           filtered_row_count <- shiny::reactive({
+            # Use lookup backend (avoids semi-joins entirely)
+            if (r_backend() == "lookup") {
+              lookup_info <- r_lookup_info()
+              if (!is.null(lookup_info)) {
+                info <- dm_info()
+                result <- tryCatch(
+                  lookup_crossfilter_counts(lookup_info, info$tables,
+                                             info$table_names,
+                                             r_filters(), r_range_filters()),
+                  error = function(e) NULL
+                )
+                if (!is.null(result)) return(result)
+              }
+            }
             info <- dm_info()
             cf <- r_filters()
             rf <- r_range_filters()
@@ -1796,6 +1845,7 @@ dm_crossfilter_server_factory <- function(active_dims, filters, range_filters, m
             # Style colors per backend
             badge_style <- switch(
               backend,
+              lookup = "color: #047857; background: #d1fae5;",
               duckdb = "color: #b45309; background: #fef3c7;",
               duckplyr = "color: #7c3aed; background: #f3e8ff;",
               dm = "color: #0369a1; background: #e0f2fe;",
@@ -1804,7 +1854,7 @@ dm_crossfilter_server_factory <- function(active_dims, filters, range_filters, m
 
             # Build measure choices from column_info_per_table
             col_info <- column_info_per_table()
-            current_measure <- r_measure()
+            current_measure <- r_measure() %||% ".count"
             measure_choices <- ".count"
             measure_labels <- "Count"
             for (tbl in names(col_info)) {
