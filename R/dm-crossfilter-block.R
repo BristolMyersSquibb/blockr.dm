@@ -101,6 +101,13 @@ dm_crossfilter_search_css <- function() {
       color: var(--blockr-color-text-muted, #6b7280);
       font-style: italic;
     }
+    .dm-crossfilter-container .recalculating {
+      --_shiny-fade-opacity: 1;
+      opacity: 1 !important;
+    }
+    .dm-crossfilter-container .recalculating > * {
+      opacity: 1 !important;
+    }
     .dm-cf-table-section {
       margin-bottom: 20px;
     }
@@ -648,6 +655,8 @@ dm_crossfilter_server_factory <- function(active_dims, filters, range_filters, m
 
           # --- Fully filtered row counts ---
           filtered_row_count <- shiny::reactive({
+            t0 <- proc.time()[["elapsed"]]
+            on.exit(r_last_timing(round((proc.time()[["elapsed"]] - t0) * 1000)))
             # Use lookup backend (avoids semi-joins entirely)
             if (r_backend() == "lookup") {
               lookup_info <- r_lookup_info()
@@ -887,163 +896,129 @@ dm_crossfilter_server_factory <- function(active_dims, filters, range_filters, m
             max_abs_val <- max(abs(agg[[value_col]]), na.rm = TRUE)
             if (is.na(max_abs_val) || max_abs_val == 0) max_abs_val <- 1
 
-            # Build plain HTML table rows
-            rows <- lapply(seq_len(nrow(agg)), function(i) {
-              dim_val <- as.character(agg[[dim]][i])
-              num_val <- agg[[value_col]][i]
-              is_selected <- agg$.selected[i]
-              pct <- abs(num_val) / max_abs_val * 100
-              text_color <- if (has_filter && !is_selected) "#999" else "#333"
-              dim_style <- if (has_filter && !is_selected) "color: #999;" else "font-weight: 500;"
+            # Build reactable columns
+            columns_list <- list()
+            columns_list[[".selected"]] <- reactable::colDef(show = FALSE)
 
-              if (has_negative) {
-                bar_color <- if (has_filter && !is_selected) {
-                  if (num_val < 0) "rgba(198, 84, 84, 0.2)" else "rgba(84, 112, 198, 0.2)"
+            # Dimension label column
+            columns_list[[dim]] <- reactable::colDef(
+              name = dim,
+              minWidth = 120,
+              cell = function(value, index) {
+                is_selected <- agg$.selected[index]
+                style <- if (has_filter && !is_selected) {
+                  "color: #999;"
                 } else {
-                  if (num_val < 0) "#c65454" else "#5470c6"
+                  "font-weight: 500;"
                 }
-                half_pct <- pct / 2
-                bar_left <- if (num_val < 0) paste0(50 - half_pct, "%") else "50%"
-                bar_width <- paste0(half_pct, "%")
-
-                bar_html <- shiny::div(
-                  class = "dm-cf-tw-bar-cell",
-                  shiny::div(
-                    class = "dm-cf-tw-bar-track dm-cf-tw-bar-diverging",
-                    shiny::div(class = "dm-cf-tw-bar-center"),
-                    shiny::div(
-                      class = "dm-cf-tw-bar-fill",
-                      style = sprintf(
-                        "position: absolute; top: 0; left: %s; width: %s; background: %s;",
-                        bar_left, bar_width, bar_color
-                      )
-                    )
-                  ),
-                  shiny::span(
-                    class = "dm-cf-tw-bar-label dm-cf-tw-bar-label-wide",
-                    style = sprintf("color: %s;", text_color),
-                    format_number(num_val)
-                  )
-                )
-              } else {
-                bar_color <- if (has_filter && !is_selected) {
-                  "rgba(84, 112, 198, 0.2)"
-                } else {
-                  "#5470c6"
-                }
-
-                bar_html <- shiny::div(
-                  class = "dm-cf-tw-bar-cell",
-                  shiny::div(
-                    class = "dm-cf-tw-bar-track",
-                    shiny::div(
-                      class = "dm-cf-tw-bar-fill",
-                      style = sprintf(
-                        "width: %.1f%%; background: %s;",
-                        pct, bar_color
-                      )
-                    )
-                  ),
-                  shiny::span(
-                    class = "dm-cf-tw-bar-label",
-                    style = sprintf("color: %s;", text_color),
-                    format_number(num_val)
-                  )
-                )
+                shiny::tags$span(style = style, value)
               }
+            )
 
-              shiny::tags$tr(
-                class = "dm-cf-tw-row",
-                `data-dim-val` = dim_val,
-                `data-num-val` = num_val,
-                shiny::tags$td(style = dim_style, dim_val),
-                shiny::tags$td(bar_html)
-              )
-            })
+            # Value column with inline bar (diverging for negative values)
+            columns_list[[value_col]] <- reactable::colDef(
+              name = col_header,
+              minWidth = 140,
+              align = "right",
+              cell = function(value, index) {
+                is_selected <- agg$.selected[index]
+                pct <- abs(value) / max_abs_val * 100
+                is_negative <- value < 0
+                text_color <- if (has_filter && !is_selected) {
+                  "#999"
+                } else {
+                  "#333"
+                }
 
-            table_uid <- paste0("cftbl_", gsub("[^a-zA-Z0-9]", "_", paste0(tbl_name, "_", dim)))
-
-            shiny::tagList(
-              shiny::tags$input(
-                type = "text",
-                class = "dm-cf-tw-search",
-                placeholder = paste0("Search ", dim, "..."),
-                `data-table-id` = table_uid
-              ),
-              shiny::div(
-                class = "dm-cf-tw-scroll",
-                shiny::tags$table(
-                  class = "dm-cf-tw-table",
-                  id = table_uid,
-                  shiny::tags$thead(
-                    shiny::tags$tr(
-                      shiny::tags$th(class = "dm-cf-tw-th", `data-sort` = "dim", dim, shiny::span("")),
-                      shiny::tags$th(class = "dm-cf-tw-th", `data-sort` = "num", style = "text-align: right;", col_header, shiny::span(""))
-                    )
-                  ),
-                  shiny::tags$tbody(rows)
-                )
-              ),
-              shiny::tags$script(shiny::HTML(sprintf(
-                "(function() {
-                  var tbl = document.getElementById('%s');
-                  if (!tbl) return;
-                  var tbody = tbl.querySelector('tbody');
-                  var ths = tbl.querySelectorAll('th');
-                  var searchInput = document.querySelector('input[data-table-id=\"%s\"]');
-                  var inputId = '%s';
-                  var tblName = '%s';
-                  var dimName = '%s';
-
-                  // Search
-                  if (searchInput) {
-                    searchInput.addEventListener('input', function() {
-                      var term = this.value.toLowerCase();
-                      var rows = tbody.querySelectorAll('tr');
-                      for (var i = 0; i < rows.length; i++) {
-                        var val = (rows[i].getAttribute('data-dim-val') || '').toLowerCase();
-                        rows[i].style.display = val.indexOf(term) >= 0 ? '' : 'none';
-                      }
-                    });
+                if (is_negative) {
+                  bar_color <- if (has_filter && !is_selected) {
+                    "rgba(198, 84, 84, 0.2)"
+                  } else {
+                    "#c65454"
                   }
+                } else {
+                  bar_color <- if (has_filter && !is_selected) {
+                    "rgba(84, 112, 198, 0.2)"
+                  } else {
+                    "#5470c6"
+                  }
+                }
 
-                  // Sort
-                  var sortCol = null, sortAsc = true;
-                  ths.forEach(function(th) {
-                    th.addEventListener('click', function() {
-                      var col = th.getAttribute('data-sort');
-                      if (sortCol === col) { sortAsc = !sortAsc; } else { sortCol = col; sortAsc = true; }
-                      ths.forEach(function(h) { h.querySelector('span').textContent = ''; });
-                      th.querySelector('span').textContent = sortAsc ? ' \\u25B2' : ' \\u25BC';
-                      var rows = Array.from(tbody.querySelectorAll('tr'));
-                      rows.sort(function(a, b) {
-                        if (col === 'dim') {
-                          var va = (a.getAttribute('data-dim-val') || '').toLowerCase();
-                          var vb = (b.getAttribute('data-dim-val') || '').toLowerCase();
-                          return sortAsc ? va.localeCompare(vb) : vb.localeCompare(va);
-                        } else {
-                          var na = parseFloat(a.getAttribute('data-num-val')) || 0;
-                          var nb = parseFloat(b.getAttribute('data-num-val')) || 0;
-                          return sortAsc ? na - nb : nb - na;
+                if (has_negative) {
+                  half_pct <- pct / 2
+                  shiny::div(
+                    style = "display: flex; align-items: center; justify-content: flex-end; gap: 6px;",
+                    shiny::div(
+                      style = "flex: 1; max-width: 100px; height: 14px; display: flex; position: relative;",
+                      shiny::div(
+                        style = "width: 50%; height: 100%; background: #f0f0f0; border-radius: 2px 0 0 2px; display: flex; justify-content: flex-end; overflow: hidden;",
+                        if (is_negative) {
+                          shiny::div(
+                            style = sprintf(
+                              "height: 100%%; width: %.1f%%; background: %s;",
+                              pct, bar_color
+                            )
+                          )
                         }
-                      });
-                      rows.forEach(function(r) { tbody.appendChild(r); });
-                    });
-                  });
+                      ),
+                      shiny::div(style = "width: 1px; height: 100%; background: #ccc;"),
+                      shiny::div(
+                        style = "width: 50%; height: 100%; background: #f0f0f0; border-radius: 0 2px 2px 0; overflow: hidden;",
+                        if (!is_negative) {
+                          shiny::div(
+                            style = sprintf(
+                              "height: 100%%; width: %.1f%%; background: %s;",
+                              pct, bar_color
+                            )
+                          )
+                        }
+                      )
+                    ),
+                    shiny::span(
+                      style = sprintf("color: %s; font-size: 12px; width: 45px; text-align: right;", text_color),
+                      format_number(value)
+                    )
+                  )
+                } else {
+                  shiny::div(
+                    style = "display: flex; align-items: center; justify-content: flex-end; gap: 6px;",
+                    shiny::div(
+                      style = "flex: 1; max-width: 80px; height: 14px; background: #f0f0f0; border-radius: 2px; overflow: hidden;",
+                      shiny::div(
+                        style = sprintf(
+                          "height: 100%%; width: %.1f%%; background: %s;",
+                          pct, bar_color
+                        )
+                      )
+                    ),
+                    shiny::span(
+                      style = sprintf("color: %s; font-size: 12px; width: 38px; text-align: right;", text_color),
+                      format_number(value)
+                    )
+                  )
+                }
+              }
+            )
 
-                  // Click — event delegation
-                  tbody.addEventListener('click', function(e) {
-                    var row = e.target.closest('tr');
-                    if (!row) return;
-                    var val = row.getAttribute('data-dim-val');
-                    if (val !== null) {
-                      Shiny.setInputValue(inputId, {table: tblName, dim: dimName, value: val}, {priority: 'event'});
-                    }
-                  });
-                })();",
-                table_uid, table_uid,
-                ns("table_click"), tbl_name, dim
-              )))
+            reactable::reactable(
+              agg,
+              columns = columns_list,
+              onClick = htmlwidgets::JS(sprintf(
+                "function(rowInfo, column) {
+                  Shiny.setInputValue('%s', {table: '%s', dim: '%s', value: rowInfo.row['%s']}, {priority: 'event'});
+                }",
+                ns("table_click"), tbl_name, dim, dim
+              )),
+              searchable = TRUE,
+              compact = TRUE,
+              borderless = TRUE,
+              highlight = TRUE,
+              height = 200,
+              pagination = FALSE,
+              theme = reactable::reactableTheme(
+                searchInputStyle = list(fontSize = "12px", padding = "4px 8px"),
+                headerStyle = list(fontSize = "12px", fontWeight = "600")
+              )
             )
           }
 
@@ -1783,8 +1758,6 @@ dm_crossfilter_server_factory <- function(active_dims, filters, range_filters, m
 
           # --- Render per-table UI ---
           output$tables_grid <- shiny::renderUI({
-            t0 <- proc.time()[["elapsed"]]
-            on.exit(r_last_timing(round((proc.time()[["elapsed"]] - t0) * 1000)))
 
             col_info <- column_info_per_table()
             info <- dm_info()
@@ -1860,7 +1833,8 @@ dm_crossfilter_server_factory <- function(active_dims, filters, range_filters, m
                   shiny::div(
                     style = "display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 12px;",
                     lapply(range_cols, function(dim) {
-                      wrap_with_remove(tbl_name, dim, build_range_slider(tbl_name, dim))
+                      widget_id <- paste0("cf_", tbl_name, "__", dim)
+                      wrap_with_remove(tbl_name, dim, shiny::uiOutput(ns(widget_id)))
                     })
                   )
                 ))
@@ -1871,7 +1845,8 @@ dm_crossfilter_server_factory <- function(active_dims, filters, range_filters, m
                   shiny::div(
                     style = "display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 12px;",
                     lapply(date_cols, function(dim) {
-                      wrap_with_remove(tbl_name, dim, build_date_slider(tbl_name, dim))
+                      widget_id <- paste0("cf_", tbl_name, "__", dim)
+                      wrap_with_remove(tbl_name, dim, shiny::uiOutput(ns(widget_id)))
                     })
                   )
                 ))
@@ -1882,9 +1857,10 @@ dm_crossfilter_server_factory <- function(active_dims, filters, range_filters, m
                   shiny::div(
                     style = "display: flex; flex-wrap: wrap; gap: 16px;",
                     lapply(cat_cols, function(dim) {
+                      widget_id <- paste0("cf_", tbl_name, "__", dim)
                       shiny::div(
                         style = "flex: 1; min-width: 250px; max-width: 400px;",
-                        wrap_with_remove(tbl_name, dim, build_filter_table(tbl_name, dim))
+                        wrap_with_remove(tbl_name, dim, reactable::reactableOutput(ns(widget_id), height = "auto"))
                       )
                     })
                   )
@@ -1921,8 +1897,44 @@ dm_crossfilter_server_factory <- function(active_dims, filters, range_filters, m
             shiny::tagList(table_panels)
           })
 
-          # --- Filter status display ---
-          output$filter_status <- shiny::renderUI({
+          # --- Per-widget dynamic outputs (only widget content re-renders on filter change) ---
+          shiny::observe({
+            active <- r_active_dims()
+            col_info <- column_info_per_table()
+
+            for (tbl_name in names(active)) {
+              tbl_info <- col_info[[tbl_name]]
+              if (is.null(tbl_info)) next
+              active_cols <- intersect(
+                active[[tbl_name]],
+                c(tbl_info$dimensions, tbl_info$range_dimensions, tbl_info$date_dimensions)
+              )
+              for (dim in active_cols) {
+                local({
+                  my_tbl <- tbl_name
+                  my_dim <- dim
+                  dtype <- get_dim_type(my_tbl, my_dim)
+                  widget_id <- paste0("cf_", my_tbl, "__", my_dim)
+                  if (identical(dtype, "range") || identical(dtype, "date")) {
+                    output[[widget_id]] <- shiny::renderUI({
+                      if (identical(dtype, "range")) {
+                        build_range_slider(my_tbl, my_dim)
+                      } else {
+                        build_date_slider(my_tbl, my_dim)
+                      }
+                    })
+                  } else {
+                    output[[widget_id]] <- reactable::renderReactable({
+                      build_filter_table(my_tbl, my_dim)
+                    })
+                  }
+                })
+              }
+            }
+          })
+
+          # --- Filter status text (re-renders on filter clicks — lightweight) ---
+          output$filter_status_text <- shiny::renderUI({
             cat_filters <- r_filters()
             rng_filters <- r_range_filters()
             counts <- filtered_row_count()
@@ -1979,9 +1991,35 @@ dm_crossfilter_server_factory <- function(active_dims, filters, range_filters, m
               )
             }
 
-            backend <- r_backend()
             timing <- r_last_timing()
             timing_text <- if (!is.null(timing)) paste0(timing, "ms") else ""
+
+            shiny::tagList(
+              shiny::span(
+                class = "text-muted",
+                style = "font-size: 0.8rem;",
+                status_text
+              ),
+              if (has_filters) {
+                shiny::actionButton(
+                  ns("clear_filters"),
+                  "Remove Filter",
+                  class = "btn btn-outline-secondary btn-sm",
+                  style = "font-size: 0.7rem; padding: 1px 6px; opacity: 0.6;"
+                )
+              },
+              if (nzchar(timing_text)) {
+                shiny::span(
+                  style = "font-size: 10px; color: #9ca3af; font-variant-numeric: tabular-nums;",
+                  timing_text
+                )
+              }
+            )
+          })
+
+          # --- Filter controls (only re-renders on backend/measure change) ---
+          output$filter_controls <- shiny::renderUI({
+            backend <- r_backend()
 
             # Build <option> tags for the backend dropdown
             option_tags <- paste0(
@@ -2035,21 +2073,7 @@ dm_crossfilter_server_factory <- function(active_dims, filters, range_filters, m
               collapse = ""
             )
 
-            shiny::div(
-              style = "display: flex; align-items: center; gap: 10px; margin: 12px 0 8px 0; flex-wrap: wrap;",
-              shiny::span(
-                class = "text-muted",
-                style = "font-size: 0.8rem;",
-                status_text
-              ),
-              if (has_filters) {
-                shiny::actionButton(
-                  ns("clear_filters"),
-                  "Remove Filter",
-                  class = "btn btn-outline-secondary btn-sm",
-                  style = "font-size: 0.7rem; padding: 1px 6px; opacity: 0.6;"
-                )
-              },
+            shiny::tagList(
               # Measure selector
               if (length(measure_choices) > 1) {
                 shiny::tags$select(
@@ -2081,13 +2105,7 @@ dm_crossfilter_server_factory <- function(active_dims, filters, range_filters, m
                   badge_style
                 ),
                 shiny::HTML(option_tags)
-              ),
-              if (nzchar(timing_text)) {
-                shiny::span(
-                  style = "font-size: 10px; color: #9ca3af; font-variant-numeric: tabular-nums;",
-                  timing_text
-                )
-              }
+              )
             )
           })
 
@@ -2213,7 +2231,11 @@ dm_crossfilter_ui <- function(id) {
       # Invisible output to bind focus/blur events on search input
       shiny::uiOutput(ns("search_init")),
       shiny::uiOutput(ns("search_results")),
-      shiny::uiOutput(ns("filter_status")),
+      shiny::div(
+        style = "display: flex; align-items: center; gap: 10px; margin: 12px 0 8px 0; flex-wrap: wrap;",
+        shiny::uiOutput(ns("filter_status_text")),
+        shiny::uiOutput(ns("filter_controls"))
+      ),
       shiny::uiOutput(ns("tables_grid"))
     )
   )
