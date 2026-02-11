@@ -158,6 +158,104 @@ dm_crossfilter_search_css <- function() {
   "))
 }
 
+dm_crossfilter_table_css <- function() {
+  shiny::tags$style(shiny::HTML("
+    .dm-cf-tw-search {
+      width: 100%;
+      padding: 4px 8px;
+      font-size: 12px;
+      border: 1px solid #e5e7eb;
+      border-radius: 4px;
+      margin-bottom: 4px;
+      box-sizing: border-box;
+      outline: none;
+    }
+    .dm-cf-tw-search:focus {
+      border-color: #3b82f6;
+      box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15);
+    }
+    .dm-cf-tw-scroll {
+      max-height: 200px;
+      overflow-y: auto;
+      border: 1px solid #e5e7eb;
+      border-radius: 4px;
+    }
+    .dm-cf-tw-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+      table-layout: fixed;
+    }
+    .dm-cf-tw-th {
+      position: sticky;
+      top: 0;
+      background: #fff;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 4px 8px;
+      text-align: left;
+      cursor: pointer;
+      user-select: none;
+      border-bottom: 1px solid #e5e7eb;
+      white-space: nowrap;
+      z-index: 1;
+    }
+    .dm-cf-tw-th:hover {
+      background: #f9fafb;
+    }
+    .dm-cf-tw-row {
+      cursor: pointer;
+    }
+    .dm-cf-tw-row:hover {
+      background: #f3f4f6;
+    }
+    .dm-cf-tw-row td {
+      padding: 3px 8px;
+      border-bottom: 1px solid #f3f4f6;
+    }
+    .dm-cf-tw-bar-cell {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 6px;
+    }
+    .dm-cf-tw-bar-track {
+      flex: 1;
+      max-width: 80px;
+      height: 14px;
+      background: #f0f0f0;
+      border-radius: 2px;
+      overflow: hidden;
+      position: relative;
+    }
+    .dm-cf-tw-bar-fill {
+      height: 100%;
+      border-radius: 2px;
+    }
+    .dm-cf-tw-bar-label {
+      font-size: 12px;
+      width: 38px;
+      text-align: right;
+      flex-shrink: 0;
+    }
+    .dm-cf-tw-bar-diverging {
+      position: relative;
+      height: 100%;
+    }
+    .dm-cf-tw-bar-center {
+      position: absolute;
+      left: 50%;
+      top: 0;
+      bottom: 0;
+      width: 1px;
+      background: #ccc;
+    }
+    .dm-cf-tw-bar-label-wide {
+      width: 48px;
+    }
+  "))
+}
+
 dm_crossfilter_server_factory <- function(active_dims, filters, range_filters, measure) {
   function(id, data) {
     shiny::moduleServer(
@@ -789,108 +887,163 @@ dm_crossfilter_server_factory <- function(active_dims, filters, range_filters, m
             max_abs_val <- max(abs(agg[[value_col]]), na.rm = TRUE)
             if (is.na(max_abs_val) || max_abs_val == 0) max_abs_val <- 1
 
-            columns_list <- list()
-            columns_list[[".selected"]] <- reactable::colDef(show = FALSE)
+            # Build plain HTML table rows
+            rows <- lapply(seq_len(nrow(agg)), function(i) {
+              dim_val <- as.character(agg[[dim]][i])
+              num_val <- agg[[value_col]][i]
+              is_selected <- agg$.selected[i]
+              pct <- abs(num_val) / max_abs_val * 100
+              text_color <- if (has_filter && !is_selected) "#999" else "#333"
+              dim_style <- if (has_filter && !is_selected) "color: #999;" else "font-weight: 500;"
 
-            columns_list[[dim]] <- reactable::colDef(
-              name = dim,
-              minWidth = 120,
-              cell = function(value, index) {
-                is_selected <- agg$.selected[index]
-                style <- if (has_filter && !is_selected) {
-                  "color: #999;"
+              if (has_negative) {
+                bar_color <- if (has_filter && !is_selected) {
+                  if (num_val < 0) "rgba(198, 84, 84, 0.2)" else "rgba(84, 112, 198, 0.2)"
                 } else {
-                  "font-weight: 500;"
+                  if (num_val < 0) "#c65454" else "#5470c6"
                 }
-                shiny::tags$span(style = style, value)
-              }
-            )
+                half_pct <- pct / 2
+                bar_left <- if (num_val < 0) paste0(50 - half_pct, "%") else "50%"
+                bar_width <- paste0(half_pct, "%")
 
-            columns_list[[value_col]] <- reactable::colDef(
-              name = col_header,
-              minWidth = 120,
-              align = "right",
-              cell = function(value, index) {
-                is_selected <- agg$.selected[index]
-                pct <- abs(value) / max_abs_val * 100
-                text_color <- if (has_filter && !is_selected) "#999" else "#333"
-
-                if (has_negative) {
-                  # Diverging bar: negative goes left, positive goes right
-                  bar_color <- if (has_filter && !is_selected) {
-                    if (value < 0) "rgba(198, 84, 84, 0.2)" else "rgba(84, 112, 198, 0.2)"
-                  } else {
-                    if (value < 0) "#c65454" else "#5470c6"
-                  }
-                  half_pct <- pct / 2
-                  bar_left <- if (value < 0) paste0(50 - half_pct, "%") else "50%"
-                  bar_width <- paste0(half_pct, "%")
-
+                bar_html <- shiny::div(
+                  class = "dm-cf-tw-bar-cell",
                   shiny::div(
-                    style = "display: flex; align-items: center; justify-content: flex-end; gap: 6px;",
+                    class = "dm-cf-tw-bar-track dm-cf-tw-bar-diverging",
+                    shiny::div(class = "dm-cf-tw-bar-center"),
                     shiny::div(
-                      style = "flex: 1; max-width: 80px; height: 14px; background: #f0f0f0; border-radius: 2px; overflow: hidden; position: relative;",
-                      # Center line
-                      shiny::div(style = "position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: #ccc;"),
-                      shiny::div(
-                        style = sprintf(
-                          "position: absolute; top: 0; height: 100%%; left: %s; width: %s; background: %s;",
-                          bar_left, bar_width, bar_color
-                        )
+                      class = "dm-cf-tw-bar-fill",
+                      style = sprintf(
+                        "position: absolute; top: 0; left: %s; width: %s; background: %s;",
+                        bar_left, bar_width, bar_color
                       )
-                    ),
-                    shiny::span(
-                      style = sprintf("color: %s; font-size: 12px; width: 48px; text-align: right;", text_color),
-                      format_number(value)
                     )
+                  ),
+                  shiny::span(
+                    class = "dm-cf-tw-bar-label dm-cf-tw-bar-label-wide",
+                    style = sprintf("color: %s;", text_color),
+                    format_number(num_val)
                   )
+                )
+              } else {
+                bar_color <- if (has_filter && !is_selected) {
+                  "rgba(84, 112, 198, 0.2)"
                 } else {
-                  # Standard unidirectional bar
-                  bar_color <- if (has_filter && !is_selected) {
-                    "rgba(84, 112, 198, 0.2)"
-                  } else {
-                    "#5470c6"
-                  }
-
-                  shiny::div(
-                    style = "display: flex; align-items: center; justify-content: flex-end; gap: 6px;",
-                    shiny::div(
-                      style = "flex: 1; max-width: 80px; height: 14px; background: #f0f0f0; border-radius: 2px; overflow: hidden;",
-                      shiny::div(
-                        style = sprintf(
-                          "height: 100%%; width: %.1f%%; background: %s;",
-                          pct, bar_color
-                        )
-                      )
-                    ),
-                    shiny::span(
-                      style = sprintf("color: %s; font-size: 12px; width: 38px; text-align: right;", text_color),
-                      format_number(value)
-                    )
-                  )
+                  "#5470c6"
                 }
-              }
-            )
 
-            reactable::reactable(
-              agg,
-              columns = columns_list,
-              onClick = htmlwidgets::JS(sprintf(
-                "function(rowInfo, column) {
-                  Shiny.setInputValue('%s', {table: '%s', dim: '%s', value: rowInfo.row['%s']}, {priority: 'event'});
-                }",
-                ns("table_click"), tbl_name, dim, dim
-              )),
-              searchable = TRUE,
-              compact = TRUE,
-              borderless = TRUE,
-              highlight = TRUE,
-              height = 200,
-              pagination = FALSE,
-              theme = reactable::reactableTheme(
-                searchInputStyle = list(fontSize = "12px", padding = "4px 8px"),
-                headerStyle = list(fontSize = "12px", fontWeight = "600")
+                bar_html <- shiny::div(
+                  class = "dm-cf-tw-bar-cell",
+                  shiny::div(
+                    class = "dm-cf-tw-bar-track",
+                    shiny::div(
+                      class = "dm-cf-tw-bar-fill",
+                      style = sprintf(
+                        "width: %.1f%%; background: %s;",
+                        pct, bar_color
+                      )
+                    )
+                  ),
+                  shiny::span(
+                    class = "dm-cf-tw-bar-label",
+                    style = sprintf("color: %s;", text_color),
+                    format_number(num_val)
+                  )
+                )
+              }
+
+              shiny::tags$tr(
+                class = "dm-cf-tw-row",
+                `data-dim-val` = dim_val,
+                `data-num-val` = num_val,
+                shiny::tags$td(style = dim_style, dim_val),
+                shiny::tags$td(bar_html)
               )
+            })
+
+            table_uid <- paste0("cftbl_", gsub("[^a-zA-Z0-9]", "_", paste0(tbl_name, "_", dim)))
+
+            shiny::tagList(
+              shiny::tags$input(
+                type = "text",
+                class = "dm-cf-tw-search",
+                placeholder = paste0("Search ", dim, "..."),
+                `data-table-id` = table_uid
+              ),
+              shiny::div(
+                class = "dm-cf-tw-scroll",
+                shiny::tags$table(
+                  class = "dm-cf-tw-table",
+                  id = table_uid,
+                  shiny::tags$thead(
+                    shiny::tags$tr(
+                      shiny::tags$th(class = "dm-cf-tw-th", `data-sort` = "dim", dim, shiny::span("")),
+                      shiny::tags$th(class = "dm-cf-tw-th", `data-sort` = "num", style = "text-align: right;", col_header, shiny::span(""))
+                    )
+                  ),
+                  shiny::tags$tbody(rows)
+                )
+              ),
+              shiny::tags$script(shiny::HTML(sprintf(
+                "(function() {
+                  var tbl = document.getElementById('%s');
+                  if (!tbl) return;
+                  var tbody = tbl.querySelector('tbody');
+                  var ths = tbl.querySelectorAll('th');
+                  var searchInput = document.querySelector('input[data-table-id=\"%s\"]');
+                  var inputId = '%s';
+                  var tblName = '%s';
+                  var dimName = '%s';
+
+                  // Search
+                  if (searchInput) {
+                    searchInput.addEventListener('input', function() {
+                      var term = this.value.toLowerCase();
+                      var rows = tbody.querySelectorAll('tr');
+                      for (var i = 0; i < rows.length; i++) {
+                        var val = (rows[i].getAttribute('data-dim-val') || '').toLowerCase();
+                        rows[i].style.display = val.indexOf(term) >= 0 ? '' : 'none';
+                      }
+                    });
+                  }
+
+                  // Sort
+                  var sortCol = null, sortAsc = true;
+                  ths.forEach(function(th) {
+                    th.addEventListener('click', function() {
+                      var col = th.getAttribute('data-sort');
+                      if (sortCol === col) { sortAsc = !sortAsc; } else { sortCol = col; sortAsc = true; }
+                      ths.forEach(function(h) { h.querySelector('span').textContent = ''; });
+                      th.querySelector('span').textContent = sortAsc ? ' \\u25B2' : ' \\u25BC';
+                      var rows = Array.from(tbody.querySelectorAll('tr'));
+                      rows.sort(function(a, b) {
+                        if (col === 'dim') {
+                          var va = (a.getAttribute('data-dim-val') || '').toLowerCase();
+                          var vb = (b.getAttribute('data-dim-val') || '').toLowerCase();
+                          return sortAsc ? va.localeCompare(vb) : vb.localeCompare(va);
+                        } else {
+                          var na = parseFloat(a.getAttribute('data-num-val')) || 0;
+                          var nb = parseFloat(b.getAttribute('data-num-val')) || 0;
+                          return sortAsc ? na - nb : nb - na;
+                        }
+                      });
+                      rows.forEach(function(r) { tbody.appendChild(r); });
+                    });
+                  });
+
+                  // Click — event delegation
+                  tbody.addEventListener('click', function(e) {
+                    var row = e.target.closest('tr');
+                    if (!row) return;
+                    var val = row.getAttribute('data-dim-val');
+                    if (val !== null) {
+                      Shiny.setInputValue(inputId, {table: tblName, dim: dimName, value: val}, {priority: 'event'});
+                    }
+                  });
+                })();",
+                table_uid, table_uid,
+                ns("table_click"), tbl_name, dim
+              )))
             )
           }
 
@@ -2040,6 +2193,7 @@ dm_crossfilter_ui <- function(id) {
       class = "dm-crossfilter-container",
       style = "padding: 10px;",
       dm_crossfilter_search_css(),
+      dm_crossfilter_table_css(),
       # Search bar — plain input with shiny-input-text for auto-binding
       shiny::tags$div(
         class = "dm-cf-search-wrapper",
