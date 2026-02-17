@@ -13,6 +13,7 @@ register_dm_blocks <- function() {
       "new_dm_select_block",
       "new_dm_add_keys_block",
       "new_dm_filter_block",
+      "new_dm_filter_value_block",
       "new_dm_pull_block",
       "new_dm_flatten_block",
       "new_dm_nested_view_block",
@@ -27,6 +28,7 @@ register_dm_blocks <- function() {
       "Select tables",
       "Add keys to dm",
       "Filter dm",
+      "Filter dm by value",
       "Pull table from dm",
       "Flatten dm",
       "Nested view",
@@ -41,6 +43,7 @@ register_dm_blocks <- function() {
       "Select a subset of tables to keep in a dm object",
       "Add primary and foreign key relationships to a dm object",
       "Filter a dm by condition in any table, cascading to related tables via foreign keys",
+      "Filter a dm by selecting a table, column, and value from dropdowns",
       "Extract a single table from a dm object as a data frame",
       "Flatten a dm into a single data frame by joining related tables",
       "Display dm as nested table with expandable child rows",
@@ -49,6 +52,7 @@ register_dm_blocks <- function() {
       "Cross-table crossfilter on a dm object with per-table filter panels"
     ),
     category = c(
+      "structured",
       "structured",
       "structured",
       "structured",
@@ -69,6 +73,7 @@ register_dm_blocks <- function() {
       "check2-square",
       "key",
       "funnel",
+      "funnel-fill",
       "box-arrow-up-right",
       "layers",
       "list-nested",
@@ -77,7 +82,7 @@ register_dm_blocks <- function() {
       "sliders2"
     ),
     arguments = list(
-      NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+      NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
       # crossfilter_block (pos 11):
       structure(
         c(

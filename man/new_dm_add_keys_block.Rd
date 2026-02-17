@@ -7,7 +7,7 @@
 new_dm_add_keys_block(
   pk_table = "",
   pk_column = "",
-  fk_table = "",
+  fk_tables = character(0),
   fk_column = "",
   ...
 )
@@ -17,7 +17,8 @@ new_dm_add_keys_block(
 
 \item{pk_column}{Character, the column to use as primary key. Default "".}
 
-\item{fk_table}{Character, the table containing the foreign key. Default "".}
+\item{fk_tables}{Character vector, tables containing the foreign key.
+Default \code{character(0)}.}
 
 \item{fk_column}{Character, the column to use as foreign key. Default "".}
 
@@ -29,7 +30,7 @@ A block object for adding keys to dm objects
 \description{
 This block adds primary and foreign key relationships to a dm object.
 It allows selecting a table and column to set as primary key, and
-optionally link it as a foreign key from another table.
+optionally link it as a foreign key from one or more other tables.
 }
 \details{
 Primary keys uniquely identify rows in a table. Foreign keys reference
@@ -39,11 +40,11 @@ For ADaM datasets, USUBJID is typically the primary key in ADSL
 and a foreign key in other tables (ADAE, ADLB, etc.).
 }
 \examples{
-# Add USUBJID as key linking ADSL to ADAE
+# Add USUBJID as key linking ADSL to multiple tables
 new_dm_add_keys_block(
   pk_table = "adsl",
   pk_column = "USUBJID",
-  fk_table = "adae",
+  fk_tables = c("adae", "adlb"),
   fk_column = "USUBJID"
 )
 
