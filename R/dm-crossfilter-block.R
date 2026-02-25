@@ -162,6 +162,112 @@ dm_crossfilter_search_css <- function() {
       background: var(--blockr-grey-100, #f3f4f6);
       color: var(--blockr-grey-700, #374151);
     }
+    /* Status bar */
+    .dm-cf-status-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 10px 0 8px 0;
+      flex-wrap: wrap;
+      min-height: 26px;
+    }
+    .dm-cf-filter-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
+      padding: 2px 8px;
+      font-size: 11px;
+      font-weight: 500;
+      border-radius: 4px;
+      background: var(--blockr-blue-50, #eff6ff);
+      color: var(--blockr-color-text-primary, #1f2937);
+      white-space: nowrap;
+      line-height: 1.4;
+    }
+    .dm-cf-chip-table {
+      color: var(--blockr-color-text-muted, #6b7280);
+      font-weight: 400;
+    }
+    .dm-cf-row-count {
+      font-size: 11px;
+      color: var(--blockr-color-text-muted, #6b7280);
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+    .dm-cf-timing {
+      font-size: 10px;
+      color: #b0b7c3;
+      font-variant-numeric: tabular-nums;
+    }
+    .dm-cf-clear-btn {
+      font-size: 11px;
+      color: var(--blockr-color-text-muted, #6b7280);
+      background: none;
+      border: 1px solid var(--blockr-color-border, #e5e7eb);
+      border-radius: 4px;
+      padding: 1px 8px;
+      cursor: pointer;
+      transition: all 0.15s;
+      line-height: 1.4;
+    }
+    .dm-cf-clear-btn:hover {
+      color: var(--blockr-color-text-primary, #374151);
+      border-color: #d1d5db;
+      background: var(--blockr-grey-50, #f9fafb);
+    }
+    .dm-cf-separator {
+      width: 1px;
+      height: 14px;
+      background: var(--blockr-color-border, #e5e7eb);
+      flex-shrink: 0;
+    }
+    .dm-cf-dev-toggle {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 20px;
+      height: 20px;
+      padding: 0;
+      border: none;
+      background: transparent;
+      color: #d1d5db;
+      cursor: pointer;
+      border-radius: 4px;
+      transition: all 0.15s;
+    }
+    .dm-cf-dev-toggle:hover {
+      color: #9ca3af;
+      background: var(--blockr-grey-100, #f3f4f6);
+    }
+    .dm-cf-backend-wrap {
+      display: none;
+      align-items: center;
+      gap: 6px;
+    }
+    .dm-cf-backend-wrap.visible {
+      display: inline-flex;
+    }
+    /* Compact select — matches selectize look at small size */
+    .dm-cf-select-sm {
+      font-size: var(--blockr-font-size-sm, 13px);
+      padding: 4px 10px;
+      min-height: 26px;
+      width: auto;
+      min-width: 70px;
+      background-color: var(--blockr-color-bg-input, #f9fafb);
+      border: 1px solid var(--blockr-color-border, #e5e7eb);
+      border-radius: 8px;
+      color: var(--blockr-color-text-primary, #111827);
+      box-shadow: none;
+      cursor: pointer;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+    .dm-cf-select-sm:focus {
+      background-color: #ffffff;
+      border-color: var(--blockr-color-primary, #2563eb);
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+      outline: none;
+    }
   "))
 }
 
@@ -1941,15 +2047,24 @@ dm_crossfilter_server_factory <- function(active_dims, filters, range_filters, m
 
             has_filters <- length(cat_filters) > 0 || length(rng_filters) > 0
 
+            # Build filter chips
+            chips <- list()
             if (has_filters) {
-              parts <- character()
-
               for (tbl in names(cat_filters)) {
                 tbl_f <- cat_filters[[tbl]]
                 for (dim in names(tbl_f)) {
-                  parts <- c(parts, paste0(
-                    tbl, ".", dim, "=",
-                    paste(tbl_f[[dim]], collapse = ",")
+                  vals <- tbl_f[[dim]]
+                  label <- if (length(vals) <= 2) {
+                    paste(vals, collapse = ", ")
+                  } else {
+                    paste0(vals[1], " +", length(vals) - 1)
+                  }
+                  chips <- c(chips, list(
+                    shiny::span(
+                      class = "dm-cf-filter-chip",
+                      shiny::span(class = "dm-cf-chip-table", paste0(tbl, ".")),
+                      paste0(dim, "=", label)
+                    )
                   ))
                 }
               }
@@ -1970,24 +2085,27 @@ dm_crossfilter_server_factory <- function(active_dims, filters, range_filters, m
                     lo_str <- rng[1]
                     hi_str <- rng[2]
                   }
-                  parts <- c(parts, paste0(
-                    tbl, ".", dim, " [", lo_str, ", ", hi_str, "]"
+                  chips <- c(chips, list(
+                    shiny::span(
+                      class = "dm-cf-filter-chip",
+                      shiny::span(class = "dm-cf-chip-table", paste0(tbl, ".")),
+                      paste0(dim, " [", lo_str, "\u2013", hi_str, "]")
+                    )
                   ))
                 }
               }
+            }
 
-              filter_text <- paste(parts, collapse = " | ")
-              status_text <- paste0(
-                filter_text,
-                " (", format(counts$filtered, big.mark = ","),
-                " / ", format(counts$total, big.mark = ","),
-                " rows in ", counts$n_tables, " tables)"
+            # Row count
+            if (has_filters) {
+              row_text <- paste0(
+                format(counts$filtered, big.mark = ","), " / ",
+                format(counts$total, big.mark = ","), " rows"
               )
             } else {
-              status_text <- paste0(
-                "No filters active (",
+              row_text <- paste0(
                 format(counts$total, big.mark = ","),
-                " rows in ", counts$n_tables, " tables)"
+                " rows in ", counts$n_tables, " tables"
               )
             }
 
@@ -1995,24 +2113,21 @@ dm_crossfilter_server_factory <- function(active_dims, filters, range_filters, m
             timing_text <- if (!is.null(timing)) paste0(timing, "ms") else ""
 
             shiny::tagList(
-              shiny::span(
-                class = "text-muted",
-                style = "font-size: 0.8rem;",
-                status_text
-              ),
+              if (length(chips) > 0) chips,
               if (has_filters) {
-                shiny::actionButton(
-                  ns("clear_filters"),
-                  "Remove Filter",
-                  class = "btn btn-outline-secondary btn-sm",
-                  style = "font-size: 0.7rem; padding: 1px 6px; opacity: 0.6;"
+                shiny::tags$button(
+                  class = "dm-cf-clear-btn",
+                  onclick = sprintf(
+                    "Shiny.setInputValue('%s', Date.now(), {priority: 'event'});",
+                    ns("clear_filters")
+                  ),
+                  "Clear"
                 )
               },
+              if (has_filters) shiny::span(class = "dm-cf-separator"),
+              shiny::span(class = "dm-cf-row-count", row_text),
               if (nzchar(timing_text)) {
-                shiny::span(
-                  style = "font-size: 10px; color: #9ca3af; font-variant-numeric: tabular-nums;",
-                  timing_text
-                )
+                shiny::span(class = "dm-cf-timing", timing_text)
               }
             )
           })
@@ -2073,38 +2188,52 @@ dm_crossfilter_server_factory <- function(active_dims, filters, range_filters, m
               collapse = ""
             )
 
+            backend_wrap_id <- ns("backend_wrap")
+
+            # Kebab menu icon (3 vertical dots)
+            dev_icon <- shiny::HTML(paste0(
+              '<svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">',
+              '<circle cx="8" cy="3" r="1.5"/>',
+              '<circle cx="8" cy="8" r="1.5"/>',
+              '<circle cx="8" cy="13" r="1.5"/>',
+              '</svg>'
+            ))
+
             shiny::tagList(
               # Measure selector
               if (length(measure_choices) > 1) {
                 shiny::tags$select(
+                  class = "dm-cf-select-sm",
                   onchange = sprintf(
                     "Shiny.setInputValue('%s', this.value, {priority: 'event'});",
                     measure_input_id
                   ),
-                  style = paste0(
-                    "font-size: 10px; padding: 1px 4px; border-radius: 4px; ",
-                    "font-weight: 500; letter-spacing: 0.03em; ",
-                    "border: 1px solid #e5e7eb; cursor: pointer; ",
-                    "appearance: auto; min-width: 70px; ",
-                    "color: #059669; background: #ecfdf5;"
-                  ),
                   shiny::HTML(measure_option_tags)
                 )
               },
-              # Backend selector
-              shiny::tags$select(
-                onchange = sprintf(
-                  "Shiny.setInputValue('%s', this.value, {priority: 'event'});",
-                  backend_input_id
+              # Dev toggle button
+              shiny::tags$button(
+                class = "dm-cf-dev-toggle",
+                title = "Developer options",
+                onclick = sprintf(
+                  "document.getElementById('%s').classList.toggle('visible');",
+                  backend_wrap_id
                 ),
-                style = paste0(
-                  "font-size: 10px; padding: 1px 4px; border-radius: 4px; ",
-                  "font-weight: 500; letter-spacing: 0.03em; ",
-                  "border: 1px solid #e5e7eb; cursor: pointer; ",
-                  "appearance: auto; min-width: 60px; ",
-                  badge_style
-                ),
-                shiny::HTML(option_tags)
+                dev_icon
+              ),
+              # Backend selector (hidden by default)
+              shiny::span(
+                id = backend_wrap_id,
+                class = "dm-cf-backend-wrap",
+                shiny::tags$select(
+                  class = "dm-cf-select-sm",
+                  onchange = sprintf(
+                    "Shiny.setInputValue('%s', this.value, {priority: 'event'});",
+                    backend_input_id
+                  ),
+                  style = badge_style,
+                  shiny::HTML(option_tags)
+                )
               )
             )
           })
@@ -2232,7 +2361,7 @@ dm_crossfilter_ui <- function(id) {
       shiny::uiOutput(ns("search_init")),
       shiny::uiOutput(ns("search_results")),
       shiny::div(
-        style = "display: flex; align-items: center; gap: 10px; margin: 12px 0 8px 0; flex-wrap: wrap;",
+        class = "dm-cf-status-bar",
         shiny::uiOutput(ns("filter_status_text")),
         shiny::uiOutput(ns("filter_controls"))
       ),

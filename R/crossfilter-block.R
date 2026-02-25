@@ -141,16 +141,45 @@ new_crossfilter_block <- function(
         )
       } else {
         dm_state <- result$state
+
+        # Create flat reactiveVals that sync bidirectionally with dm engine
+        flat_filters <- shiny::reactiveVal(list())
+        flat_range_filters <- shiny::reactiveVal(list())
+
+        # Sync per-table → flat (UI changes in dm engine → flat reactiveVals)
+        shiny::observeEvent(dm_state$filters(), {
+          flat <- dm_state$filters()[[".tbl"]] %||% list()
+          if (!identical(flat_filters(), flat)) flat_filters(flat)
+        })
+        shiny::observeEvent(dm_state$range_filters(), {
+          flat <- dm_state$range_filters()[[".tbl"]] %||% list()
+          if (!identical(flat_range_filters(), flat)) flat_range_filters(flat)
+        })
+
+        # Sync flat → per-table (external writes to flat → dm engine)
+        shiny::observeEvent(flat_filters(), {
+          val <- if (length(flat_filters()) > 0) {
+            list(.tbl = flat_filters())
+          } else {
+            list()
+          }
+          if (!identical(dm_state$filters(), val)) dm_state$filters(val)
+        })
+        shiny::observeEvent(flat_range_filters(), {
+          val <- if (length(flat_range_filters()) > 0) {
+            list(.tbl = flat_range_filters())
+          } else {
+            list()
+          }
+          if (!identical(dm_state$range_filters(), val)) {
+            dm_state$range_filters(val)
+          }
+        })
+
         result$state <- list(
           active_dims = dm_state$active_dims,
-          filters = function() {
-            f <- dm_state$filters()
-            f[[".tbl"]] %||% list()
-          },
-          range_filters = function() {
-            f <- dm_state$range_filters()
-            f[[".tbl"]] %||% list()
-          }
+          filters = flat_filters,
+          range_filters = flat_range_filters
         )
       }
 
