@@ -40,6 +40,7 @@ new_crossfilter_block <- function(
     filters = list(),
     range_filters = list(),
     active_dims = list(),
+    agg_func = NULL,
     ...
 ) {
   blockr.core::new_transform_block(
@@ -90,7 +91,8 @@ new_crossfilter_block <- function(
         })
 
         dm_server <- dm_crossfilter_server_factory(
-          active_dims, dm_rv_filters, dm_rv_range_filters, measure = NULL
+          active_dims, dm_rv_filters, dm_rv_range_filters, measure = NULL,
+          agg_func = agg_func
         )
       } else {
         # Original non-reactive path
@@ -101,7 +103,8 @@ new_crossfilter_block <- function(
           list()
         }
         dm_server <- dm_crossfilter_server_factory(
-          active_dims, dm_filters, dm_range_filters, measure = NULL
+          active_dims, dm_filters, dm_range_filters, measure = NULL,
+          agg_func = agg_func
         )
       }
 
@@ -137,7 +140,8 @@ new_crossfilter_block <- function(
         result$state <- list(
           active_dims = active_dims,
           filters = filters,
-          range_filters = range_filters
+          range_filters = range_filters,
+          agg_func = result$state$agg_func
         )
       } else {
         dm_state <- result$state
@@ -179,7 +183,8 @@ new_crossfilter_block <- function(
         result$state <- list(
           active_dims = dm_state$active_dims,
           filters = flat_filters,
-          range_filters = flat_range_filters
+          range_filters = flat_range_filters,
+          agg_func = dm_state$agg_func
         )
       }
 
@@ -191,7 +196,7 @@ new_crossfilter_block <- function(
         stop("Input must be a data frame")
       }
     },
-    allow_empty_state = c("active_dims", "filters", "range_filters"),
+    allow_empty_state = c("active_dims", "filters", "range_filters", "agg_func"),
     external_ctrl = TRUE,
     class = "crossfilter_block",
     ...

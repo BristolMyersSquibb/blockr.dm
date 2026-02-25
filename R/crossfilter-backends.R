@@ -813,14 +813,17 @@ build_crossfilter_lookups <- function(tables, active_dims, pks, fks,
   child_fk_rows <- fks[fks$parent_table == parent_table, ]
   if (nrow(child_fk_rows) == 0) return(NULL)
 
-  # Parse measure spec
+  # Parse measure spec using table-name-aware matching
   measure_tbl <- NULL
   measure_cn <- NULL
   if (!is.null(measure_col) && measure_col != ".count") {
-    dot_pos <- regexpr("\\.", measure_col)
-    if (dot_pos > 0) {
-      measure_tbl <- substr(measure_col, 1, dot_pos - 1)
-      measure_cn <- substr(measure_col, dot_pos + 1, nchar(measure_col))
+    for (tbl in names(tables)) {
+      prefix <- paste0(tbl, ".")
+      if (startsWith(measure_col, prefix)) {
+        measure_tbl <- tbl
+        measure_cn <- substr(measure_col, nchar(prefix) + 1, nchar(measure_col))
+        break
+      }
     }
   }
 

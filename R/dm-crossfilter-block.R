@@ -221,52 +221,45 @@ dm_crossfilter_search_css <- function() {
       background: var(--blockr-color-border, #e5e7eb);
       flex-shrink: 0;
     }
-    .dm-cf-dev-toggle {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      width: 20px;
-      height: 20px;
-      padding: 0;
-      border: none;
-      background: transparent;
-      color: #d1d5db;
+    /* Advanced options toggle */
+    .dm-cf-advanced-toggle {
       cursor: pointer;
-      border-radius: 4px;
-      transition: all 0.15s;
-    }
-    .dm-cf-dev-toggle:hover {
-      color: #9ca3af;
-      background: var(--blockr-grey-100, #f3f4f6);
-    }
-    .dm-cf-backend-wrap {
-      display: none;
+      user-select: none;
+      padding: 4px 0;
+      margin-bottom: 0;
+      display: flex;
       align-items: center;
       gap: 6px;
+      font-size: 0.8125rem;
+      color: var(--blockr-color-text-muted, #6b7280);
     }
-    .dm-cf-backend-wrap.visible {
-      display: inline-flex;
+    .dm-cf-advanced-toggle:hover {
+      color: var(--blockr-color-text-secondary, #374151);
     }
-    /* Compact select — matches selectize look at small size */
-    .dm-cf-select-sm {
-      font-size: var(--blockr-font-size-sm, 13px);
-      padding: 4px 10px;
-      min-height: 26px;
-      width: auto;
-      min-width: 70px;
-      background-color: var(--blockr-color-bg-input, #f9fafb);
-      border: 1px solid var(--blockr-color-border, #e5e7eb);
-      border-radius: 8px;
-      color: var(--blockr-color-text-primary, #111827);
-      box-shadow: none;
-      cursor: pointer;
-      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    .dm-cf-advanced-section {
+      max-height: 0;
+      overflow: hidden;
+      transition: max-height 0.3s ease-out;
     }
-    .dm-cf-select-sm:focus {
-      background-color: #ffffff;
-      border-color: var(--blockr-color-primary, #2563eb);
-      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
-      outline: none;
+    .dm-cf-advanced-section.expanded {
+      max-height: 500px;
+      overflow: visible;
+      transition: max-height 0.5s ease-in;
+    }
+    .dm-cf-advanced-grid {
+      display: grid;
+      gap: 15px;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      padding: 8px 0;
+    }
+    .dm-cf-chevron {
+      transition: transform 0.2s;
+      display: inline-block;
+      font-size: 14px;
+      font-weight: bold;
+    }
+    .dm-cf-chevron.rotated {
+      transform: rotate(90deg);
     }
   "))
 }
@@ -369,7 +362,8 @@ dm_crossfilter_table_css <- function() {
   "))
 }
 
-dm_crossfilter_server_factory <- function(active_dims, filters, range_filters, measure) {
+dm_crossfilter_server_factory <- function(active_dims, filters, range_filters, measure,
+                                           agg_func = NULL) {
   function(id, data) {
     shiny::moduleServer(
       id,
@@ -396,6 +390,21 @@ dm_crossfilter_server_factory <- function(active_dims, filters, range_filters, m
               fks = fks
             )
           })
+
+          # --- Parse "table.column" measure spec by matching known table names ---
+          parse_measure_spec <- function(measure) {
+            info <- dm_info()
+            for (tbl in info$table_names) {
+              prefix <- paste0(tbl, ".")
+              if (startsWith(measure, prefix)) {
+                return(list(
+                  table = tbl,
+                  col = substr(measure, nchar(prefix) + 1, nchar(measure))
+                ))
+              }
+            }
+            NULL
+          }
 
           # --- Backend detection + reactive selector ---
           has_duckdb <- requireNamespace("duckdb", quietly = TRUE) &&
@@ -425,6 +434,11 @@ dm_crossfilter_server_factory <- function(active_dims, filters, range_filters, m
             if (!is.null(val)) {
               r_measure(val)
             }
+          }, ignoreInit = TRUE)
+
+          shiny::observeEvent(input$agg_func_switch, {
+            val <- input$agg_func_switch
+            if (!is.null(val)) r_agg_func(val)
           }, ignoreInit = TRUE)
 
           # --- DuckDB connection (when available) ---
@@ -569,6 +583,7 @@ dm_crossfilter_server_factory <- function(active_dims, filters, range_filters, m
           r_filters <- as_rv(filters)
           r_range_filters <- as_rv(range_filters)
           r_measure <- as_rv(measure, measure %||% ".count")
+          r_agg_func <- as_rv(agg_func, agg_func %||% "sum")
 
           # --- Precomputed lookup tables (invalidates on data/dims/measure, NOT on filter values) ---
           r_lookup_info <- shiny::reactive({
@@ -700,8 +715,16 @@ dm_crossfilter_server_factory <- function(active_dims, filters, range_filters, m
                                                        measure_col) {
             cf_data <- crossfilter_data_for_dim(tbl_name, dim)
 
+            agg_fn <- switch(r_agg_func(),
+              mean = function(x) mean(x, na.rm = TRUE),
+              median = function(x) stats::median(x, na.rm = TRUE),
+              min = function(x) min(x, na.rm = TRUE),
+              max = function(x) max(x, na.rm = TRUE),
+              function(x) sum(x, na.rm = TRUE)
+            )
+
             if (measure_table == tbl_name) {
-              # Same table: simple SUM
+              # Same table: aggregate with selected function
               if (!measure_col %in% names(cf_data)) {
                 return(data.frame(
                   x = character(0), .value = numeric(0),
@@ -710,11 +733,11 @@ dm_crossfilter_server_factory <- function(active_dims, filters, range_filters, m
               }
               agg <- dplyr::summarise(
                 cf_data,
-                .value = sum(.data[[measure_col]], na.rm = TRUE),
+                .value = agg_fn(.data[[measure_col]]),
                 .by = dplyr::all_of(dim)
               )
             } else {
-              # Cross-table: join dim→key mapping to measure table, then SUM
+              # Cross-table: join dim→key mapping to measure table, then aggregate
               key_col <- find_key_column(tbl_name)
               measure_key_col <- find_key_column(measure_table)
 
@@ -750,7 +773,7 @@ dm_crossfilter_server_factory <- function(active_dims, filters, range_filters, m
               )
               agg <- dplyr::summarise(
                 joined,
-                .value = sum(.data[[measure_col]], na.rm = TRUE),
+                .value = agg_fn(.data[[measure_col]]),
                 .by = dplyr::all_of(dim)
               )
             }
@@ -945,17 +968,18 @@ dm_crossfilter_server_factory <- function(active_dims, filters, range_filters, m
             use_measure <- !is.null(measure) && measure != ".count"
 
             if (use_measure) {
-              # Parse "table.column" measure spec
-              dot_pos <- regexpr("\\.", measure)
-              measure_table <- substr(measure, 1, dot_pos - 1)
-              measure_col <- substr(measure, dot_pos + 1, nchar(measure))
-
-              agg <- crossfilter_agg_for_dim_measure(
-                tbl_name, dim, measure_table, measure_col
-              )
-              # NULL means no key relationship — fall back to count
-              if (is.null(agg)) {
+              # Parse "table.column" measure spec using table-name-aware helper
+              mspec <- parse_measure_spec(measure)
+              if (is.null(mspec)) {
                 use_measure <- FALSE
+              } else {
+                agg <- crossfilter_agg_for_dim_measure(
+                  tbl_name, dim, mspec$table, mspec$col
+                )
+                # NULL means no key relationship — fall back to count
+                if (is.null(agg)) {
+                  use_measure <- FALSE
+                }
               }
             }
 
@@ -965,9 +989,11 @@ dm_crossfilter_server_factory <- function(active_dims, filters, range_filters, m
 
             value_col <- if (use_measure) ".value" else ".count"
             col_header <- if (use_measure) {
-              dot_pos <- regexpr("\\.", measure)
-              mc <- substr(measure, dot_pos + 1, nchar(measure))
-              paste0("Sum of ", mc)
+              agg_label <- switch(r_agg_func(),
+                mean = "Avg", median = "Median", min = "Min", max = "Max",
+                "Sum"
+              )
+              paste0(agg_label, " of ", mspec$col)
             } else {
               "Count"
             }
@@ -1168,7 +1194,7 @@ dm_crossfilter_server_factory <- function(active_dims, filters, range_filters, m
             }
 
             range_text <- paste0(n_match, " of ", length(cf_vals), " rows")
-            slider_uid <- paste0("drs_", tbl_name, "_", dim)
+            slider_uid <- gsub("[.]", "_", paste0("drs_", tbl_name, "_", dim))
 
             # For < 2 unique values, show static text
             if (length(unique(full_vals)) < 2) {
@@ -1417,7 +1443,7 @@ dm_crossfilter_server_factory <- function(active_dims, filters, range_filters, m
             }
 
             range_text <- paste0(n_match, " of ", length(cf_vals), " rows")
-            slider_uid <- paste0("dds_", tbl_name, "_", dim)
+            slider_uid <- gsub("[.]", "_", paste0("dds_", tbl_name, "_", dim))
 
             # For < 2 unique values, show static text
             if (length(unique(full_vals)) < 2) {
@@ -2132,31 +2158,9 @@ dm_crossfilter_server_factory <- function(active_dims, filters, range_filters, m
             )
           })
 
-          # --- Filter controls (only re-renders on backend/measure change) ---
+          # --- Filter controls (advanced options section) ---
           output$filter_controls <- shiny::renderUI({
             backend <- r_backend()
-
-            # Build <option> tags for the backend dropdown
-            option_tags <- paste0(
-              vapply(available_backends, function(b) {
-                sel <- if (b == backend) ' selected' else ''
-                sprintf('<option value="%s"%s>%s</option>', b, sel, b)
-              }, character(1)),
-              collapse = ""
-            )
-
-            backend_input_id <- ns("backend_switch")
-            measure_input_id <- ns("measure_switch")
-
-            # Style colors per backend
-            badge_style <- switch(
-              backend,
-              lookup = "color: #047857; background: #d1fae5;",
-              duckdb = "color: #b45309; background: #fef3c7;",
-              duckplyr = "color: #7c3aed; background: #f3e8ff;",
-              dm = "color: #0369a1; background: #e0f2fe;",
-              "color: #6b7280; background: #f3f4f6;"
-            )
 
             # Build measure choices from column_info_per_table
             col_info <- column_info_per_table()
@@ -2176,63 +2180,43 @@ dm_crossfilter_server_factory <- function(active_dims, filters, range_filters, m
                 )
               }
             }
+            names(measure_choices) <- measure_labels
 
-            measure_option_tags <- paste0(
-              vapply(seq_along(measure_choices), function(i) {
-                sel <- if (measure_choices[i] == current_measure) ' selected' else ''
-                sprintf(
-                  '<option value="%s"%s>%s</option>',
-                  measure_choices[i], sel, measure_labels[i]
-                )
-              }, character(1)),
-              collapse = ""
+            backend_choices <- stats::setNames(
+              available_backends, available_backends
             )
 
-            backend_wrap_id <- ns("backend_wrap")
-
-            # Kebab menu icon (3 vertical dots)
-            dev_icon <- shiny::HTML(paste0(
-              '<svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">',
-              '<circle cx="8" cy="3" r="1.5"/>',
-              '<circle cx="8" cy="8" r="1.5"/>',
-              '<circle cx="8" cy="13" r="1.5"/>',
-              '</svg>'
-            ))
-
-            shiny::tagList(
+            shiny::div(
+              class = "dm-cf-advanced-grid",
               # Measure selector
-              if (length(measure_choices) > 1) {
-                shiny::tags$select(
-                  class = "dm-cf-select-sm",
-                  onchange = sprintf(
-                    "Shiny.setInputValue('%s', this.value, {priority: 'event'});",
-                    measure_input_id
-                  ),
-                  shiny::HTML(measure_option_tags)
+              shiny::div(
+                shiny::selectizeInput(
+                  ns("measure_switch"),
+                  label = "Measure",
+                  choices = measure_choices,
+                  selected = current_measure,
+                  width = "100%"
                 )
-              },
-              # Dev toggle button
-              shiny::tags$button(
-                class = "dm-cf-dev-toggle",
-                title = "Developer options",
-                onclick = sprintf(
-                  "document.getElementById('%s').classList.toggle('visible');",
-                  backend_wrap_id
-                ),
-                dev_icon
               ),
-              # Backend selector (hidden by default)
-              shiny::span(
-                id = backend_wrap_id,
-                class = "dm-cf-backend-wrap",
-                shiny::tags$select(
-                  class = "dm-cf-select-sm",
-                  onchange = sprintf(
-                    "Shiny.setInputValue('%s', this.value, {priority: 'event'});",
-                    backend_input_id
-                  ),
-                  style = badge_style,
-                  shiny::HTML(option_tags)
+              # Aggregation function selector (only when measure != .count)
+              if (current_measure != ".count") shiny::div(
+                shiny::selectizeInput(
+                  ns("agg_func_switch"),
+                  label = "Aggregation",
+                  choices = c(Sum = "sum", Average = "mean", Median = "median",
+                              Min = "min", Max = "max"),
+                  selected = r_agg_func(),
+                  width = "100%"
+                )
+              ),
+              # Backend selector
+              shiny::div(
+                shiny::selectizeInput(
+                  ns("backend_switch"),
+                  label = "Backend",
+                  choices = backend_choices,
+                  selected = backend,
+                  width = "100%"
                 )
               )
             )
@@ -2319,7 +2303,8 @@ dm_crossfilter_server_factory <- function(active_dims, filters, range_filters, m
               active_dims = r_active_dims,
               filters = r_filters,
               range_filters = r_range_filters,
-              measure = r_measure
+              measure = r_measure,
+              agg_func = r_agg_func
             )
           )
         }
@@ -2362,10 +2347,28 @@ dm_crossfilter_ui <- function(id) {
       shiny::uiOutput(ns("search_results")),
       shiny::div(
         class = "dm-cf-status-bar",
-        shiny::uiOutput(ns("filter_status_text")),
-        shiny::uiOutput(ns("filter_controls"))
+        shiny::uiOutput(ns("filter_status_text"))
       ),
-      shiny::uiOutput(ns("tables_grid"))
+      shiny::uiOutput(ns("tables_grid")),
+      # Advanced options toggle (below filters)
+      shiny::div(
+        class = "dm-cf-advanced-toggle",
+        id = ns("advanced-toggle"),
+        onclick = sprintf(
+          "document.getElementById('%s').classList.toggle('expanded');
+           document.querySelector('#%s .dm-cf-chevron').classList.toggle('rotated');",
+          ns("advanced-options"),
+          ns("advanced-toggle")
+        ),
+        shiny::tags$span(class = "dm-cf-chevron", "\u203A"),
+        "Advanced options"
+      ),
+      # Collapsible section
+      shiny::div(
+        id = ns("advanced-options"),
+        class = "dm-cf-advanced-section",
+        shiny::uiOutput(ns("filter_controls"))
+      )
     )
   )
 }
@@ -2389,8 +2392,11 @@ dm_crossfilter_ui <- function(id) {
 #'   E.g., `list(adsl = list(AGE = c(65, 80)))`
 #' @param measure Measure column to aggregate in categorical filters, as
 #'   `"table.column"` (e.g., `"sales.amount"`). Defaults to `NULL` (row count).
-#'   When set, categorical filter bars show `SUM(column)` per dimension value
+#'   When set, categorical filter bars show aggregated values per dimension value
 #'   instead of row counts.
+#' @param agg_func Aggregation function name: `"sum"` (default), `"mean"`,
+#'   `"median"`, `"min"`, or `"max"`. Controls how the measure column is
+#'   aggregated per dimension value.
 #' @param ... Forwarded to [blockr.core::new_transform_block()]
 #'
 #' @return A blockr transform block that returns a filtered dm object
@@ -2401,15 +2407,18 @@ new_dm_crossfilter_block <- function(
     filters = list(),
     range_filters = list(),
     measure = NULL,
+    agg_func = NULL,
     ...
 ) {
   blockr.core::new_transform_block(
-    server = dm_crossfilter_server_factory(active_dims, filters, range_filters, measure),
+    server = dm_crossfilter_server_factory(
+      active_dims, filters, range_filters, measure, agg_func = agg_func
+    ),
     ui = dm_crossfilter_ui,
     # Note: dat_valid intentionally omitted to avoid double evaluation on startup.
     # The server already validates via shiny::req(inherits(dm_obj, "dm")).
     # See https://github.com/blockr-org/blockr.core/issues/XXX
-    allow_empty_state = c("active_dims", "filters", "range_filters", "measure"),
+    allow_empty_state = c("active_dims", "filters", "range_filters", "measure", "agg_func"),
     external_ctrl = TRUE,
     class = "dm_crossfilter_block",
     ...
