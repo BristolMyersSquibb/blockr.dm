@@ -2427,7 +2427,6 @@ new_dm_crossfilter_block <- function(
     ui = dm_crossfilter_ui,
     # Note: dat_valid intentionally omitted to avoid double evaluation on startup.
     # The server already validates via shiny::req(inherits(dm_obj, "dm")).
-    # See https://github.com/blockr-org/blockr.core/issues/XXX
     allow_empty_state = c("active_dims", "filters", "range_filters", "measure", "agg_func"),
     external_ctrl = TRUE,
     class = "dm_crossfilter_block",

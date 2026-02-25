@@ -18,6 +18,7 @@ register_dm_blocks <- function() {
       "new_dm_flatten_block",
       "new_dm_nested_view_block",
       "new_temporal_join_block",
+      "new_dm_temporal_join_block",
       "new_crossfilter_block",
       "new_dm_crossfilter_block"
     ),
@@ -33,6 +34,7 @@ register_dm_blocks <- function() {
       "Flatten dm",
       "Nested view",
       "Temporal join",
+      "dm Temporal join",
       "Crossfilter",
       "dm Crossfilter"
     ),
@@ -48,10 +50,12 @@ register_dm_blocks <- function() {
       "Flatten a dm into a single data frame by joining related tables",
       "Display dm as nested table with expandable child rows",
       "Join two tables and filter by time window between date columns",
+      "Temporal join between two tables in a dm object, filtering by time window",
       "Interactive crossfilter with categorical tables and numeric range sliders",
       "Cross-table crossfilter on a dm object with per-table filter panels"
     ),
     category = c(
+      "structured",
       "structured",
       "structured",
       "structured",
@@ -78,12 +82,13 @@ register_dm_blocks <- function() {
       "layers",
       "list-nested",
       "clock-history",
+      "clock-history",
       "sliders",
       "sliders2"
     ),
     arguments = list(
-      NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
-      # crossfilter_block (pos 11):
+      NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+      # crossfilter_block (pos 13):
       structure(
         c(
           filters = "Categorical filters. Object: column name -> array of selected values (strings)",
@@ -96,7 +101,7 @@ register_dm_blocks <- function() {
           active_dims = list(.tbl = list("Species", "Sepal.Width"))
         )
       ),
-      # dm_crossfilter_block (pos 12):
+      # dm_crossfilter_block (pos 14):
       structure(
         c(
           active_dims = "Per-table active filter columns. Object: table name -> array of column names",
