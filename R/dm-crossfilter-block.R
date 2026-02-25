@@ -2065,6 +2065,9 @@ dm_crossfilter_server_factory <- function(active_dims, filters, range_filters, m
             }
           })
 
+          # Helper: TRUE when dm has only one table (e.g. df crossfilter wrapper)
+          is_single_table <- function() length(dm_info()$table_names) == 1
+
           # --- Filter status text (re-renders on filter clicks — lightweight) ---
           output$filter_status_text <- shiny::renderUI({
             cat_filters <- r_filters()
@@ -2076,6 +2079,8 @@ dm_crossfilter_server_factory <- function(active_dims, filters, range_filters, m
             # Build filter chips
             chips <- list()
             if (has_filters) {
+              single_tbl <- is_single_table()
+
               for (tbl in names(cat_filters)) {
                 tbl_f <- cat_filters[[tbl]]
                 for (dim in names(tbl_f)) {
@@ -2088,7 +2093,9 @@ dm_crossfilter_server_factory <- function(active_dims, filters, range_filters, m
                   chips <- c(chips, list(
                     shiny::span(
                       class = "dm-cf-filter-chip",
-                      shiny::span(class = "dm-cf-chip-table", paste0(tbl, ".")),
+                      if (!single_tbl) shiny::span(
+                        class = "dm-cf-chip-table", paste0(tbl, ".")
+                      ),
                       paste0(dim, "=", label)
                     )
                   ))
@@ -2114,7 +2121,9 @@ dm_crossfilter_server_factory <- function(active_dims, filters, range_filters, m
                   chips <- c(chips, list(
                     shiny::span(
                       class = "dm-cf-filter-chip",
-                      shiny::span(class = "dm-cf-chip-table", paste0(tbl, ".")),
+                      if (!single_tbl) shiny::span(
+                        class = "dm-cf-chip-table", paste0(tbl, ".")
+                      ),
                       paste0(dim, " [", lo_str, "\u2013", hi_str, "]")
                     )
                   ))
@@ -2164,6 +2173,7 @@ dm_crossfilter_server_factory <- function(active_dims, filters, range_filters, m
 
             # Build measure choices from column_info_per_table
             col_info <- column_info_per_table()
+            single_tbl <- is_single_table()
             current_measure <- r_measure() %||% ".count"
             measure_choices <- ".count"
             measure_labels <- "Count"
@@ -2176,7 +2186,7 @@ dm_crossfilter_server_factory <- function(active_dims, filters, range_filters, m
                 )
                 measure_labels <- c(
                   measure_labels,
-                  paste0(tbl, ": ", m_cols)
+                  if (single_tbl) m_cols else paste0(tbl, ": ", m_cols)
                 )
               }
             }
