@@ -77,7 +77,7 @@ register_dm_blocks <- function() {
       "check2-square",
       "key",
       "funnel",
-      "funnel-fill",
+      "input-cursor-text",
       "box-arrow-up-right",
       "layers",
       "list-nested",
