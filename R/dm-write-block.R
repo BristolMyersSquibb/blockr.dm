@@ -197,7 +197,9 @@ new_dm_write_block <- function(
               }
             } else {
               # Download mode - just pass data through
-              quote(data)
+              quote({
+                data
+              })
             }
           })
 
