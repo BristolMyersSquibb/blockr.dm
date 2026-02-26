@@ -144,6 +144,29 @@ dm_crossfilter_search_css <- function() {
       font-size: 14px;
       color: var(--blockr-color-text-primary, #111827);
     }
+    .dm-cf-filter-card-actions {
+      display: flex;
+      gap: 2px;
+      align-items: center;
+    }
+    .dm-cf-reset-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      padding: 0;
+      background: transparent;
+      border: none;
+      border-radius: 6px;
+      color: var(--blockr-grey-400, #9ca3af);
+      cursor: pointer;
+      transition: background-color 0.15s, color 0.15s;
+    }
+    .dm-cf-reset-btn:hover {
+      background: var(--blockr-grey-100, #f3f4f6);
+      color: var(--blockr-grey-700, #374151);
+    }
     .dm-cf-remove-btn {
       display: flex;
       align-items: center;
@@ -1750,6 +1773,31 @@ dm_crossfilter_server_factory <- function(active_dims, filters, range_filters, m
             }
           }, ignoreInit = TRUE)
 
+          # --- Observer: reset filter (circular-arrow button) ---
+          shiny::observeEvent(input$reset_filter, {
+            req <- input$reset_filter
+            if (is.null(req)) return()
+            tbl <- req$table
+            dim_name <- req$dim
+            if (is.null(tbl) || is.null(dim_name)) return()
+
+            # Clear categorical filter values
+            cat_f <- r_filters()
+            if (!is.null(cat_f[[tbl]][[dim_name]])) {
+              cat_f[[tbl]][[dim_name]] <- NULL
+              if (length(cat_f[[tbl]]) == 0) cat_f[[tbl]] <- NULL
+              r_filters(cat_f)
+            }
+
+            # Clear range filter values
+            rng_f <- r_range_filters()
+            if (!is.null(rng_f[[tbl]][[dim_name]])) {
+              rng_f[[tbl]][[dim_name]] <- NULL
+              if (length(rng_f[[tbl]]) == 0) rng_f[[tbl]] <- NULL
+              r_range_filters(rng_f)
+            }
+          }, ignoreInit = TRUE)
+
           # --- Debounced search input (plain input with shiny-input-text) ---
           search_term <- shiny::reactive(input$search_input) |> shiny::debounce(150)
 
@@ -1905,22 +1953,38 @@ dm_crossfilter_server_factory <- function(active_dims, filters, range_filters, m
             # SVG X icon for remove button (matches blockr-btn-icon pattern)
             x_icon_svg <- '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708z"/></svg>'
 
-            # Build widget with header (label + remove button) above widget
+            # SVG circular-arrow reset icon (same 14x14 size)
+            reset_icon_svg <- '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path fill-rule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 1 1 .908-.418A6 6 0 1 1 8 2v1z"/><path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466z"/></svg>'
+
+            # Build widget with header (label + reset/remove buttons) above widget
             wrap_with_remove <- function(tbl_name, dim_name, widget) {
               shiny::div(
                 class = "dm-cf-filter-card",
                 shiny::div(
                   class = "dm-cf-filter-card-header",
                   shiny::span(class = "dm-cf-filter-card-label", format_col_label(tbl_name, dim_name)),
-                  shiny::tags$button(
-                    type = "button",
-                    class = "dm-cf-remove-btn",
-                    title = paste0("Remove ", dim_name, " filter"),
-                    onclick = sprintf(
-                      "Shiny.setInputValue('%s', {table: '%s', dim: '%s'}, {priority: 'event'});",
-                      ns("remove_filter"), tbl_name, dim_name
+                  shiny::div(
+                    class = "dm-cf-filter-card-actions",
+                    shiny::tags$button(
+                      type = "button",
+                      class = "dm-cf-reset-btn",
+                      title = paste0("Reset ", dim_name, " filter"),
+                      onclick = sprintf(
+                        "Shiny.setInputValue('%s', {table: '%s', dim: '%s'}, {priority: 'event'});",
+                        ns("reset_filter"), tbl_name, dim_name
+                      ),
+                      shiny::HTML(reset_icon_svg)
                     ),
-                    shiny::HTML(x_icon_svg)
+                    shiny::tags$button(
+                      type = "button",
+                      class = "dm-cf-remove-btn",
+                      title = paste0("Remove ", dim_name, " filter"),
+                      onclick = sprintf(
+                        "Shiny.setInputValue('%s', {table: '%s', dim: '%s'}, {priority: 'event'});",
+                        ns("remove_filter"), tbl_name, dim_name
+                      ),
+                      shiny::HTML(x_icon_svg)
+                    )
                   )
                 ),
                 widget
