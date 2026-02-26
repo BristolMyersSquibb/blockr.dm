@@ -1,4 +1,4 @@
-# Use Case 8: Standalone crossfilter module (no blockr.dag / run_app)
+# Use Case 9: Standalone crossfilter module (no blockr.dag / run_app)
 #
 # Demonstrates dm_filter_ui() / dm_filter_server() as a plain Shiny module
 # embedded in a regular Shiny app. No blockr board, no DAG, no blocks/links.
@@ -8,12 +8,15 @@
 pkgload::load_all("../blockr.dm")
 
 library(shiny)
+library(safetyData)
 
 # --- Build dm outside of Shiny ---
-adam_dir <- system.file("extdata", "adam", package = "blockr.dm")
-parquet_files <- list.files(adam_dir, pattern = "\\.parquet$", full.names = TRUE)
-tables <- lapply(parquet_files, arrow::read_parquet)
-names(tables) <- tools::file_path_sans_ext(basename(parquet_files))
+tables <- list(
+  adsl = adam_adsl,
+  adae = adam_adae,
+  adlb = adam_adlbc,
+  advs = adam_advs
+)
 dm_obj <- do.call(dm::dm, tables)
 dm_obj <- blockr.dm:::infer_keys_from_column_names(dm_obj)
 

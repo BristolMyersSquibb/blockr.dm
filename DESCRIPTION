@@ -48,7 +48,7 @@ Suggests:
     qs,
     rio,
     testthat (>= 3.0.0),
-    random.cdisc.data,
+    safetyData,
     shinytest2
 Config/testthat/edition: 3
 Remotes:

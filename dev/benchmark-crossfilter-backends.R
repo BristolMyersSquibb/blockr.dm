@@ -1,7 +1,7 @@
 # Benchmark: Crossfilter Backend Comparison
 #
 # Compares three backends (dplyr, duckdb SQL, duckplyr) on identical data.
-# Uses the bundled ADaM parquet files (~201K rows, 8 tables).
+# Uses ADaM data from safetyData (CDISC Pilot 01, ~200K+ rows, 8 tables).
 #
 # Purpose: reproducible case for discussing duckplyr performance with Kirill.
 # The dplyr `.data[[dim]]` and `between()` patterns cause silent fallback in
@@ -11,15 +11,20 @@ library(dplyr)
 library(dm)
 library(DBI)
 library(duckdb)
+library(safetyData)
 
 pkgload::load_all(".")
 
 # --- Load data ---
-adam_dir <- system.file("extdata", "adam", package = "blockr.dm")
-files <- list.files(adam_dir, pattern = "\\.parquet$", full.names = TRUE)
-tables <- setNames(
-  lapply(files, arrow::read_parquet),
-  tools::file_path_sans_ext(basename(files))
+tables <- list(
+  adsl = adam_adsl,
+  adae = adam_adae,
+  adlbc = adam_adlbc,
+  adlbh = adam_adlbh,
+  adqsadas = adam_adqsadas,
+  adqsnpix = adam_adqsnpix,
+  adtte = adam_adtte,
+  advs = adam_advs
 )
 
 message("Tables loaded:")

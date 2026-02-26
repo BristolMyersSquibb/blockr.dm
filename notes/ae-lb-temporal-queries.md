@@ -263,7 +263,7 @@ new_dm_temporal_join_block(
 3. Filters based on window and direction
 4. Returns result as a data frame
 
-See `inst/examples/adam_temporal_workflow.R` for a complete example.
+See `dev/examples/adam_temporal_workflow.R` for a complete example.
 
 ---
 
