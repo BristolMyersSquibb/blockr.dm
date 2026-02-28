@@ -1026,6 +1026,7 @@ dm_crossfilter_server_factory <- function(active_dims, filters, range_filters, m
               info <- dm_info()
               full_df <- info$tables[[tbl_name]]
               all_vals <- unique(as.character(full_df[[dim]]))
+              all_vals[is.na(all_vals)] <- CROSSFILTER_NA
               agg <- data.frame(
                 x = all_vals,
                 v = rep(0, length(all_vals)),
@@ -1061,12 +1062,16 @@ dm_crossfilter_server_factory <- function(active_dims, filters, range_filters, m
               minWidth = 120,
               cell = function(value, index) {
                 is_selected <- agg$.selected[index]
+                is_na_val <- identical(value, CROSSFILTER_NA)
                 style <- if (has_filter && !is_selected) {
                   "color: #999;"
+                } else if (is_na_val) {
+                  "color: #9ca3af; font-size: 0.75rem;"
                 } else {
                   "font-weight: 500;"
                 }
-                shiny::tags$span(style = style, value)
+                display <- if (is_na_val) "NA" else value
+                shiny::tags$span(style = style, display)
               }
             )
 
@@ -2149,10 +2154,11 @@ dm_crossfilter_server_factory <- function(active_dims, filters, range_filters, m
                 tbl_f <- cat_filters[[tbl]]
                 for (dim in names(tbl_f)) {
                   vals <- tbl_f[[dim]]
-                  label <- if (length(vals) <= 2) {
-                    paste(vals, collapse = ", ")
+                  display_vals <- gsub(CROSSFILTER_NA, "NA", vals, fixed = TRUE)
+                  label <- if (length(display_vals) <= 2) {
+                    paste(display_vals, collapse = ", ")
                   } else {
-                    paste0(vals[1], " +", length(vals) - 1)
+                    paste0(display_vals[1], " +", length(display_vals) - 1)
                   }
                   chips <- c(chips, list(
                     shiny::span(

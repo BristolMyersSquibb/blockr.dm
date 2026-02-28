@@ -1,4 +1,10 @@
 # --- Crossfilter Backend Implementations ---
+
+# Sentinel value representing R's NA in the crossfilter pipeline.
+# JS has no R-style NA, and `%in%` can't match NA — this sentinel flows through
+# Shiny.setInputValue and back, letting us distinguish real NA from literal "NA".
+CROSSFILTER_NA <- "__NA__"
+
 #
 # Three interchangeable backends for the dm crossfilter hot path:
 #   1. dplyr     — pure dplyr, always available (default fallback)
@@ -32,7 +38,15 @@ apply_crossfilter_filters <- function(df, cat_f, rng_f, exclude_dim = NULL) {
   for (dim in names(cat_f)) {
     val <- cat_f[[dim]]
     if (!is.null(val) && length(val) > 0 && dim %in% names(df)) {
-      df <- dplyr::filter(df, .data[[dim]] %in% val)
+      has_na <- CROSSFILTER_NA %in% val
+      non_na_vals <- setdiff(val, CROSSFILTER_NA)
+      if (has_na && length(non_na_vals) > 0) {
+        df <- dplyr::filter(df, is.na(.data[[dim]]) | .data[[dim]] %in% non_na_vals)
+      } else if (has_na) {
+        df <- dplyr::filter(df, is.na(.data[[dim]]))
+      } else {
+        df <- dplyr::filter(df, .data[[dim]] %in% non_na_vals)
+      }
     }
   }
   for (dim in names(rng_f)) {
@@ -71,7 +85,15 @@ apply_crossfilter_filters_sym <- function(df, cat_f, rng_f, exclude_dim = NULL,
   for (dim in names(cat_f)) {
     val <- cat_f[[dim]]
     if (!is.null(val) && length(val) > 0 && dim %in% names(df)) {
-      df <- dplyr::filter(df, !!rlang::sym(dim) %in% val)
+      has_na <- CROSSFILTER_NA %in% val
+      non_na_vals <- setdiff(val, CROSSFILTER_NA)
+      if (has_na && length(non_na_vals) > 0) {
+        df <- dplyr::filter(df, is.na(!!rlang::sym(dim)) | !!rlang::sym(dim) %in% non_na_vals)
+      } else if (has_na) {
+        df <- dplyr::filter(df, is.na(!!rlang::sym(dim)))
+      } else {
+        df <- dplyr::filter(df, !!rlang::sym(dim) %in% non_na_vals)
+      }
     }
   }
   for (dim in names(rng_f)) {
@@ -160,6 +182,7 @@ dplyr_crossfilter_agg <- function(tables, key_col_fn, tbl_name, dim,
   agg <- dplyr::summarise(df, .count = dplyr::n(),
                            .by = dplyr::all_of(dim))
   agg <- dplyr::mutate(agg, !!dim := as.character(.data[[dim]]))
+  agg[[dim]][is.na(agg[[dim]])] <- CROSSFILTER_NA
   dplyr::arrange(agg, dplyr::desc(.data[[".count"]]))
 }
 
@@ -611,7 +634,19 @@ build_dm_filter_exprs <- function(cat_filters, rng_filters, tables,
     for (dim in names(cat_f)) {
       val <- cat_f[[dim]]
       if (!is.null(val) && length(val) > 0) {
-        conditions <- c(conditions, list(rlang::expr(!!rlang::sym(dim) %in% !!val)))
+        has_na <- CROSSFILTER_NA %in% val
+        non_na_vals <- setdiff(val, CROSSFILTER_NA)
+        if (has_na && length(non_na_vals) > 0) {
+          conditions <- c(conditions, list(
+            rlang::expr(is.na(!!rlang::sym(dim)) | !!rlang::sym(dim) %in% !!non_na_vals)
+          ))
+        } else if (has_na) {
+          conditions <- c(conditions, list(rlang::expr(is.na(!!rlang::sym(dim)))))
+        } else {
+          conditions <- c(conditions, list(
+            rlang::expr(!!rlang::sym(dim) %in% !!non_na_vals)
+          ))
+        }
       }
     }
 
@@ -1020,6 +1055,7 @@ lookup_crossfilter_agg <- function(lookup_info, tbl_name, dim,
   }
 
   agg <- dplyr::mutate(agg, !!dim := as.character(.data[[dim]]))
+  agg[[dim]][is.na(agg[[dim]])] <- CROSSFILTER_NA
   dplyr::arrange(agg, dplyr::desc(.data[[".count"]]))
 }
 
