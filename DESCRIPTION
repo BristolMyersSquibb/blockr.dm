@@ -20,19 +20,18 @@ Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.3
 Imports:
     blockr.core,
-    bslib,
+    blockr.io,
     DiagrammeR,
     dm,
     dplyr,
     htmltools,
     htmlwidgets,
-    rappdirs,
     reactable,
     readr,
     readxl,
     rlang,
     shiny,
-    shinyFiles,
+    shinyjs,
     stats,
     utils,
     writexl,
@@ -42,6 +41,7 @@ Suggests:
     blockr,
     blockr.dag,
     blockr.dock,
+    bslib,
     DBI,
     duckdb,
     duckplyr,
@@ -53,6 +53,7 @@ Suggests:
 Config/testthat/edition: 3
 Remotes:
     BristolMyersSquibb/blockr.core,
+    BristolMyersSquibb/blockr.io,
     BristolMyersSquibb/blockr,
     BristolMyersSquibb/blockr.dag,
     BristolMyersSquibb/blockr.dock

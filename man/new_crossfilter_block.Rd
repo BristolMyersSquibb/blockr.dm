@@ -8,6 +8,7 @@ new_crossfilter_block(
   filters = list(),
   range_filters = list(),
   active_dims = list(),
+  agg_func = NULL,
   ...
 )
 }

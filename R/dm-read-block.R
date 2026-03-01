@@ -12,19 +12,9 @@
 #'   - An RDS file (.rds): Can contain a dm, data.frame, or list of data.frames
 #'   - A QS file (.qs): Can contain a dm, data.frame, or list of data.frames
 #'   - An RData file (.rdata, .rda): All data.frames become dm tables
-#' @param source Either "upload" for file upload widget or "path" for file browser.
-#'   Default: "upload".
 #' @param selected_tables Character vector. Optional subset of tables to include
 #'   in the output dm. Default is NULL (all tables).
 #' @param ... Forwarded to [blockr.core::new_data_block()]
-#'
-#' @section Configuration:
-#' The following settings are retrieved from options and not stored in block state:
-#' - **volumes**: File browser mount points. Set via `options(blockr.volumes = c(name = "path"))`
-#'   or environment variable `BLOCKR_VOLUMES`. Default: `c(temp = tempdir())`
-#' - **upload_path**: Directory for persistent file storage. Set via
-#'   `options(blockr.upload_path = "/path")` or environment variable `BLOCKR_UPLOAD_PATH`.
-#'   Default: `rappdirs::user_data_dir("blockr")`
 #'
 #' @details
 #' ## File Handling
@@ -61,40 +51,17 @@
 #'   serve(new_dm_read_block())
 #' }
 #'
-#' @importFrom rappdirs user_data_dir
-#' @importFrom bslib navset_pill nav_panel
+#' @importFrom shinyjs useShinyjs
 #' @export
 new_dm_read_block <- function(
     path = character(),
-    source = "upload",
     selected_tables = NULL,
     ...
 ) {
-  # Validate parameters
-  source <- match.arg(source, c("upload", "path"))
-
-  # Get volumes and upload_path from options (runtime configuration)
-  volumes <- blockr_option("volumes", c(temp = tempdir()))
-  upload_path <- blockr_option("upload_path", rappdirs::user_data_dir("blockr"))
-
-  # Handle volumes parameter
-  if (is.character(volumes)) {
-    volumes <- path.expand(volumes)
-  }
-
-  if (is_string(volumes) && grepl(":", volumes)) {
-    volumes <- strsplit(volumes, ":", fixed = TRUE)[[1L]]
-  }
-
-  if (is.null(names(volumes))) {
-    if (length(volumes) == 1L) {
-      names(volumes) <- "volume"
-    } else if (length(volumes) > 1L) {
-      names(volumes) <- paste0("volume", seq_along(volumes))
-    }
-  }
-
-  # Expand and validate upload path
+  upload_path <- blockr.core::blockr_option(
+    "upload_path",
+    tools::R_user_dir("blockr", "data")
+  )
   upload_path <- path.expand(upload_path)
 
   blockr.core::new_data_block(
@@ -102,11 +69,8 @@ new_dm_read_block <- function(
       shiny::moduleServer(
         id,
         function(input, output, session) {
-          # Reactive values for state
-          r_source <- shiny::reactiveVal(source)
-
           # Path storage
-          if (length(path) > 0 && file.exists(path)) {
+          if (length(path) > 0 && (file.exists(path) || dir.exists(path))) {
             initial_path <- stats::setNames(path, basename(path))
           } else {
             initial_path <- character()
@@ -114,78 +78,81 @@ new_dm_read_block <- function(
           r_path <- shiny::reactiveVal(initial_path)
           r_file_path <- shiny::reactiveVal(initial_path)
 
-          # Detected input type: "excel", "zip", "directory", "serialized", "rdata"
-          initial_type <- if (length(path) > 0) detect_dm_input_type(path) else "unknown"
+          # Detected input type
+          initial_type <- if (length(path) > 0) {
+            detect_dm_input_type(path)
+          } else {
+            "unknown"
+          }
           r_input_type <- shiny::reactiveVal(initial_type)
 
           # Selected tables (NULL = all)
           r_selected_tables <- shiny::reactiveVal(selected_tables)
 
-          # Initialize shinyFiles browser for files
-          shinyFiles::shinyFileChoose(
-            input,
-            "file_browser",
-            roots = volumes,
-            session = session,
-            filetypes = c("xlsx", "xls", "zip", "rds", "qs", "rdata", "rda")
+          # Load button gating: armed expression
+          r_expr_armed <- shiny::reactiveVal(NULL)
+
+          # Data directory from board options
+          data_dir_reactive <- shiny::reactive({
+            blockr.core::coal(
+              blockr.core::get_board_option_or_null("data_dir", session),
+              ""
+            )
+          })
+
+          # Path input module
+          file_path <- blockr.io::path_input_server(
+            "file_path",
+            data_dir = data_dir_reactive,
+            mode = "file"
           )
 
-          # Initialize shinyFiles browser for directories
-          shinyFiles::shinyDirChoose(
-            input,
-            "dir_browser",
-            roots = volumes,
-            session = session
-          )
+          # Populate path text input on restore / init
+          if (length(path) > 0 && nzchar(path[[1]])) {
+            shiny::observe({
+              session$sendCustomMessage("blockr-path-set-value", list(
+                id = session$ns("file_path-path_text"),
+                value = unname(path[1]),
+                silent = TRUE
+              ))
+            }) |> shiny::bindEvent(TRUE, once = TRUE)
+          }
 
-          # Handle file browser selection
-          selected_file <- shiny::reactive({
-            if (!is.null(input$file_browser) && !identical(input$file_browser, "")) {
-              shinyFiles::parseFilePaths(volumes, input$file_browser)$datapath
+          # Handle path input changes
+          shiny::observeEvent(file_path(), {
+            path_val <- file_path()
+            shiny::req(nzchar(path_val))
+
+            r_selected_tables(NULL)
+            r_expr_armed(NULL)
+
+            # Resolve relative paths against data directory
+            resolved <- path_val
+            data_dir <- data_dir_reactive()
+            if (
+              nzchar(data_dir) &&
+              !grepl("^(/|~|[A-Za-z]:)", path_val)
+            ) {
+              resolved <- file.path(data_dir, path_val)
+            }
+
+            if (file.exists(resolved) || dir.exists(resolved)) {
+              named_path <- stats::setNames(path_val, basename(resolved))
+              r_path(named_path)
+              r_file_path(named_path)
+              r_input_type(detect_dm_input_type(resolved))
             } else {
-              character()
+              r_file_path(character())
+              r_input_type("unknown")
             }
-          })
-
-          shiny::observeEvent(selected_file(), {
-            if (length(selected_file()) > 0) {
-              selected_path <- stats::setNames(
-                selected_file(),
-                basename(selected_file())
-              )
-              r_path(selected_path)
-              r_file_path(selected_path)
-              r_input_type(detect_dm_input_type(selected_file()[1]))
-              r_source("path")
-            }
-          })
-
-          # Handle directory browser selection
-          selected_dir <- shiny::reactive({
-            if (!is.null(input$dir_browser) && !identical(input$dir_browser, "")) {
-              path_result <- shinyFiles::parseDirPath(volumes, input$dir_browser)
-              if (length(path_result) > 0) path_result else character()
-            } else {
-              character()
-            }
-          })
-
-          shiny::observeEvent(selected_dir(), {
-            if (length(selected_dir()) > 0) {
-              selected_path <- stats::setNames(
-                selected_dir(),
-                basename(selected_dir())
-              )
-              r_path(selected_path)
-              r_file_path(selected_path)
-              r_input_type("directory")
-              r_source("path")
-            }
-          })
+          }, ignoreInit = TRUE)
 
           # Handle file upload with persistence
           shiny::observeEvent(input$file_upload, {
             shiny::req(input$file_upload)
+
+            r_selected_tables(NULL)
+            r_expr_armed(NULL)
 
             # Create upload directory if it doesn't exist
             upload_dir <- upload_path
@@ -198,7 +165,10 @@ new_dm_read_block <- function(
             # Generate unique filename with timestamp
             timestamp <- format(Sys.time(), "%Y%m%d_%H%M%S_%OS3")
             safe_name <- gsub("[^A-Za-z0-9._-]", "_", original_name)
-            permanent_path <- file.path(upload_dir, paste0(timestamp, "_", safe_name))
+            permanent_path <- file.path(
+              upload_dir,
+              paste0(timestamp, "_", safe_name)
+            )
 
             # Copy file to permanent storage
             file.copy(temp_path, permanent_path, overwrite = FALSE)
@@ -208,147 +178,132 @@ new_dm_read_block <- function(
             r_path(permanent_path)
             r_file_path(permanent_path)
             r_input_type(detect_dm_input_type(permanent_path))
-            r_source("upload")
+
+            # Show uploaded file path in the text input
+            session$sendCustomMessage("blockr-path-set-value", list(
+              id = session$ns("file_path-path_text"),
+              value = unname(permanent_path),
+              silent = TRUE
+            ))
           })
 
-          # File info for display
-          output$file_info <- shiny::renderText({
-            current_path <- r_file_path()
-            if (length(current_path) == 0) {
-              return("No file or directory selected")
-            }
-
-            file_name <- names(current_path)[1]
-            if (is.null(file_name) || file_name == "") {
-              file_name <- basename(current_path[1])
-            }
-
-            input_type <- r_input_type()
-            type_label <- switch(input_type,
-              "excel" = "Excel file",
-              "zip" = "ZIP archive",
-              "directory" = "Directory",
-              "serialized" = "Serialized file",
-              "rdata" = "RData file",
-              "Unknown"
-            )
-
-            paste("Selected:", file_name, paste0("(", type_label, ")"))
-          })
-
-          # Preview info
-          output$preview_info <- shiny::renderText({
-            current_path <- r_file_path()
-            if (length(current_path) == 0) return("")
-
-            input_type <- r_input_type()
-            path_val <- current_path[1]
-
-            tryCatch({
-              if (input_type == "excel") {
-                sheets <- readxl::excel_sheets(path_val)
-                paste("Found", length(sheets), "sheets:", paste(sheets, collapse = ", "))
-              } else if (input_type == "zip") {
-                files <- utils::unzip(path_val, list = TRUE)$Name
-                data_files <- files[grepl("\\.(csv|xlsx?|parquet|feather|rds)$", files, ignore.case = TRUE)]
-                paste("Found", length(data_files), "data files in archive")
-              } else if (input_type == "directory") {
-                files <- list_data_files(path_val)
-                paste("Found", length(files), "data files in directory")
-              } else if (input_type == "serialized") {
-                obj <- if (tolower(tools::file_ext(path_val)) == "qs") {
-                  qs::qread(path_val)
-                } else {
-                  readRDS(path_val)
-                }
-                if (inherits(obj, "dm")) {
-                  paste("Found dm with", length(names(obj)), "tables:",
-                        paste(names(obj), collapse = ", "))
-                } else if (inherits(obj, "data.frame")) {
-                  paste("Found single data.frame with", ncol(obj), "columns")
-                } else if (is.list(obj)) {
-                  are_dfs <- vapply(obj, inherits, logical(1), "data.frame")
-                  paste("Found list with", sum(are_dfs), "data.frames")
-                } else {
-                  "Unknown content type"
-                }
-              } else if (input_type == "rdata") {
-                env <- new.env()
-                load(path_val, envir = env)
-                objs <- as.list(env)
-                are_dfs <- vapply(objs, inherits, logical(1), "data.frame")
-                df_names <- names(objs)[are_dfs]
-                paste("Found", sum(are_dfs), "data.frames:",
-                      paste(df_names, collapse = ", "))
-              } else {
-                ""
-              }
-            }, error = function(e) {
-              paste("Error reading:", e$message)
-            })
-          })
-
-          # Pre-read data for table discovery
-          dm_data <- shiny::reactive({
-            current_path <- r_file_path()
-            shiny::req(length(current_path) > 0)
-            input_type <- r_input_type()
-            path_val <- current_path[1]
-
-            base_expr <- dm_read_expr(path_val, input_type, selected = NULL)
-            tryCatch(eval(base_expr), error = function(e) NULL)
-          })
-
-          # Available tables from the loaded dm
+          # Cheap table discovery (no full data read)
           available_tables <- shiny::reactive({
-            dm_obj <- dm_data()
-            shiny::req(inherits(dm_obj, "dm"))
-            names(dm_obj)
+            shiny::req(length(r_file_path()) > 0)
+            path_val <- r_file_path()[1]
+
+            # Resolve relative path
+            data_dir <- data_dir_reactive()
+            resolved <- path_val
+            if (
+              nzchar(data_dir) &&
+              !grepl("^(/|~|[A-Za-z]:)", path_val)
+            ) {
+              resolved <- file.path(data_dir, path_val)
+            }
+
+            discover_dm_tables(resolved, r_input_type())
           })
 
           # Output for conditional panel
           output$has_tables <- shiny::reactive({
-            length(available_tables()) > 0
+            nrow(available_tables()) > 0
           })
           shiny::outputOptions(output, "has_tables", suspendWhenHidden = FALSE)
 
           # Update table selection UI when tables change
           shiny::observeEvent(available_tables(), {
-            tables <- available_tables()
+            tbl_info <- available_tables()
+            shiny::req(nrow(tbl_info) > 0)
+            labels <- paste(tbl_info$name, tbl_info$ext, tbl_info$size,
+                            sep = "|||")
+            choices <- stats::setNames(tbl_info$name, labels)
             current_selected <- r_selected_tables()
-            # If no selection yet, select all
-            if (is.null(current_selected)) {
-              current_selected <- tables
-            } else {
-              # Keep only tables that still exist
-              current_selected <- intersect(current_selected, tables)
+            if (!is.null(current_selected)) {
+              current_selected <- intersect(current_selected, tbl_info$name)
             }
-            shiny::updateSelectInput(
-              session, "table_select",
-              choices = tables,
-              selected = current_selected
-            )
+            shiny::updateSelectizeInput(session, "table_select",
+              choices = choices, selected = current_selected)
           })
 
           shiny::observeEvent(input$table_select, {
             r_selected_tables(input$table_select)
           }, ignoreInit = TRUE)
 
+          # Load button handler
+          shiny::observeEvent(input$load_data, {
+            shiny::req(length(r_file_path()) > 0)
+            path_val <- r_file_path()[1]
+            input_type <- r_input_type()
+            selected <- r_selected_tables()
+            shiny::req(!is.null(selected), length(selected) > 0)
+
+            # Resolve relative path
+            data_dir <- data_dir_reactive()
+            resolved <- path_val
+            if (
+              nzchar(data_dir) &&
+              !grepl("^(/|~|[A-Za-z]:)", path_val)
+            ) {
+              resolved <- file.path(data_dir, path_val)
+            }
+
+            r_expr_armed(dm_read_expr(resolved, input_type, selected))
+          })
+
+          # Auto-arm on restore so block produces output immediately
+          if (length(path) > 0 && !is.null(selected_tables)) {
+            shiny::observe({
+              resolved <- path[1]
+              data_dir <- data_dir_reactive()
+              if (
+                nzchar(data_dir) &&
+                !grepl("^(/|~|[A-Za-z]:)", resolved)
+              ) {
+                resolved <- file.path(data_dir, resolved)
+              }
+              r_expr_armed(
+                dm_read_expr(resolved, detect_dm_input_type(resolved), selected_tables)
+              )
+            }) |> shiny::bindEvent(TRUE, once = TRUE)
+          }
+
+          # Status badge for file type
+          shiny::observe({
+            input_type <- r_input_type()
+            paths <- r_file_path()
+
+            type_labels <- c(
+              excel = "Excel", zip = "ZIP", directory = "Directory",
+              serialized = "R data", rdata = "RData"
+            )
+
+            if (length(paths) > 0 && input_type != "unknown") {
+              label <- unname(type_labels[input_type]) %||% "File"
+              session$sendCustomMessage("blockr-path-status", list(
+                id = session$ns("file_path-path_text"),
+                text = label,
+                state = "success"
+              ))
+            } else if (length(paths) == 0 && nzchar(file_path())) {
+              session$sendCustomMessage("blockr-path-status", list(
+                id = session$ns("file_path-path_text"),
+                text = "Not found",
+                state = "error"
+              ))
+            } else {
+              session$sendCustomMessage("blockr-path-status", list(
+                id = session$ns("file_path-path_text"),
+                text = "",
+                state = "none"
+              ))
+            }
+          })
+
           list(
-            expr = shiny::reactive({
-              current_path <- r_file_path()
-              shiny::req(length(current_path) > 0)
-
-              input_type <- r_input_type()
-              path_val <- current_path[1]
-              selected <- r_selected_tables()
-              shiny::req(!is.null(selected))
-
-              dm_read_expr(path_val, input_type, selected)
-            }),
+            expr = shiny::reactive({ r_expr_armed() }),
             state = list(
               path = r_path,
-              source = r_source,
               selected_tables = r_selected_tables
             )
           )
@@ -358,154 +313,203 @@ new_dm_read_block <- function(
     ui = function(id) {
       ns <- shiny::NS(id)
       shiny::tagList(
+        shinyjs::useShinyjs(),
         block_responsive_css(),
         shiny::div(
           class = "block-container dm-read-block-container",
           shiny::tags$style(shiny::HTML("
-            .nav-pills {
-              display: inline-flex;
-              overflow: hidden;
-            }
-            .nav-pills .nav-link {
-              background-color: rgb(249, 249, 250);
-              color: rgb(104, 107, 130);
-              border: none;
-              border-radius: 8px;
-              margin: 8px;
-              margin-left: 0;
-              padding: 6px 10px;
-              font-size: 0.8rem;
-            }
-            .nav-pills .nav-link:hover {
-              background-color: #f8f9fa;
-              z-index: 1;
-            }
-            .nav-pills .nav-link.active {
-              background-color: rgb(236, 236, 236);
-              color: rgb(104, 107, 130);
-              border-color: rgb(236, 236, 236);
-              z-index: 2;
-            }
             .dm-read-block-container .shiny-input-container {
               width: 100% !important;
             }
+
+            /* Table selector: integrated field with confirm button */
+            .blockr-table-selector {
+              display: flex;
+              align-items: stretch;
+            }
+            .blockr-table-selector .shiny-input-container {
+              margin-bottom: 0 !important;
+            }
+            .blockr-table-selector .selectize-control {
+              flex: 1;
+              min-width: 0;
+            }
+            .blockr-table-selector .selectize-input {
+              background: #fff !important;
+            }
+            .blockr-table-confirm-btn {
+              flex-shrink: 0;
+              align-self: stretch;
+              display: none;
+              align-items: center;
+              justify-content: center;
+              width: 36px;
+              border: 1px solid #ced4da;
+              border-radius: 0 0.375rem 0.375rem 0;
+              background: #f9f9fa;
+              color: #6c757d;
+              cursor: pointer;
+              padding: 0;
+              transition: color 0.15s, background-color 0.15s;
+            }
+            .blockr-table-confirm-btn.has-selection {
+              display: flex;
+              background-color: #0d6efd;
+              color: #fff;
+              border-color: #0d6efd;
+            }
+            .blockr-table-confirm-btn.has-selection:hover {
+              background-color: #0b5ed7;
+              border-color: #0a58ca;
+            }
+            .blockr-table-confirm-btn.has-selection + .dummy,
+            .blockr-table-selector:has(.blockr-table-confirm-btn.has-selection) .selectize-input {
+              border-right: none !important;
+              border-top-right-radius: 0 !important;
+              border-bottom-right-radius: 0 !important;
+            }
+            .blockr-table-selector:has(.blockr-table-confirm-btn.has-selection) .selectize-dropdown {
+              border-top-right-radius: 0;
+            }
+            .blockr-table-confirm-btn.confirmed:hover {
+              background-color: #d1fae5;
+              border-color: #6ee7b7;
+            }
+            .blockr-table-confirm-btn.confirmed {
+              background-color: #ecfdf5;
+              color: #047857;
+              border-color: #a7f3d0;
+            }
+
+            /* Dropdown item styling */
+            .blockr-table-item {
+              display: flex; align-items: center; gap: 8px;
+              padding: 4px 8px;
+            }
+            .blockr-table-name {
+              flex: 1; min-width: 0;
+              overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+            }
+            .blockr-table-badge {
+              flex-shrink: 0; font-size: 0.7rem;
+              padding: 1px 6px; border-radius: 4px;
+              background: #f3f4f6; color: #6b7280; border: 1px solid #e5e7eb;
+            }
+            .blockr-table-size {
+              flex-shrink: 0; font-size: 0.75rem; color: #999;
+            }
           ")),
 
+          # File Location section
           shiny::div(
             class = "block-section",
-            shiny::tags$h4("Source", class = "mb-3"),
+            shiny::tags$h4("File Location", class = "mb-3"),
+            shiny::tags$p(
+              class = "blockr-path-hint",
+              "Enter path to an Excel file, ZIP archive, directory, or serialized R object."
+            ),
             shiny::div(
-              class = "mb-3",
-              bslib::navset_pill(
-                id = ns("source_pills"),
-                selected = source,
-                bslib::nav_panel(
-                  title = "From Browser",
-                  value = "upload",
-                  shiny::div(
-                    class = "block-input-wrapper mt-3",
-                    shiny::tags$h4("Upload data file", class = "mb-2"),
-                    shiny::div(
-                      class = "block-help-text mb-3",
-                      "Excel/ZIP/RDS/QS/RData: each table/sheet becomes a dm table."
-                    ),
-                    shiny::fileInput(
-                      inputId = ns("file_upload"),
-                      label = NULL,
-                      multiple = FALSE,
-                      accept = c(".xlsx", ".xls", ".zip", ".rds", ".qs", ".rdata", ".rda")
-                    )
-                  )
-                ),
-                bslib::nav_panel(
-                  title = "From Server",
-                  value = "path",
-                  shiny::div(
-                    class = "block-input-wrapper mt-3",
-                    shiny::tags$h4("Select file or directory", class = "mb-2"),
-                    shiny::div(
-                      class = "block-help-text mb-3",
-                      "Pick a data file (Excel/ZIP/RDS/QS/RData) or a directory."
-                    ),
-                    shiny::div(
-                      class = "d-flex gap-2",
-                      shinyFiles::shinyFilesButton(
-                        ns("file_browser"),
-                        label = "Browse Files...",
-                        title = "Select Excel or ZIP file",
-                        multiple = FALSE
-                      ),
-                      shinyFiles::shinyDirButton(
-                        ns("dir_browser"),
-                        label = "Browse Directory...",
-                        title = "Select directory with data files"
-                      )
-                    )
-                  )
-                )
+              style = "display: none;",
+              shiny::fileInput(
+                inputId = ns("file_upload"),
+                label = NULL,
+                multiple = FALSE,
+                accept = c(".xlsx", ".xls", ".zip", ".rds", ".qs", ".rdata", ".rda")
               )
+            ),
+            blockr.io::path_input_ui(
+              shiny::NS(id, "file_path"),
+              upload_id = ns("file_upload")
             )
           ),
 
-          shiny::div(
-            class = "block-form-grid",
+          # Tables section (visible when tables are available)
+          shiny::conditionalPanel(
+            condition = "output.has_tables",
+            ns = ns,
             shiny::div(
               class = "block-section",
-              shiny::tags$h4("File Information", class = "mt-3"),
+              shiny::tags$h4("Tables"),
               shiny::div(
-                class = "block-help-text",
-                shiny::textOutput(ns("file_info"))
-              ),
-              shiny::div(
-                class = "block-help-text",
-                shiny::textOutput(ns("preview_info"))
-              )
-            ),
-
-            # Advanced Options Toggle
-            css_advanced_toggle(ns("advanced-options"), use_subgrid = TRUE),
-            shiny::div(
-              class = "block-section",
-              shiny::div(
-                class = "block-advanced-toggle text-muted",
-                id = ns("advanced-toggle"),
-                onclick = sprintf(
-                  "
-                  const section = document.getElementById('%s');
-                  const chevron = document.querySelector('#%s .block-chevron');
-                  section.classList.toggle('expanded');
-                  chevron.classList.toggle('rotated');
-                  ",
-                  ns("advanced-options"),
-                  ns("advanced-toggle")
-                ),
-                shiny::tags$span(class = "block-chevron", "\u203A"),
-                "Advanced Options"
-              )
-            ),
-
-            # Advanced Options Content (collapsed by default)
-            shiny::div(
-              id = ns("advanced-options"),
-              shiny::conditionalPanel(
-                condition = "output.has_tables",
-                ns = ns,
-                shiny::div(
-                  class = "block-section",
-                  shiny::tags$h4("Select Tables"),
-                  shiny::div(
-                    class = "block-input-wrapper",
-                    shiny::selectInput(
-                      ns("table_select"),
-                      label = NULL,
-                      choices = character(),
-                      selected = character(),
-                      multiple = TRUE,
-                      selectize = TRUE
-                    )
+                class = "blockr-table-selector",
+                shiny::selectizeInput(
+                  ns("table_select"),
+                  label = NULL,
+                  choices = NULL,
+                  multiple = TRUE,
+                  width = "100%",
+                  options = list(
+                    placeholder = "Select tables to load...",
+                    render = I("{
+                      option: function(data, escape) {
+                        var parts = data.label.split('|||');
+                        var name = parts[0] || '', ext = parts[1] || '', size = parts[2] || '';
+                        return '<div class=\"blockr-table-item\">' +
+                          '<span class=\"blockr-table-name\">' + escape(name) + '</span>' +
+                          (ext ? '<span class=\"blockr-table-badge\">' + escape(ext) + '</span>' : '') +
+                          (size ? '<span class=\"blockr-table-size\">' + escape(size) + '</span>' : '') +
+                        '</div>';
+                      },
+                      item: function(data, escape) {
+                        var name = data.label.split('|||')[0];
+                        return '<div>' + escape(name) + '</div>';
+                      }
+                    }")
                   )
+                ),
+                shiny::tags$button(
+                  id = ns("load_data"),
+                  class = "blockr-table-confirm-btn action-button",
+                  type = "button",
+                  title = "Confirm selection",
+                  `aria-label` = "Confirm table selection and load",
+                  shiny::HTML(paste0(
+                    '<svg xmlns="http://www.w3.org/2000/svg" width="16" ',
+                    'height="16" viewBox="0 0 24 24" fill="none" ',
+                    'stroke="currentColor" stroke-width="2.5" ',
+                    'stroke-linecap="round" stroke-linejoin="round">',
+                    '<polyline points="20 6 9 17 4 12"></polyline></svg>'
+                  ))
                 )
-              )
+              ),
+              shiny::tags$script(shiny::HTML(sprintf(
+                "
+                $(document).on('shiny:value', function(e) {
+                  if (e.name !== '%s') return;
+                  setTimeout(function() {
+                    var sel = $('#%s')[0];
+                    if (!sel || !sel.selectize) return;
+                    var sz = sel.selectize;
+                    var btn = document.getElementById('%s');
+                    function syncBtn() {
+                      if (!btn) return;
+                      btn.classList.remove('confirmed');
+                      if (sz.items.length > 0) {
+                        btn.classList.add('has-selection');
+                      } else {
+                        btn.classList.remove('has-selection');
+                      }
+                    }
+                    syncBtn();
+                    if (sz.items.length === 0 && Object.keys(sz.options).length > 0) {
+                      sz.open();
+                    }
+                    sz.on('change', syncBtn);
+                  }, 100);
+                });
+                $('#%s').on('click', function() {
+                  var sel = $('#%s')[0];
+                  if (sel && sel.selectize && sel.selectize.items.length > 0) {
+                    this.classList.add('confirmed');
+                  }
+                });
+                ",
+                ns("has_tables"),
+                ns("table_select"),
+                ns("load_data"),
+                ns("load_data"),
+                ns("table_select")
+              )))
             )
           )
         )
@@ -515,6 +519,115 @@ new_dm_read_block <- function(
     allow_empty_state = TRUE,
     ...
   )
+}
+
+
+#' Format byte sizes for display
+#' @param bytes Numeric byte count
+#' @return Formatted string (e.g. "1.2 KB")
+#' @noRd
+format_bytes <- function(bytes) {
+  if (is.na(bytes) || bytes < 0) return("")
+  if (bytes < 1024) return(paste0(bytes, " B"))
+  if (bytes < 1024 * 1024) return(paste0(round(bytes / 1024, 1), " KB"))
+  paste0(round(bytes / (1024 * 1024), 1), " MB")
+}
+
+
+#' Discover table names without reading data
+#'
+#' Uses cheap operations (sheet listing, file listing) to discover available
+#' table names from a dm source path. Avoids full data reads for
+#' format types where discovery is possible (Excel, ZIP, directory).
+#'
+#' @param path Path to file or directory
+#' @param input_type Character: "excel", "zip", "directory", "serialized", "rdata"
+#' @return A data.frame with columns `name`, `ext`, and `size`
+#' @noRd
+discover_dm_tables <- function(path, input_type) {
+  empty <- data.frame(name = character(), ext = character(),
+                      size = character(), stringsAsFactors = FALSE)
+  tryCatch({
+    switch(input_type,
+      excel = {
+        sheets <- readxl::excel_sheets(path)
+        nms <- make.names(sheets, unique = TRUE)
+        data.frame(name = nms, ext = rep("Sheet", length(nms)),
+                   size = rep("", length(nms)), stringsAsFactors = FALSE)
+      },
+      zip = {
+        zip_info <- utils::unzip(path, list = TRUE)
+        exts <- blockr.io::file_extensions()
+        pattern <- paste0(
+          "\\.(", paste(exts, collapse = "|"), ")$"
+        )
+        keep <- grepl(pattern, zip_info$Name, ignore.case = TRUE)
+        data_info <- zip_info[keep, , drop = FALSE]
+        nms <- make.names(
+          tools::file_path_sans_ext(basename(data_info$Name)),
+          unique = TRUE
+        )
+        file_exts <- toupper(tools::file_ext(data_info$Name))
+        sizes <- vapply(data_info$Length, format_bytes, character(1))
+        data.frame(name = nms, ext = file_exts, size = sizes,
+                   stringsAsFactors = FALSE)
+      },
+      directory = {
+        files <- list_data_files(path)
+        nms <- make.names(
+          tools::file_path_sans_ext(basename(files)),
+          unique = TRUE
+        )
+        file_exts <- toupper(tools::file_ext(files))
+        sizes <- vapply(file.size(files), format_bytes, character(1))
+        data.frame(name = nms, ext = file_exts, size = sizes,
+                   stringsAsFactors = FALSE)
+      },
+      serialized = {
+        obj <- if (tolower(tools::file_ext(path)) == "qs") {
+          qs::qread(path)
+        } else {
+          readRDS(path)
+        }
+        if (inherits(obj, "dm")) {
+          nms <- names(obj)
+          sizes <- vapply(nms, function(n) {
+            paste0(nrow(obj[[n]]), " rows")
+          }, character(1))
+          data.frame(name = nms, ext = rep("Table", length(nms)),
+                     size = sizes, stringsAsFactors = FALSE)
+        } else if (inherits(obj, "data.frame")) {
+          data.frame(name = "data", ext = "Table",
+                     size = paste0(nrow(obj), " rows"),
+                     stringsAsFactors = FALSE)
+        } else if (is.list(obj)) {
+          are_dfs <- vapply(obj, inherits, logical(1), "data.frame")
+          dfs <- obj[are_dfs]
+          nms <- names(dfs)
+          if (is.null(nms)) nms <- paste0("table", seq_len(sum(are_dfs)))
+          sizes <- vapply(dfs, function(d) paste0(nrow(d), " rows"),
+                          character(1))
+          data.frame(name = nms, ext = rep("Table", length(nms)),
+                     size = sizes, stringsAsFactors = FALSE)
+        } else {
+          empty
+        }
+      },
+      rdata = {
+        env <- new.env()
+        load(path, envir = env)
+        objs <- as.list(env)
+        are_dfs <- vapply(objs, inherits, logical(1), "data.frame")
+        dfs <- objs[are_dfs]
+        nms <- names(dfs)
+        sizes <- vapply(dfs, function(d) paste0(nrow(d), " rows"),
+                        character(1))
+        data.frame(name = nms, ext = rep("Table", length(nms)),
+                   size = sizes, stringsAsFactors = FALSE)
+      },
+      empty
+    )
+  }, error = function(e) empty)
 }
 
 
@@ -542,7 +655,7 @@ detect_dm_input_type <- function(path) {
 #' List data files in a directory
 #' @noRd
 list_data_files <- function(dir_path) {
-  extensions <- c("csv", "tsv", "xlsx", "xls", "parquet", "feather", "rds", "rda")
+  extensions <- blockr.io::file_extensions()
   pattern <- paste0("\\.(", paste(extensions, collapse = "|"), ")$")
   list.files(dir_path, pattern = pattern, ignore.case = TRUE, full.names = TRUE)
 }
@@ -793,16 +906,4 @@ block_ui.dm_read_block <- function(id, x, ...) {
 #' @export
 block_render_trigger.dm_read_block <- function(x, session = blockr.core::get_session()) {
   NULL
-}
-
-
-#' @noRd
-is_string <- function(x) {
-  is.character(x) && length(x) == 1L
-}
-
-#' @noRd
-blockr_option <- function(name, default = NULL) {
-  opt_name <- paste0("blockr.", name)
-  getOption(opt_name, default)
 }

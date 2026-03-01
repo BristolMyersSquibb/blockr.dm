@@ -8,14 +8,13 @@ new_dm_write_block(
   directory = "",
   filename = "",
   format = "excel",
-  mode = "download",
   auto_write = FALSE,
   ...
 )
 }
 \arguments{
-\item{directory}{Character. Default directory for file output (browse mode only).
-Can be configured via \code{options(blockr.write_dir = "/path")}. Default: \code{tempdir()}.}
+\item{directory}{Character. Default directory for file output.
+Can be configured via \code{options(blockr.write_dir = "/path")}. Default: \code{""}.}
 
 \item{filename}{Character. Optional fixed filename (without extension).
 \itemize{
@@ -26,11 +25,8 @@ Can be configured via \code{options(blockr.write_dir = "/path")}. Default: \code
 \item{format}{Character. Output format: "excel", "csv", or "parquet".
 Default: "excel" (best for multi-table dm objects).}
 
-\item{mode}{Character. Either "download" (triggers browser download),
-or "browse" (writes to server filesystem). Default: "download"}
-
 \item{auto_write}{Logical. When TRUE, automatically writes files when data changes
-(browse mode only). Default: FALSE.}
+(requires a non-empty directory). Default: FALSE.}
 
 \item{...}{Forwarded to \code{\link[blockr.core:new_transform_block]{blockr.core::new_transform_block()}}}
 }
@@ -58,12 +54,23 @@ or directories (one file per table).
 \item Each dm table becomes a separate file
 \item Filenames derived from table names
 }
+}
 
-\strong{Directory:}
+\subsection{Download vs Server Save}{
+
+Both options are always available in a flat layout:
+
+\strong{Download to Browser:}
 \itemize{
-\item Only available in browse mode
-\item Each dm table written as separate file
-\item Files named from table names
+\item Always available via the download button
+\item Triggers a download to your browser's download folder
+}
+
+\strong{Save to Server:}
+\itemize{
+\item Active when a server directory path is set (non-empty)
+\item User enters a directory path in the path input
+\item Manual or auto mode via segmented toggle
 }
 }
 }

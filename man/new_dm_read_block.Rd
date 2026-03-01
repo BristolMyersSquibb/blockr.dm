@@ -4,12 +4,7 @@
 \alias{new_dm_read_block}
 \title{Read multiple files into a dm object}
 \usage{
-new_dm_read_block(
-  path = character(),
-  source = "upload",
-  selected_tables = NULL,
-  ...
-)
+new_dm_read_block(path = character(), selected_tables = NULL, ...)
 }
 \arguments{
 \item{path}{Character. Path to file or directory. Can be:
@@ -21,9 +16,6 @@ new_dm_read_block(
 \item A QS file (.qs): Can contain a dm, data.frame, or list of data.frames
 \item An RData file (.rdata, .rda): All data.frames become dm tables
 }}
-
-\item{source}{Either "upload" for file upload widget or "path" for file browser.
-Default: "upload".}
 
 \item{selected_tables}{Character vector. Optional subset of tables to include
 in the output dm. Default is NULL (all tables).}
@@ -75,18 +67,6 @@ serialization formats (RDS, QS, RData).
 }
 }
 }
-\section{Configuration}{
-
-The following settings are retrieved from options and not stored in block state:
-\itemize{
-\item \strong{volumes}: File browser mount points. Set via \code{options(blockr.volumes = c(name = "path"))}
-or environment variable \code{BLOCKR_VOLUMES}. Default: \code{c(temp = tempdir())}
-\item \strong{upload_path}: Directory for persistent file storage. Set via
-\code{options(blockr.upload_path = "/path")} or environment variable \code{BLOCKR_UPLOAD_PATH}.
-Default: \code{rappdirs::user_data_dir("blockr")}
-}
-}
-
 \examples{
 # Create a dm read block (interactive mode)
 if (interactive()) {

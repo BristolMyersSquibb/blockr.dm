@@ -4,17 +4,15 @@
 #' Excel files (each table as a sheet), ZIP archives (containing multiple files),
 #' or directories (one file per table).
 #'
-#' @param directory Character. Default directory for file output (browse mode only).
-#'   Can be configured via `options(blockr.write_dir = "/path")`. Default: `tempdir()`.
+#' @param directory Character. Default directory for file output.
+#'   Can be configured via `options(blockr.write_dir = "/path")`. Default: `""`.
 #' @param filename Character. Optional fixed filename (without extension).
 #'   - **If provided**: Writes to same file path on every upstream change
 #'   - **If empty** (default): Generates timestamped filename
 #' @param format Character. Output format: "excel", "csv", or "parquet".
 #'   Default: "excel" (best for multi-table dm objects).
-#' @param mode Character. Either "download" (triggers browser download),
-#'   or "browse" (writes to server filesystem). Default: "download"
 #' @param auto_write Logical. When TRUE, automatically writes files when data changes
-#'   (browse mode only). Default: FALSE.
+#'   (requires a non-empty directory). Default: FALSE.
 #' @param ... Forwarded to [blockr.core::new_transform_block()]
 #'
 #' @details
@@ -30,10 +28,18 @@
 #' - Each dm table becomes a separate file
 #' - Filenames derived from table names
 #'
-#' **Directory:**
-#' - Only available in browse mode
-#' - Each dm table written as separate file
-#' - Files named from table names
+#' ## Download vs Server Save
+#'
+#' Both options are always available in a flat layout:
+#'
+#' **Download to Browser:**
+#' - Always available via the download button
+#' - Triggers a download to your browser's download folder
+#'
+#' **Save to Server:**
+#' - Active when a server directory path is set (non-empty)
+#' - User enters a directory path in the path input
+#' - Manual or auto mode via segmented toggle
 #'
 #' @return A blockr transform block that writes dm objects to files
 #'
@@ -44,46 +50,22 @@
 #'   serve(new_dm_write_block())
 #' }
 #'
+#' @importFrom shinyjs useShinyjs
 #' @export
 new_dm_write_block <- function(
     directory = "",
     filename = "",
     format = "excel",
-    mode = "download",
     auto_write = FALSE,
     ...
 ) {
   # Validate parameters
   format <- match.arg(format, c("excel", "csv", "parquet"))
-  mode <- match.arg(mode, c("browse", "download"))
 
-  # Get default directory from options
-  if (directory == "") {
-    directory <- blockr_option("write_dir", tempdir())
+  # Expand directory path if non-empty
+  if (nzchar(directory)) {
+    directory <- path.expand(directory)
   }
-
-  # Get volumes for directory browser
-  volumes <- blockr_option("volumes", c(temp = tempdir()))
-
-  # Handle volumes parameter
-  if (is.character(volumes)) {
-    volumes <- path.expand(volumes)
-  }
-
-  if (is_string(volumes) && grepl(":", volumes)) {
-    volumes <- strsplit(volumes, ":", fixed = TRUE)[[1L]]
-  }
-
-
-  if (is.null(names(volumes))) {
-    if (length(volumes) == 1L) {
-      names(volumes) <- "volume"
-    } else if (length(volumes) > 1L) {
-      names(volumes) <- paste0("volume", seq_along(volumes))
-    }
-  }
-
-  directory <- path.expand(directory)
 
   blockr.core::new_transform_block(
     server = function(id, data) {
@@ -94,63 +76,104 @@ new_dm_write_block <- function(
           r_directory <- shiny::reactiveVal(directory)
           r_filename <- shiny::reactiveVal(filename)
           r_format <- shiny::reactiveVal(format)
-          r_mode <- shiny::reactiveVal(mode)
           r_auto_write <- shiny::reactiveVal(auto_write)
           r_write_status <- shiny::reactiveVal("")
 
-          # Initialize shinyFiles directory browser
-          shinyFiles::shinyDirChoose(
-            input,
-            "dir_browser",
-            roots = volumes,
-            session = session
+          # Data directory from board options
+          data_dir_reactive <- shiny::reactive({
+            blockr.core::coal(
+              blockr.core::get_board_option_or_null("data_dir", session),
+              ""
+            )
+          })
+
+          # Path input module for directory selection
+          dir_path <- blockr.io::path_input_server(
+            "dir_path",
+            data_dir = data_dir_reactive,
+            mode = "directory"
           )
 
-          # Handle directory browser selection
-          selected_dir <- shiny::reactive({
-            if (!is.null(input$dir_browser) && !identical(input$dir_browser, "")) {
-              path <- shinyFiles::parseDirPath(volumes, input$dir_browser)
-              if (length(path) > 0) path else NULL
-            } else {
-              NULL
-            }
-          })
+          # Populate path text input on restore / init
+          if (nzchar(directory)) {
+            shiny::observe({
+              display_path <- directory
+              dd <- data_dir_reactive()
+              if (nzchar(dd)) {
+                prefix <- paste0(dd, "/")
+                if (startsWith(directory, prefix)) {
+                  display_path <- substr(
+                    directory, nchar(prefix) + 1, nchar(directory)
+                  )
+                }
+              }
+              session$sendCustomMessage("blockr-path-set-value", list(
+                id = session$ns("dir_path-path_text"),
+                value = display_path,
+                silent = TRUE
+              ))
+            }) |> shiny::bindEvent(TRUE, once = TRUE)
+          }
 
-          shiny::observeEvent(selected_dir(), {
-            if (!is.null(selected_dir())) {
-              r_directory(selected_dir())
+          # Handle directory path changes
+          shiny::observeEvent(dir_path(), {
+            path_val <- dir_path()
+            shiny::req(nzchar(path_val))
+
+            # Resolve relative paths against data directory
+            resolved <- path_val
+            data_dir <- data_dir_reactive()
+            if (
+              nzchar(data_dir) &&
+              !grepl("^(/|~|[A-Za-z]:)", path_val)
+            ) {
+              resolved <- file.path(data_dir, path_val)
             }
-          })
+
+            r_directory(resolved)
+          }, ignoreInit = TRUE)
 
           # Update state from inputs
-          shiny::observeEvent(input$mode_pills, {
-            if (!is.null(input$mode_pills)) {
-              r_mode(input$mode_pills)
-            }
+          shiny::observeEvent(input$write_mode, {
+            r_auto_write(identical(input$write_mode, "auto"))
           })
 
-          shiny::observeEvent(input$auto_write, r_auto_write(input$auto_write))
           shiny::observeEvent(input$filename, r_filename(input$filename))
           shiny::observeEvent(input$format, r_format(input$format))
 
-          # Reactive for write expression (set when submit clicked)
+          # Reactive to store the write expression (set when submit clicked)
           r_write_expression_set <- shiny::reactiveVal(NULL)
+
+          # Track whether directory existed before we created it
+          r_dir_existed <- shiny::reactiveVal(
+            nzchar(directory) && dir.exists(path.expand(directory))
+          )
 
           # Directory creation
           shiny::observeEvent(r_directory(), {
             shiny::req(r_directory())
-            tryCatch({
-              dir.create(r_directory(), recursive = TRUE, showWarnings = FALSE)
-            }, error = function(e) {
-              r_write_status(sprintf("\u2717 Directory error: %s", conditionMessage(e)))
-            })
+            existed <- dir.exists(r_directory())
+            r_dir_existed(existed)
+            if (!existed) {
+              tryCatch({
+                dir.create(r_directory(), recursive = TRUE, showWarnings = FALSE)
+                if (!dir.exists(r_directory())) {
+                  r_write_status(sprintf(
+                    "\u2717 Cannot create directory: %s", r_directory()
+                  ))
+                }
+              }, error = function(e) {
+                r_write_status(sprintf(
+                  "\u2717 Directory error: %s", conditionMessage(e)
+                ))
+              })
+            }
           })
 
-          # Submit button handler for browse mode
+          # Submit button handler for server save
           shiny::observeEvent(input$submit_write, {
             shiny::req(data)
-            shiny::req(r_directory())
-            shiny::req(r_mode() == "browse")
+            shiny::req(nzchar(r_directory()))
             shiny::req(!r_auto_write())
 
             expr <- dm_write_expr(
@@ -172,15 +195,16 @@ new_dm_write_block <- function(
             )
             full_path <- file.path(r_directory(), paste0(base_filename, ext))
             timestamp <- format(Sys.time(), "%H:%M:%S")
-            r_write_status(sprintf("\u2713 Saved to %s at %s", full_path, timestamp))
+            r_write_status(sprintf(
+              "\u2713 Saved to %s at %s", full_path, timestamp
+            ))
           })
 
-          # Generate expression based on mode
+          # Generate expression based on directory state and auto_write
           r_write_expression <- shiny::reactive({
-            if (r_mode() == "browse") {
+            if (nzchar(r_directory())) {
               if (r_auto_write()) {
                 shiny::req(data)
-                shiny::req(r_directory())
 
                 expr <- dm_write_expr(
                   directory = r_directory(),
@@ -196,11 +220,31 @@ new_dm_write_block <- function(
                 r_write_expression_set()
               }
             } else {
-              # Download mode - just pass data through
-              quote({
-                data
-              })
+              # No directory set - download handler handles writing
+              NULL
             }
+          })
+
+          # Update status when auto-write generates a new expression
+          shiny::observe({
+            shiny::req(nzchar(r_directory()))
+            shiny::req(r_auto_write())
+            shiny::req(r_write_expression())
+
+            # Depend on data to trigger when it changes
+            data()
+
+            base_filename <- generate_dm_filename(r_filename())
+            ext <- switch(r_format(),
+              "excel" = ".xlsx",
+              "csv" = ".zip",
+              "parquet" = ".zip"
+            )
+            full_path <- file.path(r_directory(), paste0(base_filename, ext))
+            timestamp <- format(Sys.time(), "%H:%M:%S")
+            r_write_status(sprintf(
+              "\u2713 Saved to %s at %s", full_path, timestamp
+            ))
           })
 
           # Download handler
@@ -245,18 +289,38 @@ new_dm_write_block <- function(
                   files_to_zip <- c(files_to_zip, paste0(nm, ext))
                 }
 
-                zip::zip(file, files = files_to_zip, root = temp_dir, mode = "cherry-pick")
+                zip::zip(
+                  file,
+                  files = files_to_zip,
+                  root = temp_dir,
+                  mode = "cherry-pick"
+                )
               }
             }
           )
 
-          # Output: Current directory display
-          output$current_directory <- shiny::renderText({
+          # Status badge for directory validation
+          shiny::observe({
             dir <- r_directory()
-            if (!is.null(dir) && nzchar(dir)) {
-              paste("Current directory:", dir)
+            existed <- r_dir_existed()
+            if (nzchar(dir) && existed) {
+              session$sendCustomMessage("blockr-path-status", list(
+                id = session$ns("dir_path-path_text"),
+                text = "Directory",
+                state = "success"
+              ))
+            } else if (nzchar(dir)) {
+              session$sendCustomMessage("blockr-path-status", list(
+                id = session$ns("dir_path-path_text"),
+                text = "New directory",
+                state = "info"
+              ))
             } else {
-              "No directory selected"
+              session$sendCustomMessage("blockr-path-status", list(
+                id = session$ns("dir_path-path_text"),
+                text = "",
+                state = "none"
+              ))
             }
           })
 
@@ -265,23 +329,12 @@ new_dm_write_block <- function(
             r_write_status()
           })
 
-          # Output: Table info
-          output$table_info <- shiny::renderText({
-            dm_obj <- data()
-            if (!inherits(dm_obj, "dm")) {
-              return("Waiting for dm input...")
-            }
-            tables <- dm::dm_get_tables(dm_obj)
-            paste("Tables to write:", paste(names(tables), collapse = ", "))
-          })
-
           list(
             expr = r_write_expression,
             state = list(
               directory = r_directory,
               filename = r_filename,
               format = r_format,
-              mode = r_mode,
               auto_write = r_auto_write
             )
           )
@@ -291,112 +344,108 @@ new_dm_write_block <- function(
     ui = function(id) {
       ns <- shiny::NS(id)
       shiny::tagList(
+        shinyjs::useShinyjs(),
         block_responsive_css(),
         shiny::div(
           class = "block-container dm-write-block-container",
+
           shiny::tags$style(shiny::HTML("
-            .nav-pills {
-              display: inline-flex;
-              overflow: hidden;
-            }
-            .nav-pills .nav-link {
-              background-color: rgb(249, 249, 250);
-              color: rgb(104, 107, 130);
-              border: none;
-              border-radius: 8px;
-              margin: 8px;
-              margin-left: 0;
-              padding: 6px 10px;
-              font-size: 0.8rem;
-            }
-            .nav-pills .nav-link:hover {
-              background-color: #f8f9fa;
-            }
-            .nav-pills .nav-link.active {
-              background-color: rgb(236, 236, 236);
-              color: rgb(104, 107, 130);
-            }
+            /* Make inputs full width */
             .dm-write-block-container .shiny-input-container {
               width: 100% !important;
             }
+            .dm-write-block-container .selectize-control {
+              width: 100% !important;
+            }
+            /* Tighten spacing in file config grid */
+            .dm-write-block-container .block-form-grid .shiny-input-container {
+              margin-bottom: 0;
+            }
+            /* Execution mode toggle */
+            .blockr-exec-toggle {
+              display: inline-flex;
+              align-items: center;
+              gap: 2px;
+              background-color: #f3f4f6;
+              border-radius: 8px;
+              padding: 2px;
+            }
+            .blockr-exec-toggle button {
+              padding: 0.25rem 0.5rem;
+              font-size: 0.875rem;
+              line-height: 1.5;
+              font-weight: 500;
+              color: #6b7280;
+              background: transparent;
+              border: none;
+              border-radius: 6px;
+              cursor: pointer;
+              transition: all 0.15s ease;
+              white-space: nowrap;
+            }
+            .blockr-exec-toggle button:hover {
+              color: #374151;
+              background-color: #e5e7eb;
+            }
+            .blockr-exec-toggle button.active {
+              color: #111827;
+              background-color: #fff;
+              box-shadow: 0 1px 2px rgb(0 0 0 / 0.06);
+            }
+            /* Auto-save info banner */
+            .blockr-exec-auto-hint {
+              font-size: 0.8rem;
+              color: #0d6efd;
+              background: #e7f1ff;
+              border: 1px solid #b6d4fe;
+              border-radius: 6px;
+              padding: 8px 12px;
+            }
+            /* Status text */
+            .blockr-exec-status {
+              font-size: 0.8rem;
+              color: #6b7280;
+              min-height: 1.2em;
+            }
+            /* OR divider */
+            .blockr-or-divider {
+              display: flex;
+              align-items: center;
+              gap: 12px;
+              margin: 16px 0;
+            }
+            .blockr-or-divider::before,
+            .blockr-or-divider::after {
+              content: '';
+              flex: 1;
+              border-top: 1px solid #e5e7eb;
+            }
+            .blockr-or-divider span {
+              font-size: 0.75rem;
+              font-weight: 500;
+              color: #9ca3af;
+              text-transform: uppercase;
+              letter-spacing: 0.05em;
+            }
           ")),
 
-          # Mode selector
+          # Hidden input to track mode
           shiny::div(
-            class = "block-section",
-            shiny::tags$h4("Output Mode", class = "mb-3"),
-            bslib::navset_pill(
-              id = ns("mode_pills"),
-              selected = mode,
-              bslib::nav_panel(
-                title = "To Browser",
-                value = "download",
-                shiny::div(
-                  class = "mt-3",
-                  shiny::tags$h4("Export dm to your computer", class = "mb-2"),
-                  shiny::div(
-                    class = "block-help-text mb-3",
-                    "Downloads Excel (multi-sheet) or ZIP (multiple files)."
-                  ),
-                  shiny::downloadButton(
-                    ns("download_data"),
-                    "Download",
-                    class = "btn-outline-secondary"
-                  )
-                )
-              ),
-              bslib::nav_panel(
-                title = "To Server",
-                value = "browse",
-                shiny::div(
-                  class = "mt-3",
-                  shiny::tags$h4("Save dm to the server", class = "mb-2"),
-                  shiny::div(
-                    class = "block-help-text mb-3",
-                    "When running locally, this is your computer."
-                  ),
-                  shinyFiles::shinyDirButton(
-                    ns("dir_browser"),
-                    label = "Select Directory...",
-                    title = "Choose output directory",
-                    multiple = FALSE,
-                    class = "btn-outline-secondary"
-                  ),
-                  shiny::div(
-                    class = "block-help-text mt-2",
-                    shiny::textOutput(ns("current_directory"))
-                  ),
-                  shiny::div(
-                    class = "mt-3",
-                    shiny::checkboxInput(
-                      ns("auto_write"),
-                      "Auto-write: automatically save when data changes",
-                      value = auto_write
-                    )
-                  ),
-                  shiny::conditionalPanel(
-                    condition = "!input.auto_write",
-                    ns = ns,
-                    shiny::div(
-                      class = "mt-2",
-                      shiny::actionButton(
-                        ns("submit_write"),
-                        "Save to File",
-                        class = "btn-outline-secondary"
-                      )
-                    )
-                  )
-                )
-              )
+            style = "display:none;",
+            shiny::textInput(
+              ns("write_mode"),
+              label = NULL,
+              value = if (auto_write) "auto" else "manual"
             )
           ),
 
-          # File Configuration
+          # --- File Configuration ---
           shiny::div(
             class = "block-form-grid",
+            style = "padding-bottom: 0; margin-bottom: 0;",
             shiny::div(
               class = "block-section",
-              shiny::tags$h4("File Configuration", class = "mt-3"),
+              shiny::tags$h4("File Configuration", class = "mb-3"),
               shiny::div(
                 class = "block-section-grid",
                 shiny::div(
@@ -406,6 +455,12 @@ new_dm_write_block <- function(
                     label = "Filename (optional)",
                     value = filename,
                     placeholder = "Leave empty for auto-timestamp"
+                  ),
+                  shiny::div(
+                    class = "block-help-text",
+                    style = "font-size: 0.75rem;",
+                    "Fixed filename overwrites on each change.",
+                    "Empty generates unique timestamped files."
                   )
                 ),
                 shiny::div(
@@ -422,19 +477,100 @@ new_dm_write_block <- function(
                   )
                 )
               )
-            ),
+            )
+          ),
 
-            # Info and status
+          # --- Separator ---
+          shiny::tags$hr(
+            style = "border-top: 1px solid #e5e7eb; margin: 16px 0;"
+          ),
+
+          # --- Download to Browser ---
+          shiny::div(
+            class = "block-section",
+            shiny::tags$h4("Download to Browser", class = "mb-3"),
+            shiny::tags$p(
+              class = "blockr-path-hint",
+              "Download directly without saving to server"
+            ),
+            shiny::downloadButton(
+              ns("download_data"),
+              "Download",
+              class = "btn-outline-secondary btn-sm"
+            )
+          ),
+
+          # --- OR divider ---
+          shiny::div(
+            class = "blockr-or-divider",
+            shiny::tags$span("or")
+          ),
+
+          # --- Save to Server ---
+          shiny::div(
+            class = "block-section blockr-file-location",
+            shiny::tags$h4("Save to Server", class = "mb-3"),
+            shiny::tags$p(
+              class = "blockr-path-hint",
+              "Choose a server path to save"
+            ),
+            blockr.io::path_input_ui(shiny::NS(id, "dir_path")),
+            # Mode toggle + save button row
             shiny::div(
-              class = "block-section",
+              class = "mt-2",
+              style = "display: flex; align-items: center; gap: 8px;",
               shiny::div(
-                class = "block-help-text",
-                shiny::textOutput(ns("table_info"))
+                class = "blockr-exec-toggle",
+                shiny::tags$button(
+                  "Manual",
+                  class = if (!auto_write) "active" else "",
+                  onclick = sprintf(
+                    "
+                    document.getElementById('%s').value = 'manual';
+                    document.getElementById('%s').dispatchEvent(new Event('change'));
+                    this.classList.add('active');
+                    this.nextElementSibling.classList.remove('active');
+                    ",
+                    ns("write_mode"), ns("write_mode")
+                  )
+                ),
+                shiny::tags$button(
+                  "Auto",
+                  class = if (auto_write) "active" else "",
+                  onclick = sprintf(
+                    "
+                    document.getElementById('%s').value = 'auto';
+                    document.getElementById('%s').dispatchEvent(new Event('change'));
+                    this.classList.add('active');
+                    this.previousElementSibling.classList.remove('active');
+                    ",
+                    ns("write_mode"), ns("write_mode")
+                  )
+                )
               ),
-              shiny::div(
-                class = "block-help-text",
-                shiny::textOutput(ns("write_status"))
+              shiny::conditionalPanel(
+                condition = "input.write_mode === 'manual'",
+                ns = shiny::NS(id),
+                shiny::actionButton(
+                  ns("submit_write"),
+                  "Save to Server",
+                  class = "btn-primary btn-sm"
+                )
               )
+            ),
+            # Auto-save info box
+            shiny::conditionalPanel(
+              condition = "input.write_mode === 'auto'",
+              ns = shiny::NS(id),
+              shiny::div(
+                class = "blockr-exec-auto-hint mt-2",
+                "Auto-save enabled. File updates automatically on data changes."
+              )
+            ),
+            # Status message
+            shiny::div(
+              class = "blockr-exec-status mt-2",
+              shiny::textOutput(ns("write_status"))
             )
           )
         )

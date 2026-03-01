@@ -9,6 +9,7 @@ new_dm_crossfilter_block(
   filters = list(),
   range_filters = list(),
   measure = NULL,
+  agg_func = NULL,
   ...
 )
 }
@@ -28,8 +29,12 @@ E.g., \code{list(adsl = list(AGE = c(65, 80)))}}
 
 \item{measure}{Measure column to aggregate in categorical filters, as
 \code{"table.column"} (e.g., \code{"sales.amount"}). Defaults to \code{NULL} (row count).
-When set, categorical filter bars show \code{SUM(column)} per dimension value
+When set, categorical filter bars show aggregated values per dimension value
 instead of row counts.}
+
+\item{agg_func}{Aggregation function name: \code{"sum"} (default), \code{"mean"},
+\code{"median"}, \code{"min"}, or \code{"max"}. Controls how the measure column is
+aggregated per dimension value.}
 
 \item{...}{Forwarded to \code{\link[blockr.core:new_transform_block]{blockr.core::new_transform_block()}}}
 }
