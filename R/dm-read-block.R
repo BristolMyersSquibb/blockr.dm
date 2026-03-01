@@ -334,9 +334,6 @@ new_dm_read_block <- function(
               flex: 1;
               min-width: 0;
             }
-            .blockr-table-selector .selectize-input {
-              background: #fff !important;
-            }
             .blockr-table-confirm-btn {
               flex-shrink: 0;
               align-self: stretch;
@@ -344,9 +341,9 @@ new_dm_read_block <- function(
               align-items: center;
               justify-content: center;
               width: 36px;
-              border: 1px solid #ced4da;
-              border-radius: 0 0.375rem 0.375rem 0;
-              background: #f9f9fa;
+              border: 1px solid var(--blockr-color-border, #e5e7eb);
+              border-radius: 0 8px 8px 0;
+              background: var(--blockr-color-bg-input, #f9fafb);
               color: #6c757d;
               cursor: pointer;
               padding: 0;
@@ -371,14 +368,10 @@ new_dm_read_block <- function(
             .blockr-table-selector:has(.blockr-table-confirm-btn.has-selection) .selectize-dropdown {
               border-top-right-radius: 0;
             }
-            .blockr-table-confirm-btn.confirmed:hover {
-              background-color: #d1fae5;
-              border-color: #6ee7b7;
-            }
             .blockr-table-confirm-btn.confirmed {
-              background-color: #ecfdf5;
-              color: #047857;
-              border-color: #a7f3d0;
+              background-color: var(--blockr-color-bg-input, #f9fafb);
+              color: #6c757d;
+              border-color: var(--blockr-color-border, #e5e7eb);
             }
 
             /* Dropdown item styling */
@@ -429,7 +422,11 @@ new_dm_read_block <- function(
             ns = ns,
             shiny::div(
               class = "block-section",
-              shiny::tags$h4("Tables"),
+              shiny::tags$label("Tables to include",
+                class = "control-label",
+                style = "margin-top: 16px;",
+                `for` = ns("table_select")
+              ),
               shiny::div(
                 class = "blockr-table-selector",
                 shiny::selectizeInput(
@@ -468,7 +465,8 @@ new_dm_read_block <- function(
                     'height="16" viewBox="0 0 24 24" fill="none" ',
                     'stroke="currentColor" stroke-width="2.5" ',
                     'stroke-linecap="round" stroke-linejoin="round">',
-                    '<polyline points="20 6 9 17 4 12"></polyline></svg>'
+                    '<line x1="5" y1="12" x2="19" y2="12"></line>',
+                    '<polyline points="12 5 19 12 12 19"></polyline></svg>'
                   ))
                 )
               ),
@@ -481,19 +479,28 @@ new_dm_read_block <- function(
                     if (!sel || !sel.selectize) return;
                     var sz = sel.selectize;
                     var btn = document.getElementById('%s');
+                    var arrowIcon = '<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><line x1=\"5\" y1=\"12\" x2=\"19\" y2=\"12\"></line><polyline points=\"12 5 19 12 12 19\"></polyline></svg>';
+                    var checkIcon = '<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><polyline points=\"20 6 9 17 4 12\"></polyline></svg>';
                     function syncBtn() {
                       if (!btn) return;
                       btn.classList.remove('confirmed');
+                      btn.innerHTML = arrowIcon;
                       if (sz.items.length > 0) {
                         btn.classList.add('has-selection');
                       } else {
                         btn.classList.remove('has-selection');
                       }
                     }
-                    syncBtn();
+                    // Initial state: if tables already selected, show as confirmed (green)
+                    if (btn && sz.items.length > 0) {
+                      btn.classList.add('has-selection');
+                      btn.classList.add('confirmed');
+                      btn.innerHTML = checkIcon;
+                    }
                     if (sz.items.length === 0 && Object.keys(sz.options).length > 0) {
                       sz.open();
                     }
+                    // User-driven changes: show blue (needs confirmation)
                     sz.on('change', syncBtn);
                   }, 100);
                 });
@@ -501,6 +508,7 @@ new_dm_read_block <- function(
                   var sel = $('#%s')[0];
                   if (sel && sel.selectize && sel.selectize.items.length > 0) {
                     this.classList.add('confirmed');
+                    this.innerHTML = '<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><polyline points=\"20 6 9 17 4 12\"></polyline></svg>';
                   }
                 });
                 ",
@@ -712,7 +720,7 @@ dm_read_expr_zip <- function(path, selected = NULL) {
       utils::unzip(.(path), exdir = temp_dir)
 
       # Find all data files
-      extensions <- c("csv", "tsv", "xlsx", "xls", "parquet", "feather", "rds", "rda")
+      extensions <- blockr.io::file_extensions()
       pattern <- paste0("\\.(", paste(extensions, collapse = "|"), ")$")
       files <- list.files(temp_dir, pattern = pattern, ignore.case = TRUE,
                           full.names = TRUE, recursive = TRUE)
@@ -764,7 +772,7 @@ dm_read_expr_directory <- function(path, selected = NULL) {
   bquote(
     local({
       # Find all data files
-      extensions <- c("csv", "tsv", "xlsx", "xls", "parquet", "feather", "rds", "rda")
+      extensions <- blockr.io::file_extensions()
       pattern <- paste0("\\.(", paste(extensions, collapse = "|"), ")$")
       files <- list.files(.(path), pattern = pattern, ignore.case = TRUE, full.names = TRUE)
 

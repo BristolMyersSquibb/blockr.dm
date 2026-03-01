@@ -1,78 +1,45 @@
-# dm IO Demo — Read + Write blocks with dock layout and DAG
+# ADAM Workflow — Read, CDISC-keyed dm, Write
 #
 # Demonstrates:
-# - new_dm_read_block: Read Excel file into dm (cheap table discovery + Load button)
-# - new_dm_write_block: Write dm to Excel / ZIP with download + server save
-# - Dock layout with DAG visualization
+# - new_dm_read_block: Read Excel into dm (one sheet per table)
+# - new_cdisc_dm_block: Auto-set USUBJID PK/FK + dedup subject columns
+# - new_dm_write_block: Export keyed dm to Excel
 
 library(blockr.core)
 library(blockr.dag)
 library(blockr.dock)
-library(blockr.dm)
+library(blockr.extra)
 pkgload::load_all("blockr.dm")
+pkgload::load_all("blockr.io")
 
-# options(
-#   shiny.port = 7860L,
-#   shiny.host = "0.0.0.0",
-#   shiny.launch.browser = FALSE
-# )
-
-# --- Create test Excel file with ADaM-style tables ---
-test_dir <- file.path(tempdir(), "dm_io_demo")
-dir.create(test_dir, showWarnings = FALSE)
-
-adsl <- data.frame(
-  USUBJID = paste0("SUBJ-", 1:5),
-  AGE = c(45, 52, 38, 61, 29),
-  SEX = c("M", "F", "M", "F", "M")
+options(
+  blockr.html_table_preview = TRUE
 )
 
-adae <- data.frame(
-  USUBJID = c("SUBJ-1", "SUBJ-1", "SUBJ-2", "SUBJ-4", "SUBJ-4", "SUBJ-4"),
-  AETERM = c("Headache", "Nausea", "Fatigue", "Dizziness", "Headache", "Rash"),
-  AESEV = c("MILD", "MODERATE", "MILD", "SEVERE", "MILD", "MODERATE")
+# --- Prepare Excel file from safetyData ADAM tables ---
+excel_path <- file.path(tempdir(), "adam_data.xlsx")
+writexl::write_xlsx(
+  list(
+    adsl = safetyData::adam_adsl,
+    adae = safetyData::adam_adae,
+    adlbc = safetyData::adam_adlbc
+  ),
+  excel_path
 )
-
-adlb <- data.frame(
-  USUBJID = rep(paste0("SUBJ-", 1:5), each = 2),
-  PARAMCD = rep(c("NEUT", "WBC"), 5),
-  AVAL = c(4.5, 8.2, 6.1, 7.5, 3.2, 6.8, 5.5, 9.1, 4.8, 7.2)
-)
-
-excel_path <- file.path(test_dir, "adam_data.xlsx")
-writexl::write_xlsx(list(adsl = adsl, adae = adae, adlb = adlb), excel_path)
-
-cat("Test Excel file created at:", excel_path, "\n")
 
 # --- Build board ---
 board <- new_dock_board(
   blocks = c(
-    # Read dm from Excel (each sheet becomes a table)
-    dm_input = new_dm_read_block(
+    dm_read = new_dm_read_block(
       path = excel_path,
-      selected_tables = c("adsl", "adae", "adlb")
+      selected_tables = c("adsl", "adae", "adlbc")
     ),
-
-    # Add keys (USUBJID links the tables)
-    dm_keyed = new_dm_add_keys_block(infer_keys = TRUE),
-
-    # Filter: only subjects with severe AEs
-    dm_filtered = new_dm_filter_block(
-      table = "adae",
-      expr = "AESEV == 'SEVERE'"
-    ),
-
-    # Flatten filtered dm to single table
-    flat_result = new_dm_flatten_block(start_table = "adae"),
-
-    # Write dm back to file
-    dm_output = new_dm_write_block(format = "excel")
+    dm_adam = new_cdisc_dm_block(dedup_cols = TRUE),
+    dm_out = new_dm_write_block(format = "excel")
   ),
   links = c(
-    new_link("dm_input", "dm_keyed", "data"),
-    new_link("dm_keyed", "dm_filtered", "data"),
-    new_link("dm_filtered", "flat_result", "data"),
-    new_link("dm_keyed", "dm_output", "data")
+    new_link("dm_read", "dm_adam", "data"),
+    new_link("dm_adam", "dm_out", "data")
   ),
   extensions = list(
     new_dag_extension()

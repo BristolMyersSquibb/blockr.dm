@@ -361,6 +361,9 @@ new_dm_write_block <- function(
             .dm-write-block-container .block-form-grid .shiny-input-container {
               margin-bottom: 0;
             }
+            .dm-write-block-container .block-help-text {
+              margin-top: 8px;
+            }
             /* Execution mode toggle */
             .blockr-exec-toggle {
               display: inline-flex;
@@ -445,7 +448,7 @@ new_dm_write_block <- function(
             style = "padding-bottom: 0; margin-bottom: 0;",
             shiny::div(
               class = "block-section",
-              shiny::tags$h4("File Configuration", class = "mb-3"),
+              shiny::tags$h4("File Configuration"),
               shiny::div(
                 class = "block-section-grid",
                 shiny::div(
@@ -469,9 +472,9 @@ new_dm_write_block <- function(
                     inputId = ns("format"),
                     label = "Format",
                     choices = c(
-                      "Excel (multi-sheet)" = "excel",
-                      "CSV (in ZIP)" = "csv",
-                      "Parquet (in ZIP)" = "parquet"
+                      "Excel" = "excel",
+                      "CSV" = "csv",
+                      "Parquet" = "parquet"
                     ),
                     selected = format
                   )

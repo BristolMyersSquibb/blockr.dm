@@ -20,6 +20,7 @@ block_responsive_css <- function() {
       display: grid;
       gap: 15px;
       grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      align-items: start;
     }
 
     /* Flatten wrappers so all controls share the same tracks */
@@ -55,7 +56,7 @@ block_responsive_css <- function() {
     }
 
     .block-help-text {
-      margin-top: -10px;
+      margin-top: 0px;
       padding-top: 0px;
       font-size: 0.875rem;
       color: #666;

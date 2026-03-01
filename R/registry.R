@@ -10,6 +10,7 @@ register_dm_blocks <- function() {
       "new_dm_read_block",
       "new_dm_write_block",
       "new_dm_block",
+      "new_cdisc_dm_block",
       "new_dm_select_block",
       "new_dm_add_keys_block",
       "new_dm_filter_block",
@@ -26,11 +27,12 @@ register_dm_blocks <- function() {
       "Read dm",
       "Write dm",
       "Create dm",
+      "CDISC dm",
       "Select tables",
-      "Add keys to dm",
+      "Add keys",
       "Filter dm",
       "Filter dm by value",
-      "Pull table from dm",
+      "Pull table",
       "Flatten dm",
       "Nested view",
       "Temporal join",
@@ -42,6 +44,7 @@ register_dm_blocks <- function() {
       "Read multiple tables from Excel, ZIP, or directory into a dm object",
       "Write dm object to Excel, ZIP, or directory",
       "Combine multiple data frames into a dm (data model) object",
+      "Set CDISC keys (USUBJID PK/FK) and optionally deduplicate subject columns",
       "Select a subset of tables to keep in a dm object",
       "Add primary and foreign key relationships to a dm object",
       "Filter a dm by condition in any table, cascading to related tables via foreign keys",
@@ -68,12 +71,14 @@ register_dm_blocks <- function() {
       "structured",
       "structured",
       "structured",
+      "structured",
       "structured"
     ),
     icon = c(
       "file-earmark-arrow-up",
       "file-earmark-arrow-down",
       "diagram-3",
+      "patch-check",
       "check2-square",
       "key",
       "funnel",
@@ -87,7 +92,7 @@ register_dm_blocks <- function() {
       "sliders2"
     ),
     arguments = list(
-      NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+      NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
       # crossfilter_block (pos 13):
       structure(
         c(
