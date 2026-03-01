@@ -1,8 +1,9 @@
-# ADAM Workflow — Read, CDISC-keyed dm, Write
+# ADAM Workflow — Read, CDISC-keyed dm, Crossfilter, Write
 #
 # Demonstrates:
 # - new_dm_read_block: Read Excel into dm (one sheet per table)
 # - new_cdisc_dm_block: Auto-set USUBJID PK/FK + dedup subject columns
+# - new_dm_crossfilter_block: Interactive crossfilter across tables
 # - new_dm_write_block: Export keyed dm to Excel
 
 library(blockr.core)
@@ -35,11 +36,13 @@ board <- new_dock_board(
       selected_tables = c("adsl", "adae", "adlbc")
     ),
     dm_adam = new_cdisc_dm_block(dedup_cols = TRUE),
+    dm_cf = new_dm_crossfilter_block(),
     dm_out = new_dm_write_block(format = "excel")
   ),
   links = c(
     new_link("dm_read", "dm_adam", "data"),
-    new_link("dm_adam", "dm_out", "data")
+    new_link("dm_adam", "dm_cf", "data"),
+    new_link("dm_cf", "dm_out", "data")
   ),
   extensions = list(
     new_dag_extension()

@@ -406,6 +406,13 @@ dm_crossfilter_server_factory <- function(active_dims, filters, range_filters, m
             pks <- dm::dm_get_all_pks(dm_obj)
             fks <- dm::dm_get_all_fks(dm_obj)
 
+            # Sort tables: parents before children (topological order).
+            # Count outgoing FKs per table — pure parents have 0.
+            n_fks <- vapply(table_names, function(tbl) {
+              sum(fks$child_table == tbl)
+            }, integer(1))
+            table_names <- table_names[order(n_fks)]
+
             list(
               table_names = table_names,
               tables = tables,
