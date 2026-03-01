@@ -73,6 +73,49 @@ new_cdisc_dm_block <- function(dedup_cols = TRUE, ...) {
         shiny::observeEvent(input$dedup_cols, dedup_rv(input$dedup_cols),
           ignoreInit = TRUE)
 
+        output$cdisc_badge <- shiny::renderUI({
+          nms <- names(...args)
+          dm_input <- ...args[[nms[1]]]
+          if (shiny::is.reactive(dm_input)) dm_input <- dm_input()
+          shiny::req(inherits(dm_input, "dm"))
+
+          parent_name <- find_cdisc_parent(dm_input)
+
+          if (is.null(parent_name)) {
+            return(shiny::tags$span(
+              class = "blockr-path-badge blockr-path-badge-error",
+              "No CDISC parent"
+            ))
+          }
+
+          label <- if (grepl("^adsl$", parent_name, ignore.case = TRUE)) {
+            "ADAM"
+          } else {
+            "SDTM"
+          }
+
+          n_children <- sum(vapply(
+            setdiff(names(dm_input), parent_name),
+            function(t) "USUBJID" %in% names(dm_input[[t]]),
+            logical(1)
+          ))
+
+          shiny::tagList(
+            shiny::tags$span(
+              class = "blockr-path-badge blockr-path-badge-success",
+              label
+            ),
+            shiny::tags$span(
+              class = "text-muted",
+              style = "font-size: 0.75rem;",
+              paste0(
+                parent_name, " + ", n_children,
+                " table", if (n_children != 1) "s"
+              )
+            )
+          )
+        })
+
         list(
           expr = shiny::reactive({
             nms <- names(...args)
@@ -195,11 +238,27 @@ new_cdisc_dm_block <- function(dedup_cols = TRUE, ...) {
     ui = function(id) {
       ns <- shiny::NS(id)
       shiny::tagList(
+        shiny::tags$style(shiny::HTML(
+          ".blockr-path-badge {
+            display: inline-block; padding: 2px 8px;
+            font-size: 0.625rem; border-radius: 4px;
+            white-space: nowrap; line-height: 1.4;
+          }
+          .blockr-path-badge-success {
+            background-color: #ecfdf5; color: #047857;
+            border: 1px solid #a7f3d0;
+          }
+          .blockr-path-badge-error {
+            background-color: #fef2f2; color: #b91c1c;
+            border: 1px solid #fca5a5;
+          }"
+        )),
         shiny::div(
           class = "block-container",
-          shiny::tags$p(
-            class = "text-muted mb-2",
-            "CDISC data model transform"
+          shiny::div(
+            style = "display: flex; align-items: center; gap: 8px; margin-bottom: 8px;",
+            shiny::tags$span(class = "text-muted", "CDISC data model"),
+            shiny::uiOutput(ns("cdisc_badge"), inline = TRUE)
           ),
           shiny::checkboxInput(
             ns("keys"),
