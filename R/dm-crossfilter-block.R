@@ -2410,7 +2410,7 @@ dm_crossfilter_ui <- function(id) {
   shiny::tagList(
     shiny::div(
       class = "dm-crossfilter-container",
-      style = "padding: 10px;",
+      style = "margin: -16px -16px -10px -16px; padding: 6px 10px;",
       dm_crossfilter_search_css(),
       dm_crossfilter_table_css(),
       # Search bar — plain input with shiny-input-text for auto-binding

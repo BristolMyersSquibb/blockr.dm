@@ -45,6 +45,8 @@ find_duplicated_cols <- function(dm_obj, parent_name) {
 #' and setting correct PK/FK relationships on USUBJID, with optional
 #' column deduplication.
 #'
+#' @param set_keys Logical, whether to set USUBJID as PK on the parent table
+#'   and FK on child tables. Default is `TRUE`.
 #' @param dedup_cols Logical, whether to remove duplicated subject columns
 #'   from child tables. Default is `TRUE`.
 #' @param ... Forwarded to [blockr.core::new_transform_block()]
@@ -64,12 +66,15 @@ find_duplicated_cols <- function(dm_obj, parent_name) {
 #' dm is passed through unchanged.
 #'
 #' @export
-new_cdisc_dm_block <- function(dedup_cols = TRUE, ...) {
+new_cdisc_dm_block <- function(set_keys = TRUE, dedup_cols = TRUE, ...) {
   blockr.core::new_transform_block(
     server = function(id, ...args) {
       shiny::moduleServer(id, function(input, output, session) {
+        set_keys_rv <- shiny::reactiveVal(set_keys)
         dedup_rv <- shiny::reactiveVal(dedup_cols)
 
+        shiny::observeEvent(input$set_keys, set_keys_rv(input$set_keys),
+          ignoreInit = TRUE)
         shiny::observeEvent(input$dedup_cols, dedup_rv(input$dedup_cols),
           ignoreInit = TRUE)
 
@@ -94,24 +99,40 @@ new_cdisc_dm_block <- function(dedup_cols = TRUE, ...) {
             "SDTM"
           }
 
-          n_children <- sum(vapply(
-            setdiff(names(dm_input), parent_name),
-            function(t) "USUBJID" %in% names(dm_input[[t]]),
-            logical(1)
+          all_tables <- names(dm_input)
+          n_tables <- length(all_tables)
+          total_rows <- sum(vapply(
+            all_tables,
+            function(t) nrow(dm_input[[t]]),
+            integer(1)
           ))
 
+          # Per-table detail
+          table_details <- vapply(all_tables, function(t) {
+            paste0(t, " (", format(nrow(dm_input[[t]]), big.mark = ","), ")")
+          }, character(1))
+
           shiny::tagList(
-            shiny::tags$span(
-              class = "blockr-path-badge blockr-path-badge-success",
-              label
-            ),
-            shiny::tags$span(
-              class = "text-muted",
-              style = "font-size: 0.75rem;",
-              paste0(
-                parent_name, " + ", n_children,
-                " table", if (n_children != 1) "s"
+            shiny::div(
+              style = "display: flex; align-items: center; gap: 8px;",
+              shiny::tags$span(
+                class = "blockr-path-badge blockr-path-badge-success",
+                label
+              ),
+              shiny::tags$span(
+                class = "text-muted",
+                style = "font-size: 0.8rem;",
+                paste0(
+                  n_tables, " table", if (n_tables != 1) "s",
+                  " \u00b7 ",
+                  format(total_rows, big.mark = ","), " rows"
+                )
               )
+            ),
+            shiny::tags$p(
+              class = "text-muted",
+              style = "font-size: 0.75rem; margin-top: 4px; margin-bottom: 0;",
+              paste(table_details, collapse = " \u00b7 ")
             )
           )
         })
@@ -134,6 +155,7 @@ new_cdisc_dm_block <- function(dedup_cols = TRUE, ...) {
               return(bquote(identity(.(input_sym))))
             }
 
+            do_keys <- set_keys_rv()
             do_dedup <- dedup_rv()
 
             # Find child tables with USUBJID
@@ -180,22 +202,23 @@ new_cdisc_dm_block <- function(dedup_cols = TRUE, ...) {
               }
             }
 
-            # Add PK on parent
-            parent_sym <- as.name(parent_name)
-            body_exprs <- c(body_exprs, list(
-              bquote(result <- dm::dm_add_pk(
-                result, .(parent_sym), USUBJID
-              ))
-            ))
-
-            # Add FK for each child
-            for (child in child_tables) {
-              child_sym <- as.name(child)
+            # Add PK/FK only when keys checkbox is on
+            if (do_keys) {
+              parent_sym <- as.name(parent_name)
               body_exprs <- c(body_exprs, list(
-                bquote(result <- dm::dm_add_fk(
-                  result, .(child_sym), USUBJID, .(parent_sym)
+                bquote(result <- dm::dm_add_pk(
+                  result, .(parent_sym), USUBJID
                 ))
               ))
+
+              for (child in child_tables) {
+                child_sym <- as.name(child)
+                body_exprs <- c(body_exprs, list(
+                  bquote(result <- dm::dm_add_fk(
+                    result, .(child_sym), USUBJID, .(parent_sym)
+                  ))
+                ))
+              }
             }
 
             # Dedup columns if enabled
@@ -230,6 +253,7 @@ new_cdisc_dm_block <- function(dedup_cols = TRUE, ...) {
             bquote(local(.(block)))
           }),
           state = list(
+            set_keys = set_keys_rv,
             dedup_cols = dedup_rv
           )
         )
@@ -238,6 +262,7 @@ new_cdisc_dm_block <- function(dedup_cols = TRUE, ...) {
     ui = function(id) {
       ns <- shiny::NS(id)
       shiny::tagList(
+        block_responsive_css(),
         shiny::tags$style(shiny::HTML(
           ".blockr-path-badge {
             display: inline-block; padding: 2px 8px;
@@ -251,25 +276,43 @@ new_cdisc_dm_block <- function(dedup_cols = TRUE, ...) {
           .blockr-path-badge-error {
             background-color: #fef2f2; color: #b91c1c;
             border: 1px solid #fca5a5;
+          }
+          .cdisc-dm-adjustments .block-input-wrapper {
+            margin-bottom: 4px;
           }"
         )),
         shiny::div(
           class = "block-container",
           shiny::div(
-            style = "display: flex; align-items: center; gap: 8px; margin-bottom: 8px;",
-            shiny::tags$span(class = "text-muted", "CDISC data model"),
-            shiny::uiOutput(ns("cdisc_badge"), inline = TRUE)
-          ),
-          shiny::checkboxInput(
-            ns("keys"),
-            "Set CDISC keys",
-            value = TRUE
-          ) |>
-            shiny::tagAppendAttributes(disabled = "disabled"),
-          shiny::checkboxInput(
-            ns("dedup_cols"),
-            "Remove duplicated subject columns",
-            value = dedup_cols
+            class = "block-form-grid",
+            shiny::div(
+              class = "block-section",
+              shiny::tags$h4("Verification"),
+              shiny::uiOutput(ns("cdisc_badge"))
+            ),
+            shiny::div(
+              class = "block-section",
+              shiny::tags$h4("Data Adjustments"),
+              shiny::div(
+                class = "block-section-grid cdisc-dm-adjustments",
+                shiny::div(
+                  class = "block-input-wrapper",
+                  shiny::checkboxInput(
+                    ns("set_keys"),
+                    "Set CDISC keys",
+                    value = set_keys
+                  )
+                ),
+                shiny::div(
+                  class = "block-input-wrapper",
+                  shiny::checkboxInput(
+                    ns("dedup_cols"),
+                    "Remove duplicated subject columns",
+                    value = dedup_cols
+                  )
+                )
+              )
+            )
           )
         )
       )

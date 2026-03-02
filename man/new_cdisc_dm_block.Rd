@@ -4,9 +4,12 @@
 \alias{new_cdisc_dm_block}
 \title{Create CDISC DM Block}
 \usage{
-new_cdisc_dm_block(dedup_cols = TRUE, ...)
+new_cdisc_dm_block(set_keys = TRUE, dedup_cols = TRUE, ...)
 }
 \arguments{
+\item{set_keys}{Logical, whether to set USUBJID as PK on the parent table
+and FK on child tables. Default is \code{TRUE}.}
+
 \item{dedup_cols}{Logical, whether to remove duplicated subject columns
 from child tables. Default is \code{TRUE}.}
 

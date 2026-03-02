@@ -19,6 +19,7 @@ Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.3
 Imports:
+    blockr.ai,
     blockr.core,
     blockr.io,
     DiagrammeR,
@@ -52,6 +53,7 @@ Suggests:
     shinytest2
 Config/testthat/edition: 3
 Remotes:
+    BristolMyersSquibb/blockr.ai,
     BristolMyersSquibb/blockr.core,
     BristolMyersSquibb/blockr.io,
     BristolMyersSquibb/blockr,
