@@ -21,7 +21,8 @@ register_dm_blocks <- function() {
       "new_temporal_join_block",
       "new_dm_temporal_join_block",
       "new_crossfilter_block",
-      "new_dm_crossfilter_block"
+      "new_dm_crossfilter_block",
+      "new_safety_dm_block"
     ),
     name = c(
       "Read dm",
@@ -38,7 +39,8 @@ register_dm_blocks <- function() {
       "Temporal join",
       "dm Temporal join",
       "Crossfilter",
-      "dm Crossfilter"
+      "dm Crossfilter",
+      "Safety dm"
     ),
     description = c(
       "Read multiple tables from Excel, ZIP, or directory into a dm object",
@@ -55,9 +57,11 @@ register_dm_blocks <- function() {
       "Join two tables and filter by time window between date columns",
       "Temporal join between two tables in a dm object, filtering by time window",
       "Interactive crossfilter with categorical tables and numeric range sliders",
-      "Cross-table crossfilter on a dm object with per-table filter panels"
+      "Cross-table crossfilter on a dm object with per-table filter panels",
+      "Create a CDISC safety dm from safetyData (ADSL, ADAE, ADLB) with keys"
     ),
     category = c(
+      "structured",
       "structured",
       "structured",
       "structured",
@@ -89,7 +93,8 @@ register_dm_blocks <- function() {
       "clock-history",
       "clock-history",
       "sliders",
-      "sliders2"
+      "sliders2",
+      "shield-check"
     ),
     arguments = list(
       NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
@@ -120,7 +125,9 @@ register_dm_blocks <- function() {
           range_filters = list(adsl = list(AGE = c(40, 60))),
           measure = NULL
         )
-      )
+      ),
+      # safety_dm_block (pos 15):
+      NULL
     ),
     package = utils::packageName(),
     overwrite = TRUE
