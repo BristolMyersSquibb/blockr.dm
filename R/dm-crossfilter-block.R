@@ -1250,7 +1250,7 @@ dm_crossfilter_server_factory <- function(active_dims, filters, range_filters, m
             }
 
             range_text <- paste0(n_match, " of ", length(cf_vals), " rows")
-            slider_uid <- gsub("[.]", "_", paste0("drs_", tbl_name, "_", dim))
+            slider_uid <- gsub("[.]", "_", ns(paste0("drs_", tbl_name, "_", dim)))
 
             # For < 2 unique values, show static text
             if (length(unique(full_vals)) < 2) {
@@ -1499,7 +1499,7 @@ dm_crossfilter_server_factory <- function(active_dims, filters, range_filters, m
             }
 
             range_text <- paste0(n_match, " of ", length(cf_vals), " rows")
-            slider_uid <- gsub("[.]", "_", paste0("dds_", tbl_name, "_", dim))
+            slider_uid <- gsub("[.]", "_", ns(paste0("dds_", tbl_name, "_", dim)))
 
             # For < 2 unique values, show static text
             if (length(unique(full_vals)) < 2) {
