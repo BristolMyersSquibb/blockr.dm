@@ -3,6 +3,7 @@ dm_crossfilter_search_css <- function() {
   shiny::tags$style(shiny::HTML("
     .dm-cf-search-wrapper {
       position: relative;
+      margin-top: 10px;
       margin-bottom: 12px;
     }
     .dm-cf-search-icon {
