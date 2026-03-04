@@ -53,11 +53,7 @@ test_that("ADAM key setup - PK on ADSL, FK on children", {
     },
     args = list(
       x = block,
-      data = list(
-        ...args = shiny::reactiveValues(
-          `1` = dm_input
-        )
-      )
+      data = list(data = function() dm_input)
     )
   )
 })
@@ -97,11 +93,7 @@ test_that("SDTM key setup - DM table as parent", {
     },
     args = list(
       x = block,
-      data = list(
-        ...args = shiny::reactiveValues(
-          `1` = dm_input
-        )
-      )
+      data = list(data = function() dm_input)
     )
   )
 })
@@ -152,11 +144,7 @@ test_that("Column deduplication removes shared columns from children", {
     },
     args = list(
       x = block,
-      data = list(
-        ...args = shiny::reactiveValues(
-          `1` = dm_input
-        )
-      )
+      data = list(data = function() dm_input)
     )
   )
 })
@@ -188,11 +176,7 @@ test_that("No parent table warns and passes through", {
     },
     args = list(
       x = block,
-      data = list(
-        ...args = shiny::reactiveValues(
-          `1` = dm_input
-        )
-      )
+      data = list(data = function() dm_input)
     )
   )
 })
@@ -226,11 +210,7 @@ test_that("Single parent table, no children", {
     },
     args = list(
       x = block,
-      data = list(
-        ...args = shiny::reactiveValues(
-          `1` = dm_input
-        )
-      )
+      data = list(data = function() dm_input)
     )
   )
 })

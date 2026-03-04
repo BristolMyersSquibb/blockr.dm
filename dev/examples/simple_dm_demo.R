@@ -7,13 +7,12 @@
 #
 # Compare with uc7-large-adam.R which requires 4 static blocks + dm_block
 # + 4 links to achieve the same starting point.
-
+pkgload::load_all("g6R")
 pkgload::load_all("blockr.core")
 pkgload::load_all("blockr.dock")
 pkgload::load_all("blockr.dm")
-
+pkgload::load_all("blockr.dag")
 pkgload::load_all("blockr.session")
-
 
 
 library(blockr)

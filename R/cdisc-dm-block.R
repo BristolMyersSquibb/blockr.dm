@@ -68,7 +68,7 @@ find_duplicated_cols <- function(dm_obj, parent_name) {
 #' @export
 new_cdisc_dm_block <- function(set_keys = TRUE, dedup_cols = TRUE, ...) {
   blockr.core::new_transform_block(
-    server = function(id, ...args) {
+    server = function(id, data) {
       shiny::moduleServer(id, function(input, output, session) {
         set_keys_rv <- shiny::reactiveVal(set_keys)
         dedup_rv <- shiny::reactiveVal(dedup_cols)
@@ -79,9 +79,7 @@ new_cdisc_dm_block <- function(set_keys = TRUE, dedup_cols = TRUE, ...) {
           ignoreInit = TRUE)
 
         output$cdisc_badge <- shiny::renderUI({
-          nms <- names(...args)
-          dm_input <- ...args[[nms[1]]]
-          if (shiny::is.reactive(dm_input)) dm_input <- dm_input()
+          dm_input <- data()
           shiny::req(inherits(dm_input, "dm"))
 
           parent_name <- find_cdisc_parent(dm_input)
@@ -139,12 +137,9 @@ new_cdisc_dm_block <- function(set_keys = TRUE, dedup_cols = TRUE, ...) {
 
         list(
           expr = shiny::reactive({
-            nms <- names(...args)
-            dm_input <- ...args[[nms[1]]]
-            if (shiny::is.reactive(dm_input)) dm_input <- dm_input()
+            dm_input <- data()
             shiny::req(inherits(dm_input, "dm"))
 
-            input_sym <- as.name(nms[1])
             parent_name <- find_cdisc_parent(dm_input)
 
             if (is.null(parent_name)) {
@@ -152,7 +147,7 @@ new_cdisc_dm_block <- function(set_keys = TRUE, dedup_cols = TRUE, ...) {
                 "No CDISC parent table (ADSL or DM) found. ",
                 "Passing through unchanged."
               )
-              return(bquote(identity(.(input_sym))))
+              return(quote(identity(data)))
             }
 
             do_keys <- set_keys_rv()
@@ -171,7 +166,7 @@ new_cdisc_dm_block <- function(set_keys = TRUE, dedup_cols = TRUE, ...) {
 
             # Assign input to result
             body_exprs <- c(body_exprs, list(
-              bquote(result <- .(input_sym))
+              quote(result <- data)
             ))
 
             # Strip existing FKs (hardcoded at build time)
@@ -317,10 +312,8 @@ new_cdisc_dm_block <- function(set_keys = TRUE, dedup_cols = TRUE, ...) {
         )
       )
     },
-    dat_valid = function(...args) {
-      if (length(...args) != 1L) stop("Exactly one dm input required")
-      arg <- ...args[[1]]
-      if (!inherits(arg, "dm")) stop("Input must be a dm object")
+    dat_valid = function(data) {
+      if (!inherits(data, "dm")) stop("Input must be a dm object")
     },
     allow_empty_state = TRUE,
     class = c("cdisc_dm_block", "dm_block"),
