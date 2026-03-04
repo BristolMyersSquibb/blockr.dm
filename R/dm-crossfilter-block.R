@@ -564,9 +564,15 @@ dm_crossfilter_server_factory <- function(active_dims, filters, range_filters, m
               is_date <- vapply(df, function(col) {
                 inherits(col, c("Date", "POSIXct", "POSIXlt"))
               }, logical(1))
-              is_low_cardinality <- vapply(df, function(col) {
-                length(unique(col)) <= 10
+              is_low_cardinality <- vapply(seq_along(df), function(i) {
+                col <- df[[i]]
+                if (is.numeric(col)) {
+                  length(unique(col[is.finite(col)])) <= 10
+                } else {
+                  length(unique(col)) <= 10
+                }
               }, logical(1))
+              names(is_low_cardinality) <- names(df)
 
               is_dimension <- (!is_numeric & !is_date) | (is_numeric & is_low_cardinality)
               is_range_dim <- is_numeric & !is_low_cardinality
@@ -890,7 +896,7 @@ dm_crossfilter_server_factory <- function(active_dims, filters, range_filters, m
             dim <- click$dim
             value <- click$value
 
-            if (!is.null(value) && value != "") {
+            if (!is.null(value)) {
               current <- r_filters()
               tbl_filters <- current[[tbl]] %||% list()
               current_vals <- tbl_filters[[dim]]
@@ -1046,6 +1052,7 @@ dm_crossfilter_server_factory <- function(active_dims, filters, range_filters, m
               full_df <- info$tables[[tbl_name]]
               all_vals <- unique(as.character(full_df[[dim]]))
               all_vals[is.na(all_vals)] <- CROSSFILTER_NA
+              all_vals[all_vals == ""] <- CROSSFILTER_EMPTY
               agg <- data.frame(
                 x = all_vals,
                 v = rep(0, length(all_vals)),
@@ -1082,14 +1089,16 @@ dm_crossfilter_server_factory <- function(active_dims, filters, range_filters, m
               cell = function(value, index) {
                 is_selected <- agg$.selected[index]
                 is_na_val <- identical(value, CROSSFILTER_NA)
+                is_empty_val <- identical(value, CROSSFILTER_EMPTY)
+                is_special <- is_na_val || is_empty_val
                 style <- if (has_filter && !is_selected) {
                   "color: #999;"
-                } else if (is_na_val) {
-                  "color: #9ca3af; font-size: 0.75rem;"
+                } else if (is_special) {
+                  "color: #9ca3af; font-style: italic; font-size: 0.75rem;"
                 } else {
                   "font-weight: 500;"
                 }
-                display <- if (is_na_val) "NA" else value
+                display <- if (is_na_val) "NA" else if (is_empty_val) "(empty)" else value
                 shiny::tags$span(style = style, display)
               }
             )
@@ -1226,12 +1235,12 @@ dm_crossfilter_server_factory <- function(active_dims, filters, range_filters, m
             full_df <- info$tables[[tbl_name]]
             shiny::req(is.data.frame(full_df))
             full_vals <- full_df[[dim]]
-            full_vals <- full_vals[!is.na(full_vals)]
+            full_vals <- full_vals[is.finite(full_vals)]
             shiny::req(length(full_vals) > 0)
 
             cf_df <- crossfilter_data_for_dim(tbl_name, dim)
             cf_vals <- cf_df[[dim]]
-            cf_vals <- cf_vals[!is.na(cf_vals)]
+            cf_vals <- cf_vals[is.finite(cf_vals)]
 
             if (!is.null(r_range_filters()[[tbl_name]][[dim]])) {
               n_match <- sum(cf_vals >= r_range_filters()[[tbl_name]][[dim]][1] &

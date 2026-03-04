@@ -4,6 +4,7 @@
 # JS has no R-style NA, and `%in%` can't match NA — this sentinel flows through
 # Shiny.setInputValue and back, letting us distinguish real NA from literal "NA".
 CROSSFILTER_NA <- "__NA__"
+CROSSFILTER_EMPTY <- "__EMPTY__"
 
 #
 # Three interchangeable backends for the dm crossfilter hot path:
@@ -39,13 +40,17 @@ apply_crossfilter_filters <- function(df, cat_f, rng_f, exclude_dim = NULL) {
     val <- cat_f[[dim]]
     if (!is.null(val) && length(val) > 0 && dim %in% names(df)) {
       has_na <- CROSSFILTER_NA %in% val
-      non_na_vals <- setdiff(val, CROSSFILTER_NA)
-      if (has_na && length(non_na_vals) > 0) {
-        df <- dplyr::filter(df, is.na(.data[[dim]]) | .data[[dim]] %in% non_na_vals)
+      has_empty <- CROSSFILTER_EMPTY %in% val
+      non_sentinel_vals <- setdiff(val, c(CROSSFILTER_NA, CROSSFILTER_EMPTY))
+      # Build match vector: include empty string as literal for %in%
+      match_vals <- non_sentinel_vals
+      if (has_empty) match_vals <- c(match_vals, "")
+      if (has_na && length(match_vals) > 0) {
+        df <- dplyr::filter(df, is.na(.data[[dim]]) | .data[[dim]] %in% match_vals)
       } else if (has_na) {
         df <- dplyr::filter(df, is.na(.data[[dim]]))
-      } else {
-        df <- dplyr::filter(df, .data[[dim]] %in% non_na_vals)
+      } else if (length(match_vals) > 0) {
+        df <- dplyr::filter(df, .data[[dim]] %in% match_vals)
       }
     }
   }
@@ -86,13 +91,16 @@ apply_crossfilter_filters_sym <- function(df, cat_f, rng_f, exclude_dim = NULL,
     val <- cat_f[[dim]]
     if (!is.null(val) && length(val) > 0 && dim %in% names(df)) {
       has_na <- CROSSFILTER_NA %in% val
-      non_na_vals <- setdiff(val, CROSSFILTER_NA)
-      if (has_na && length(non_na_vals) > 0) {
-        df <- dplyr::filter(df, is.na(!!rlang::sym(dim)) | !!rlang::sym(dim) %in% non_na_vals)
+      has_empty <- CROSSFILTER_EMPTY %in% val
+      non_sentinel_vals <- setdiff(val, c(CROSSFILTER_NA, CROSSFILTER_EMPTY))
+      match_vals <- non_sentinel_vals
+      if (has_empty) match_vals <- c(match_vals, "")
+      if (has_na && length(match_vals) > 0) {
+        df <- dplyr::filter(df, is.na(!!rlang::sym(dim)) | !!rlang::sym(dim) %in% match_vals)
       } else if (has_na) {
         df <- dplyr::filter(df, is.na(!!rlang::sym(dim)))
-      } else {
-        df <- dplyr::filter(df, !!rlang::sym(dim) %in% non_na_vals)
+      } else if (length(match_vals) > 0) {
+        df <- dplyr::filter(df, !!rlang::sym(dim) %in% match_vals)
       }
     }
   }
@@ -183,6 +191,7 @@ dplyr_crossfilter_agg <- function(tables, key_col_fn, tbl_name, dim,
                            .by = dplyr::all_of(dim))
   agg <- dplyr::mutate(agg, !!dim := as.character(.data[[dim]]))
   agg[[dim]][is.na(agg[[dim]])] <- CROSSFILTER_NA
+  agg[[dim]][agg[[dim]] == ""] <- CROSSFILTER_EMPTY
   dplyr::arrange(agg, dplyr::desc(.data[[".count"]]))
 }
 
@@ -257,9 +266,22 @@ build_crossfilter_where <- function(tbl_name, cat_filters, rng_filters,
   for (dim in names(cat_f)) {
     vals <- cat_f[[dim]]
     if (!is.null(vals) && length(vals) > 0) {
-      escaped <- gsub("'", "''", vals)
-      in_list <- paste0("'", escaped, "'", collapse = ", ")
-      clauses <- c(clauses, sprintf('"%s" IN (%s)', dim, in_list))
+      has_na <- CROSSFILTER_NA %in% vals
+      has_empty <- CROSSFILTER_EMPTY %in% vals
+      literal_vals <- setdiff(vals, c(CROSSFILTER_NA, CROSSFILTER_EMPTY))
+      if (has_empty) literal_vals <- c(literal_vals, "")
+      parts <- character()
+      if (has_na) parts <- c(parts, sprintf('"%s" IS NULL', dim))
+      if (length(literal_vals) > 0) {
+        escaped <- gsub("'", "''", literal_vals)
+        in_list <- paste0("'", escaped, "'", collapse = ", ")
+        parts <- c(parts, sprintf('"%s" IN (%s)', dim, in_list))
+      }
+      if (length(parts) == 1) {
+        clauses <- c(clauses, parts)
+      } else if (length(parts) > 1) {
+        clauses <- c(clauses, paste0("(", paste(parts, collapse = " OR "), ")"))
+      }
     }
   }
 
@@ -381,6 +403,9 @@ duckdb_crossfilter_agg <- function(con, tables, table_names, key_col_fn,
   result <- DBI::dbGetQuery(con, sql)
   # Ensure integer count column
   result[[".count"]] <- as.integer(result[[".count"]])
+  # Apply sentinels for NA and empty strings (SQL returns these as R NA / "")
+  result[[dim]][is.na(result[[dim]])] <- CROSSFILTER_NA
+  result[[dim]][result[[dim]] == ""] <- CROSSFILTER_EMPTY
   result
 }
 
@@ -635,16 +660,19 @@ build_dm_filter_exprs <- function(cat_filters, rng_filters, tables,
       val <- cat_f[[dim]]
       if (!is.null(val) && length(val) > 0) {
         has_na <- CROSSFILTER_NA %in% val
-        non_na_vals <- setdiff(val, CROSSFILTER_NA)
-        if (has_na && length(non_na_vals) > 0) {
+        has_empty <- CROSSFILTER_EMPTY %in% val
+        non_sentinel_vals <- setdiff(val, c(CROSSFILTER_NA, CROSSFILTER_EMPTY))
+        match_vals <- non_sentinel_vals
+        if (has_empty) match_vals <- c(match_vals, "")
+        if (has_na && length(match_vals) > 0) {
           conditions <- c(conditions, list(
-            rlang::expr(is.na(!!rlang::sym(dim)) | !!rlang::sym(dim) %in% !!non_na_vals)
+            rlang::expr(is.na(!!rlang::sym(dim)) | !!rlang::sym(dim) %in% !!match_vals)
           ))
         } else if (has_na) {
           conditions <- c(conditions, list(rlang::expr(is.na(!!rlang::sym(dim)))))
-        } else {
+        } else if (length(match_vals) > 0) {
           conditions <- c(conditions, list(
-            rlang::expr(!!rlang::sym(dim) %in% !!non_na_vals)
+            rlang::expr(!!rlang::sym(dim) %in% !!match_vals)
           ))
         }
       }
@@ -1056,6 +1084,7 @@ lookup_crossfilter_agg <- function(lookup_info, tbl_name, dim,
 
   agg <- dplyr::mutate(agg, !!dim := as.character(.data[[dim]]))
   agg[[dim]][is.na(agg[[dim]])] <- CROSSFILTER_NA
+  agg[[dim]][agg[[dim]] == ""] <- CROSSFILTER_EMPTY
   dplyr::arrange(agg, dplyr::desc(.data[[".count"]]))
 }
 
