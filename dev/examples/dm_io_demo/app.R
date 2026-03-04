@@ -10,8 +10,10 @@ library(blockr.core)
 library(blockr.dag)
 library(blockr.dock)
 library(blockr.extra)
-pkgload::load_all("blockr.dm")
+
 pkgload::load_all("blockr.io")
+pkgload::load_all("blockr.dm")
+pkgload::load_all("blockr.session")
 
 options(
   blockr.html_table_preview = TRUE
@@ -49,4 +51,4 @@ board <- new_dock_board(
   )
 )
 
-serve(board)
+serve(board, "io_app", plugins = custom_plugins(manage_project()))
