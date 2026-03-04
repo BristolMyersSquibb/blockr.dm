@@ -223,7 +223,11 @@ dm_crossfilter_search_css <- function() {
       color: #b0b7c3;
       font-variant-numeric: tabular-nums;
     }
-    .dm-cf-clear-btn {
+    .dm-cf-clear-btn,
+    .dm-cf-reset-all-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
       font-size: 11px;
       color: var(--blockr-color-text-muted, #6b7280);
       background: none;
@@ -234,7 +238,8 @@ dm_crossfilter_search_css <- function() {
       transition: all 0.15s;
       line-height: 1.4;
     }
-    .dm-cf-clear-btn:hover {
+    .dm-cf-clear-btn:hover,
+    .dm-cf-reset-all-btn:hover {
       color: var(--blockr-color-text-primary, #374151);
       border-color: #d1d5db;
       background: var(--blockr-grey-50, #f9fafb);
@@ -626,9 +631,15 @@ dm_crossfilter_server_factory <- function(active_dims, filters, range_filters, m
             )
           })
 
-          # Clear all filters
+          # Clear all filters (remove all filters entirely)
           shiny::observeEvent(input$clear_filters, {
             r_active_dims(list())
+            r_filters(list())
+            r_range_filters(list())
+          })
+
+          # Reset all filters (clear values but keep filters visible)
+          shiny::observeEvent(input$reset_all_filters, {
             r_filters(list())
             r_range_filters(list())
           })
@@ -2152,6 +2163,7 @@ dm_crossfilter_server_factory <- function(active_dims, filters, range_filters, m
             counts <- filtered_row_count()
 
             has_filters <- length(cat_filters) > 0 || length(rng_filters) > 0
+            has_active_dims <- length(unlist(r_active_dims())) > 0
 
             # Build filter chips
             chips <- list()
@@ -2225,19 +2237,34 @@ dm_crossfilter_server_factory <- function(active_dims, filters, range_filters, m
             timing <- r_last_timing()
             timing_text <- if (!is.null(timing)) paste0(timing, "ms") else ""
 
+            reset_icon_small <- shiny::HTML('<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path fill-rule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 1 1 .908-.418A6 6 0 1 1 8 2v1z"/><path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466z"/></svg>')
+            x_icon_small <- shiny::HTML('<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708z"/></svg>')
+
             shiny::tagList(
               if (length(chips) > 0) chips,
               if (has_filters) {
+                shiny::tags$button(
+                  class = "dm-cf-reset-all-btn",
+                  onclick = sprintf(
+                    "Shiny.setInputValue('%s', Date.now(), {priority: 'event'});",
+                    ns("reset_all_filters")
+                  ),
+                  reset_icon_small,
+                  "Reset all"
+                )
+              },
+              if (has_active_dims) {
                 shiny::tags$button(
                   class = "dm-cf-clear-btn",
                   onclick = sprintf(
                     "Shiny.setInputValue('%s', Date.now(), {priority: 'event'});",
                     ns("clear_filters")
                   ),
-                  "Clear"
+                  x_icon_small,
+                  "Clear all"
                 )
               },
-              if (has_filters) shiny::span(class = "dm-cf-separator"),
+              if (has_active_dims || has_filters) shiny::span(class = "dm-cf-separator"),
               shiny::span(class = "dm-cf-row-count", row_text),
               if (nzchar(timing_text)) {
                 shiny::span(class = "dm-cf-timing", timing_text)
