@@ -4,9 +4,13 @@
 \alias{new_safety_dm_block}
 \title{Safety DM Block}
 \usage{
-new_safety_dm_block(...)
+new_safety_dm_block(tables = c("adsl", "adtte"), ...)
 }
 \arguments{
+\item{tables}{Character vector of table names to include. Defaults to
+\code{c("adsl", "adtte")}. Available tables: adsl, adae, adlbc, adlbh,
+adlbhy, adqsadas, adqscibc, adqsnpix, adtte, advs.}
+
 \item{...}{Forwarded to \code{\link[blockr.core:new_data_block]{blockr.core::new_data_block()}}}
 }
 \value{
@@ -17,15 +21,16 @@ A data block that returns a ready-to-use CDISC safety \code{dm} object built fro
 the \code{safetyData} package.
 }
 \details{
-The returned dm contains three ADaM tables — \code{adsl} (subject-level),
-\code{adae} (adverse events), and \code{adlb} (lab chemistry) — with USUBJID primary
-and foreign keys already configured.
+The returned dm contains selectable ADaM tables with USUBJID primary
+and foreign keys already configured. The \code{adsl} table is always included
+as it serves as the primary-key table for all foreign-key relationships.
 }
 \examples{
 if (interactive()) {
   library(blockr.core)
   library(blockr.dm)
   serve(new_safety_dm_block())
+  serve(new_safety_dm_block(tables = c("adsl", "adae", "adlbc")))
 }
 
 }

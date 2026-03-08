@@ -58,7 +58,7 @@ register_dm_blocks <- function() {
       "Temporal join between two tables in a dm object, filtering by time window",
       "Interactive crossfilter with categorical tables and numeric range sliders",
       "Cross-table crossfilter on a dm object with per-table filter panels",
-      "Create a CDISC safety dm from safetyData (ADSL, ADAE, ADLB) with keys"
+      "Create a CDISC dm from safetyData ADaM tables with selectable tables and keys"
     ),
     category = c(
       "structured",
@@ -127,7 +127,14 @@ register_dm_blocks <- function() {
         )
       ),
       # safety_dm_block (pos 15):
-      NULL
+      structure(
+        c(
+          tables = "Character vector of ADaM table names to include. Options: adsl, adae, adlbc, adlbh, adlbhy, adqsadas, adqscibc, adqsnpix, adtte, advs. adsl is always included."
+        ),
+        examples = list(
+          tables = list("adsl", "adtte")
+        )
+      )
     ),
     package = utils::packageName(),
     overwrite = TRUE
