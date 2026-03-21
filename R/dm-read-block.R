@@ -373,12 +373,13 @@ new_dm_read_block <- function(
               color: #6c757d;
               border-color: var(--blockr-color-border, #e5e7eb);
             }
-            .blockr-select-all-link {
+            .blockr-select-all-link a {
+              margin-left: 6px;
               color: #9ca3af;
               cursor: pointer;
               text-decoration: none;
             }
-            .blockr-select-all-link:hover {
+            .blockr-select-all-link a:hover {
               color: #2563eb;
               text-decoration: underline;
             }
@@ -436,11 +437,10 @@ new_dm_read_block <- function(
                 style = "display: flex; align-items: baseline; justify-content: space-between; margin-top: 16px; width: 100%;",
                 `for` = ns("table_select"),
                 shiny::span("Tables to include"),
-                shiny::tags$a(
-                  id = ns("select_all_tables"),
-                  href = "#",
+                shiny::span(
                   class = "blockr-select-all-link",
-                  "Select all"
+                  shiny::tags$a(id = ns("select_all_tables"), href = "#", "All"),
+                  shiny::tags$a(id = ns("select_none_tables"), href = "#", "None")
                 )
               ),
               shiny::div(
@@ -518,10 +518,14 @@ new_dm_read_block <- function(
                     }
                     // User-driven changes: show blue (needs confirmation)
                     sz.on('change', syncBtn);
-                    // Select all link
+                    // All / None links
                     $('#%s').off('click.selall').on('click.selall', function(e) {
                       e.preventDefault();
                       sz.setValue(Object.keys(sz.options));
+                    });
+                    $('#%s').off('click.selnone').on('click.selnone', function(e) {
+                      e.preventDefault();
+                      sz.clear();
                     });
                   }, 100);
                 });
@@ -537,6 +541,7 @@ new_dm_read_block <- function(
                 ns("table_select"),
                 ns("load_data"),
                 ns("select_all_tables"),
+                ns("select_none_tables"),
                 ns("load_data"),
                 ns("table_select")
               )))
