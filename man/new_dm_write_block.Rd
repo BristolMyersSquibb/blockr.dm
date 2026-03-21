@@ -48,11 +48,17 @@ or directories (one file per table).
 \item Sheet names derived from table names
 }
 
-\strong{CSV/Parquet (in ZIP):}
+\strong{CSV/Parquet (server save):}
 \itemize{
-\item Single ZIP file containing individual files
+\item Individual files written into a subdirectory
+\item Subdirectory named after the base filename
 \item Each dm table becomes a separate file
-\item Filenames derived from table names
+}
+
+\strong{CSV/Parquet (download):}
+\itemize{
+\item Single ZIP archive containing individual files
+\item Each dm table becomes a separate file
 }
 }
 

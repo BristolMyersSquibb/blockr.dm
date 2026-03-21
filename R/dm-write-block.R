@@ -23,10 +23,14 @@
 #' - Each dm table becomes a sheet
 #' - Sheet names derived from table names
 #'
-#' **CSV/Parquet (in ZIP):**
-#' - Single ZIP file containing individual files
+#' **CSV/Parquet (server save):**
+#' - Individual files written into a subdirectory
+#' - Subdirectory named after the base filename
 #' - Each dm table becomes a separate file
-#' - Filenames derived from table names
+#'
+#' **CSV/Parquet (download):**
+#' - Single ZIP archive containing individual files
+#' - Each dm table becomes a separate file
 #'
 #' ## Download vs Server Save
 #'
@@ -188,12 +192,13 @@ new_dm_write_block <- function(
             }))
 
             base_filename <- generate_dm_filename(r_filename())
-            ext <- switch(r_format(),
-              "excel" = ".xlsx",
-              "csv" = ".zip",
-              "parquet" = ".zip"
-            )
-            full_path <- file.path(r_directory(), paste0(base_filename, ext))
+            if (r_format() == "excel") {
+              full_path <- file.path(
+                r_directory(), paste0(base_filename, ".xlsx")
+              )
+            } else {
+              full_path <- file.path(r_directory(), base_filename)
+            }
             timestamp <- format(Sys.time(), "%H:%M:%S")
             r_write_status(sprintf(
               "\u2713 Saved to %s at %s", full_path, timestamp
@@ -235,12 +240,13 @@ new_dm_write_block <- function(
             data()
 
             base_filename <- generate_dm_filename(r_filename())
-            ext <- switch(r_format(),
-              "excel" = ".xlsx",
-              "csv" = ".zip",
-              "parquet" = ".zip"
-            )
-            full_path <- file.path(r_directory(), paste0(base_filename, ext))
+            if (r_format() == "excel") {
+              full_path <- file.path(
+                r_directory(), paste0(base_filename, ".xlsx")
+              )
+            } else {
+              full_path <- file.path(r_directory(), base_filename)
+            }
             timestamp <- format(Sys.time(), "%H:%M:%S")
             r_write_status(sprintf(
               "\u2713 Saved to %s at %s", full_path, timestamp
@@ -625,7 +631,7 @@ dm_write_expr <- function(directory, filename, format) {
       })
     )
   } else {
-    # CSV or Parquet in ZIP
+    # CSV or Parquet as individual files in a subdirectory
     ext <- if (format == "csv") ".csv" else ".parquet"
     write_fn <- if (format == "csv") quote(readr::write_csv) else quote(arrow::write_parquet)
 
@@ -635,21 +641,15 @@ dm_write_expr <- function(directory, filename, format) {
         tables <- dm::dm_get_tables(dm_obj)
         table_names <- names(tables)
 
-        temp_dir <- tempfile("dm_write_")
-        dir.create(temp_dir, showWarnings = FALSE)
-        on.exit(unlink(temp_dir, recursive = TRUE), add = TRUE)
+        out_dir <- file.path(.(directory), .(base_filename))
+        dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 
-        files_to_zip <- character()
         for (nm in table_names) {
-          file_name <- paste0(nm, .(ext))
-          file_path <- file.path(temp_dir, file_name)
+          file_path <- file.path(out_dir, paste0(nm, .(ext)))
           .(write_fn)(tables[[nm]], file_path)
-          files_to_zip <- c(files_to_zip, file_name)
         }
 
-        zip_path <- file.path(.(directory), paste0(.(base_filename), ".zip"))
-        zip::zip(zip_path, files = files_to_zip, root = temp_dir, mode = "cherry-pick")
-        zip_path
+        out_dir
       })
     )
   }
