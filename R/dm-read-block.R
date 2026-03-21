@@ -373,6 +373,15 @@ new_dm_read_block <- function(
               color: #6c757d;
               border-color: var(--blockr-color-border, #e5e7eb);
             }
+            .blockr-select-all-link {
+              color: #9ca3af;
+              cursor: pointer;
+              text-decoration: none;
+            }
+            .blockr-select-all-link:hover {
+              color: #2563eb;
+              text-decoration: underline;
+            }
 
             /* Dropdown item styling */
             .blockr-table-item {
@@ -422,10 +431,17 @@ new_dm_read_block <- function(
             ns = ns,
             shiny::div(
               class = "block-section",
-              shiny::tags$label("Tables to include",
+              shiny::tags$label(
                 class = "control-label",
-                style = "margin-top: 16px;",
-                `for` = ns("table_select")
+                style = "display: flex; align-items: baseline; justify-content: space-between; margin-top: 16px; width: 100%;",
+                `for` = ns("table_select"),
+                shiny::span("Tables to include"),
+                shiny::tags$a(
+                  id = ns("select_all_tables"),
+                  href = "#",
+                  class = "blockr-select-all-link",
+                  "Select all"
+                )
               ),
               shiny::div(
                 class = "blockr-table-selector",
@@ -502,6 +518,11 @@ new_dm_read_block <- function(
                     }
                     // User-driven changes: show blue (needs confirmation)
                     sz.on('change', syncBtn);
+                    // Select all link
+                    $('#%s').off('click.selall').on('click.selall', function(e) {
+                      e.preventDefault();
+                      sz.setValue(Object.keys(sz.options));
+                    });
                   }, 100);
                 });
                 $('#%s').on('click', function() {
@@ -515,6 +536,7 @@ new_dm_read_block <- function(
                 ns("has_tables"),
                 ns("table_select"),
                 ns("load_data"),
+                ns("select_all_tables"),
                 ns("load_data"),
                 ns("table_select")
               )))
