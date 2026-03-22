@@ -22,7 +22,7 @@ register_dm_blocks <- function() {
       "new_dm_temporal_join_block",
       "new_crossfilter_block",
       "new_dm_crossfilter_block",
-      "new_safety_dm_block"
+      "new_dm_example_block"
     ),
     name = c(
       "Read dm",
@@ -40,7 +40,7 @@ register_dm_blocks <- function() {
       "dm Temporal join",
       "Crossfilter",
       "dm Crossfilter",
-      "Safety dm"
+      "DM Example"
     ),
     description = c(
       "Read multiple tables from Excel, ZIP, or directory into a dm object",
@@ -58,7 +58,7 @@ register_dm_blocks <- function() {
       "Temporal join between two tables in a dm object, filtering by time window",
       "Interactive crossfilter with categorical tables and numeric range sliders",
       "Cross-table crossfilter on a dm object with per-table filter panels",
-      "Create a CDISC dm from safetyData ADaM tables with selectable tables and keys"
+      "Load a pre-built dm object from a catalog of example datasets"
     ),
     category = c(
       "structured",
@@ -94,7 +94,7 @@ register_dm_blocks <- function() {
       "clock-history",
       "sliders",
       "sliders2",
-      "shield-check"
+      "database"
     ),
     arguments = list(
       NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
@@ -126,13 +126,13 @@ register_dm_blocks <- function() {
           measure = NULL
         )
       ),
-      # safety_dm_block (pos 15):
+      # dm_example_block (pos 15):
       structure(
         c(
-          tables = "Character vector of ADaM table names to include. Options: adsl, adae, adlbc, adlbh, adlbhy, adqsadas, adqscibc, adqsnpix, adtte, advs. adsl is always included."
+          dataset = "ID of the dm example dataset to load. Use dm_example_choices() to see available options."
         ),
         examples = list(
-          tables = list("adsl", "adtte")
+          dataset = "bi_star_schema"
         )
       )
     ),

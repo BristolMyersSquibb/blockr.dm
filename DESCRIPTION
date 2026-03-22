@@ -49,6 +49,8 @@ Suggests:
     qs,
     rio,
     testthat (>= 3.0.0),
+    nycflights13,
+    pharmaverseadam,
     safetyData,
     shinytest2
 Config/testthat/edition: 3
