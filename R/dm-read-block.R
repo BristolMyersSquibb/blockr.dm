@@ -917,12 +917,7 @@ dm_read_expr_rdata <- function(path, selected = NULL) {
 #' @method block_output dm_read_block
 #' @export
 block_output.dm_read_block <- function(x, result, session) {
-  DiagrammeR::renderGrViz({
-    if (!inherits(result, "dm")) {
-      return(NULL)
-    }
-    dm::dm_draw(result, view_type = "keys_only")
-  })
+  block_output.dm_block(x, result, session)
 }
 
 
@@ -931,9 +926,7 @@ block_output.dm_read_block <- function(x, result, session) {
 #' @method block_ui dm_read_block
 #' @export
 block_ui.dm_read_block <- function(id, x, ...) {
-  shiny::tagList(
-    DiagrammeR::grVizOutput(shiny::NS(id, "result"), height = "300px")
-  )
+  block_ui.dm_block(id, x, ...)
 }
 
 

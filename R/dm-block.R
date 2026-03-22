@@ -371,12 +371,122 @@ new_dm_block <- function(infer_keys = TRUE, ...) {
 #' @method block_output dm_block
 #' @export
 block_output.dm_block <- function(x, result, session) {
-  DiagrammeR::renderGrViz({
-    if (!inherits(result, "dm")) {
-      return(NULL)
-    }
-    dm::dm_draw(result, view_type = "keys_only")
+  ns <- session$ns
+
+  key <- paste0("dm_click_state_", ns(""))
+
+  if (is.null(session$userData[[key]])) {
+    selected_table <- shiny::reactiveVal(NULL)
+    session$userData[[key]] <- list(selected = selected_table)
+
+    shiny::observeEvent(session$input$dm_diagram_click, {
+      click_data <- session$input$dm_diagram_click
+      if (!is.null(click_data) && !is.null(click_data$id)) {
+        current <- selected_table()
+        if (!is.null(current) && current == click_data$id) {
+          selected_table(NULL)
+        } else {
+          selected_table(click_data$id)
+        }
+      }
+    })
+  }
+
+  selected_table <- session$userData[[key]]$selected
+
+  session$output$dm_table_preview <- shiny::renderUI({
+    table_name <- selected_table()
+    shiny::req(table_name)
+
+    tbl <- tryCatch(as.data.frame(result[[table_name]]), error = function(e) NULL)
+    if (is.null(tbl)) return(NULL)
+
+    page_size <- 5L
+    dat <- utils::head(tbl, page_size)
+
+    shiny::tags$div(
+      class = "dm-table-preview",
+      blockr.extra:::build_html_table(
+        dat = dat,
+        total_rows = nrow(tbl),
+        sort_state = list(col = NULL, dir = "none"),
+        ns = ns,
+        page = 1L,
+        page_size = page_size
+      )
+    )
   })
+
+  shiny::renderUI({
+    if (!inherits(result, "dm")) return(NULL)
+
+    diagram <- dm::dm_draw(result, view_type = "keys_only")
+    diagram$elementId <- ns("dm_diagram")
+
+    shiny::tagList(
+      shiny::tags$div(
+        class = "dm-output-container",
+        shiny::tags$div(class = "dm-diagram-container", diagram),
+        shiny::uiOutput(ns("dm_table_preview"))
+      ),
+      dm_preview_css(),
+      dm_highlight_js(ns("dm_diagram"))
+    )
+  })
+}
+
+#' CSS for dm diagram and table preview
+#' @keywords internal
+dm_preview_css <- function() {
+  shiny::tags$style(shiny::HTML("
+    .dm-diagram-container {
+      overflow: auto;
+      max-height: 400px;
+    }
+    .dm-diagram-container .grViz {
+      width: 100% !important;
+      height: 380px !important;
+    }
+    .dm-diagram-container .grViz svg {
+      width: 100%;
+      height: 100%;
+    }
+    .dm-diagram-container .node {
+      cursor: pointer;
+    }
+    .dm-diagram-container .node:hover {
+      filter: brightness(0.92);
+    }
+    .dm-diagram-container .node.dm-selected {
+      outline: 1.5px dashed var(--blockr-blue-500, #3b82f6);
+      outline-offset: 0px;
+      border-radius: 1px;
+    }
+    .dm-table-preview {
+      margin-top: 8px;
+    }
+  "))
+}
+
+#' JS for dm diagram node highlight on click
+#' @param diagram_id DOM id of the grViz widget
+#' @keywords internal
+dm_highlight_js <- function(diagram_id) {
+  shiny::tags$script(shiny::HTML(sprintf("
+    (function() {
+      var el = document.getElementById('%s');
+      if (!el) return;
+      el.addEventListener('click', function(e) {
+        var node = e.target.closest('.node');
+        if (!node) return;
+        var was = node.classList.contains('dm-selected');
+        el.querySelectorAll('.node.dm-selected').forEach(function(n) {
+          n.classList.remove('dm-selected');
+        });
+        if (!was) node.classList.add('dm-selected');
+      });
+    })();
+  ", diagram_id)))
 }
 
 #' Custom UI for dm blocks
@@ -389,7 +499,7 @@ block_output.dm_block <- function(x, result, session) {
 #' @export
 block_ui.dm_block <- function(id, x, ...) {
   shiny::tagList(
-    DiagrammeR::grVizOutput(shiny::NS(id, "result"), height = "300px")
+    shiny::uiOutput(shiny::NS(id, "result"))
   )
 }
 

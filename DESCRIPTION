@@ -21,6 +21,7 @@ RoxygenNote: 7.3.3
 Imports:
     blockr.ai,
     blockr.core,
+    blockr.extra,
     blockr.io,
     DiagrammeR,
     dm,

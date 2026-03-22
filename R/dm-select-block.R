@@ -117,21 +117,14 @@ new_dm_select_block <- function(tables = character(), ...) {
 #' @method block_output dm_select_block
 #' @export
 block_output.dm_select_block <- function(x, result, session) {
-  DiagrammeR::renderGrViz({
-    if (!inherits(result, "dm")) {
-      return(NULL)
-    }
-    dm::dm_draw(result, view_type = "keys_only")
-  })
+  block_output.dm_block(x, result, session)
 }
 
 
 #' @method block_ui dm_select_block
 #' @export
 block_ui.dm_select_block <- function(id, x, ...) {
-  shiny::tagList(
-    DiagrammeR::grVizOutput(shiny::NS(id, "result"), height = "300px")
-  )
+  block_ui.dm_block(id, x, ...)
 }
 
 
