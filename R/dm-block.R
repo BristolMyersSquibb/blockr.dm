@@ -402,16 +402,41 @@ block_output.dm_block <- function(x, result, session) {
     if (is.null(tbl)) return(NULL)
 
     page_size <- 5L
-    dat <- utils::head(tbl, page_size)
+
+    sort_input <- session$input$blockr_table_sort
+    current_sort <- if (!is.null(sort_input)) {
+      list(col = sort_input$col, dir = sort_input$dir)
+    } else {
+      list(col = NULL, dir = "none")
+    }
+
+    page <- session$input$blockr_table_page
+    page <- if (is.null(page)) 1L else as.integer(page)
+
+    total_rows <- nrow(tbl)
+    max_page <- max(1L, ceiling(total_rows / page_size))
+    page <- min(max(1L, page), max_page)
+
+    sorted_tbl <- blockr.extra:::apply_table_sort(
+      tbl, current_sort$col, current_sort$dir
+    )
+
+    start_row <- (page - 1L) * page_size + 1L
+    end_row <- min(page * page_size, total_rows)
+    dat <- if (total_rows > 0 && end_row >= start_row) {
+      as.data.frame(dplyr::slice(sorted_tbl, start_row:end_row))
+    } else {
+      as.data.frame(sorted_tbl)
+    }
 
     shiny::tags$div(
       class = "dm-table-preview",
       blockr.extra:::build_html_table(
         dat = dat,
-        total_rows = nrow(tbl),
-        sort_state = list(col = NULL, dir = "none"),
+        total_rows = total_rows,
+        sort_state = current_sort,
         ns = ns,
-        page = 1L,
+        page = page,
         page_size = page_size
       )
     )
