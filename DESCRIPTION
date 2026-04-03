@@ -54,7 +54,10 @@ Suggests:
     shinytest2
 Config/testthat/edition: 3
 Remotes:
+    BristolMyersSquibb/blockr.ai,
     BristolMyersSquibb/blockr.core,
+    BristolMyersSquibb/blockr.extra,
+    BristolMyersSquibb/blockr.io,
     BristolMyersSquibb/blockr,
     BristolMyersSquibb/blockr.dag,
     BristolMyersSquibb/blockr.dock
