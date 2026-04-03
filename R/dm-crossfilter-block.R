@@ -442,28 +442,7 @@ dm_crossfilter_server_factory <- function(active_dims, filters, range_filters, m
             NULL
           }
 
-          # --- Backend detection + reactive selector ---
-          has_duckdb <- requireNamespace("duckdb", quietly = TRUE) &&
-            requireNamespace("DBI", quietly = TRUE)
-          has_duckplyr <- requireNamespace("duckplyr", quietly = TRUE)
-
-          available_backends <- c(
-            "lookup",
-            "dplyr",
-            if (has_duckdb) "duckdb",
-            if (has_duckplyr) "duckplyr",
-            "dm"
-          )
-          default_backend <- "lookup"
-          r_backend <- shiny::reactiveVal(default_backend)
           r_last_timing <- shiny::reactiveVal(NULL)
-
-          shiny::observeEvent(input$backend_switch, {
-            val <- input$backend_switch
-            if (!is.null(val) && val %in% available_backends) {
-              r_backend(val)
-            }
-          }, ignoreInit = TRUE)
 
           shiny::observeEvent(input$measure_switch, {
             val <- input$measure_switch
@@ -476,58 +455,6 @@ dm_crossfilter_server_factory <- function(active_dims, filters, range_filters, m
             val <- input$agg_func_switch
             if (!is.null(val)) r_agg_func(val)
           }, ignoreInit = TRUE)
-
-          # --- DuckDB connection (when available) ---
-          duck_con <- if (has_duckdb) {
-            DBI::dbConnect(duckdb::duckdb(), dbdir = ":memory:")
-          } else {
-            NULL
-          }
-
-          if (has_duckdb) {
-            shiny::observe({
-              info <- dm_info()
-              for (nm in info$table_names) {
-                duckdb::duckdb_register(duck_con, nm, info$tables[[nm]],
-                                         overwrite = TRUE)
-              }
-            })
-            session$onSessionEnded(function() {
-              if (!is.null(duck_con)) {
-                try(DBI::dbDisconnect(duck_con, shutdown = TRUE), silent = TRUE)
-              }
-            })
-          }
-
-          # --- Duckplyr tables (when available) ---
-          r_duck_tables <- shiny::reactiveVal(NULL)
-          r_col_classes <- shiny::reactiveVal(NULL)
-
-          if (has_duckplyr) {
-            shiny::observe({
-              info <- dm_info()
-              col_classes <- build_col_classes(info$tables)
-              duck_tables <- lapply(
-                stats::setNames(info$table_names, info$table_names),
-                function(nm) {
-                  df <- info$tables[[nm]]
-                  # Strip non-essential column attributes (duckplyr rejects them)
-                  for (cn in names(df)) {
-                    # Convert factors to character (duckplyr doesn't support factors)
-                    if (is.factor(df[[cn]])) {
-                      df[[cn]] <- as.character(df[[cn]])
-                    }
-                    a <- attributes(df[[cn]])
-                    keep <- intersect(names(a), c("class", "levels", "names", "dim", "tzone"))
-                    attributes(df[[cn]]) <- a[keep]
-                  }
-                  duckplyr::as_duckdb_tibble(df)
-                }
-              )
-              r_duck_tables(duck_tables)
-              r_col_classes(col_classes)
-            })
-          }
 
           # --- Find the key column linking a table to the rest ---
           # Returns the column name used for cross-table joins (e.g. "USUBJID")
@@ -651,108 +578,48 @@ dm_crossfilter_server_factory <- function(active_dims, filters, range_filters, m
           })
 
           # --- Cross-table crossfilter data for a specific dimension ---
-          # Dispatches to selected backend, falls back to dplyr on error
           crossfilter_data_for_dim <- function(tbl_name, exclude_dim) {
-            # Use lookup backend (avoids semi-joins entirely)
-            if (r_backend() == "lookup") {
-              lookup_info <- r_lookup_info()
-              if (!is.null(lookup_info)) {
-                result <- tryCatch(
-                  lookup_crossfilter_data(lookup_info, tbl_name, exclude_dim,
-                                           r_filters(), r_range_filters()),
-                  error = function(e) NULL
-                )
-                if (!is.null(result)) return(result)
-              }
+            lookup_info <- r_lookup_info()
+            if (!is.null(lookup_info)) {
+              result <- tryCatch(
+                lookup_crossfilter_data(lookup_info, tbl_name, exclude_dim,
+                                         r_filters(), r_range_filters()),
+                error = function(e) NULL
+              )
+              if (!is.null(result)) return(result)
             }
+            # Fallback: filter the raw table directly (no-FK / single-table case)
             info <- dm_info()
-            cf <- r_filters()
-            rf <- r_range_filters()
-            backend <- r_backend()
-            if (backend == "duckdb") {
-              result <- tryCatch(
-                duckdb_crossfilter_data(
-                  duck_con, info$tables, info$table_names, find_key_column,
-                  tbl_name, exclude_dim, cf, rf
-                ),
-                error = function(e) NULL
-              )
-              if (!is.null(result)) return(result)
-            } else if (backend == "duckplyr") {
-              dt <- r_duck_tables()
-              cc <- r_col_classes()
-              if (!is.null(dt)) {
-                result <- tryCatch(
-                  duckplyr_crossfilter_data(
-                    dt, cc, find_key_column,
-                    tbl_name, exclude_dim, cf, rf
-                  ),
-                  error = function(e) NULL
-                )
-                if (!is.null(result)) return(result)
-              }
-            } else if (backend == "dm") {
-              result <- tryCatch(
-                dm_crossfilter_data(data(), tbl_name, exclude_dim, cf, rf),
-                error = function(e) NULL
-              )
-              if (!is.null(result)) return(result)
-            }
-            dplyr_crossfilter_data(
-              info$tables, find_key_column, tbl_name, exclude_dim, cf, rf
-            )
+            df <- info$tables[[tbl_name]]
+            if (is.null(df)) return(NULL)
+            cat_f <- r_filters()[[tbl_name]] %||% list()
+            rng_f <- r_range_filters()[[tbl_name]] %||% list()
+            apply_crossfilter_filters(df, cat_f, rng_f, exclude_dim = exclude_dim)
           }
 
           # --- Aggregated counts for a categorical dimension ---
           crossfilter_agg_for_dim <- function(tbl_name, dim) {
-            # Use lookup backend (avoids semi-joins entirely)
-            if (r_backend() == "lookup") {
-              lookup_info <- r_lookup_info()
-              if (!is.null(lookup_info)) {
-                result <- tryCatch(
-                  lookup_crossfilter_agg(lookup_info, tbl_name, dim,
-                                          r_filters(), r_range_filters()),
-                  error = function(e) NULL
-                )
-                if (!is.null(result)) return(result)
-              }
-            }
-            info <- dm_info()
-            cf <- r_filters()
-            rf <- r_range_filters()
-            backend <- r_backend()
-            if (backend == "duckdb") {
+            lookup_info <- r_lookup_info()
+            if (!is.null(lookup_info)) {
               result <- tryCatch(
-                duckdb_crossfilter_agg(
-                  duck_con, info$tables, info$table_names, find_key_column,
-                  tbl_name, dim, cf, rf
-                ),
-                error = function(e) NULL
-              )
-              if (!is.null(result)) return(result)
-            } else if (backend == "duckplyr") {
-              dt <- r_duck_tables()
-              cc <- r_col_classes()
-              if (!is.null(dt)) {
-                result <- tryCatch(
-                  duckplyr_crossfilter_agg(
-                    dt, cc, find_key_column,
-                    tbl_name, dim, cf, rf
-                  ),
-                  error = function(e) NULL
-                )
-                if (!is.null(result)) return(result)
-              }
-            } else if (backend == "dm") {
-              result <- tryCatch(
-                dm_crossfilter_agg(data(), tbl_name, dim, cf, rf),
+                lookup_crossfilter_agg(lookup_info, tbl_name, dim,
+                                        r_filters(), r_range_filters()),
                 error = function(e) NULL
               )
               if (!is.null(result)) return(result)
             }
-            dplyr_crossfilter_agg(
-              info$tables, find_key_column, tbl_name, dim, cf, rf
-            )
+            # Fallback: agg on raw table directly (no-FK / single-table case)
+            df <- crossfilter_data_for_dim(tbl_name, dim)
+            if (is.null(df) || nrow(df) == 0) {
+              return(data.frame(x = character(0), .count = integer(0),
+                                stringsAsFactors = FALSE))
+            }
+            agg <- dplyr::summarise(df, .count = dplyr::n(),
+                                     .by = dplyr::all_of(dim))
+            agg <- dplyr::mutate(agg, !!dim := as.character(.data[[dim]]))
+            agg[[dim]][is.na(agg[[dim]])] <- CROSSFILTER_NA
+            agg[[dim]][agg[[dim]] == ""] <- CROSSFILTER_EMPTY
+            dplyr::arrange(agg, dplyr::desc(.data[[".count"]]))
           }
 
           # --- Aggregated measure for a categorical dimension ---
@@ -834,57 +701,31 @@ dm_crossfilter_server_factory <- function(active_dims, filters, range_filters, m
           filtered_row_count <- shiny::reactive({
             t0 <- proc.time()[["elapsed"]]
             on.exit(r_last_timing(round((proc.time()[["elapsed"]] - t0) * 1000)))
-            # Use lookup backend (avoids semi-joins entirely)
-            if (r_backend() == "lookup") {
-              lookup_info <- r_lookup_info()
-              if (!is.null(lookup_info)) {
-                info <- dm_info()
-                result <- tryCatch(
-                  lookup_crossfilter_counts(lookup_info, info$tables,
-                                             info$table_names,
-                                             r_filters(), r_range_filters()),
-                  error = function(e) NULL
-                )
-                if (!is.null(result)) return(result)
-              }
-            }
+            lookup_info <- r_lookup_info()
             info <- dm_info()
+            if (!is.null(lookup_info)) {
+              result <- tryCatch(
+                lookup_crossfilter_counts(lookup_info, info$tables,
+                                           info$table_names,
+                                           r_filters(), r_range_filters()),
+                error = function(e) NULL
+              )
+              if (!is.null(result)) return(result)
+            }
+            # Fallback: count rows per table directly (no-FK / single-table case)
             cf <- r_filters()
             rf <- r_range_filters()
-            backend <- r_backend()
-
-            result <- NULL
-            if (backend == "duckdb") {
-              result <- tryCatch(
-                duckdb_crossfilter_counts(
-                  duck_con, info$tables, info$table_names, find_key_column,
-                  cf, rf
-                ),
-                error = function(e) NULL
-              )
-            } else if (backend == "duckplyr") {
-              dt <- r_duck_tables()
-              cc <- r_col_classes()
-              if (!is.null(dt)) {
-                result <- tryCatch(
-                  duckplyr_crossfilter_counts(
-                    dt, cc, find_key_column, info$table_names, cf, rf
-                  ),
-                  error = function(e) NULL
-                )
-              }
-            } else if (backend == "dm") {
-              result <- tryCatch(
-                dm_crossfilter_counts(data(), info$table_names, cf, rf),
-                error = function(e) NULL
-              )
+            total <- 0L
+            filtered <- 0L
+            for (tbl_name in info$table_names) {
+              df <- info$tables[[tbl_name]]
+              total <- total + nrow(df)
+              cat_f <- cf[[tbl_name]] %||% list()
+              rng_f <- rf[[tbl_name]] %||% list()
+              filtered <- filtered + nrow(apply_crossfilter_filters(df, cat_f, rng_f))
             }
-            if (is.null(result)) {
-              result <- dplyr_crossfilter_counts(
-                info$tables, find_key_column, info$table_names, cf, rf
-              )
-            }
-            result
+            list(total = total, filtered = filtered,
+                 n_tables = length(info$table_names))
           })
 
           # --- Handle row clicks ---
@@ -2283,8 +2124,6 @@ dm_crossfilter_server_factory <- function(active_dims, filters, range_filters, m
 
           # --- Filter controls (advanced options section) ---
           output$filter_controls <- shiny::renderUI({
-            backend <- r_backend()
-
             # Build measure choices from column_info_per_table
             col_info <- column_info_per_table()
             single_tbl <- is_single_table()
@@ -2306,10 +2145,6 @@ dm_crossfilter_server_factory <- function(active_dims, filters, range_filters, m
             }
             names(measure_choices) <- measure_labels
 
-            backend_choices <- stats::setNames(
-              available_backends, available_backends
-            )
-
             shiny::div(
               class = "dm-cf-advanced-grid",
               # Measure selector
@@ -2330,16 +2165,6 @@ dm_crossfilter_server_factory <- function(active_dims, filters, range_filters, m
                   choices = c(Sum = "sum", Average = "mean", Median = "median",
                               Min = "min", Max = "max"),
                   selected = r_agg_func(),
-                  width = "100%"
-                )
-              ),
-              # Backend selector
-              shiny::div(
-                shiny::selectizeInput(
-                  ns("backend_switch"),
-                  label = "Backend",
-                  choices = backend_choices,
-                  selected = backend,
                   width = "100%"
                 )
               )

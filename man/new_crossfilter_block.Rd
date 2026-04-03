@@ -24,6 +24,8 @@ E.g., \code{list(Sepal.Length = c(5, 7))}}
 \item{active_dims}{Named list of active filter columns (per-table format,
 but only one table \code{.tbl}). E.g., \code{list(.tbl = c("Species", "Sepal.Width"))}}
 
+\item{agg_func}{Optional aggregation function name (e.g., \code{"sum"}, \code{"mean"})}
+
 \item{...}{Forwarded to \code{\link[blockr.core:new_transform_block]{blockr.core::new_transform_block()}}}
 }
 \value{
@@ -32,7 +34,7 @@ A blockr transform block that returns filtered data
 \description{
 A crossfilter block for a single data frame. Internally wraps the data as a
 one-table dm object and delegates to the dm crossfilter engine, giving it
-search UI, duckdb backend, date sliders, and density overlays for free.
+search UI, date sliders, and density overlays for free.
 }
 \examples{
 if (interactive()) {

@@ -37,16 +37,9 @@ The **output** of the crossfilter block is a single `dm::dm_filter()` expression
 
 The **interactive widgets** are the expensive part. There is no way to compute N different exclude-one filter combinations from a single filter call. Each combination is a distinct query.
 
-## Backend comparison
+## Lookup backend
 
-| Backend | Per-call cost | Why |
-|---------|--------------|-----|
-| duckdb | ~5-15ms | Single SQL string, DuckDB optimizer |
-| dplyr | ~10-30ms | Pre-extracted data frames, key intersection in R |
-| duckplyr | ~15-40ms | Lazy query plan, materialized at collect |
-| dm | ~50-200ms | Table extraction + rlang expr building + dm FK propagation + collect |
-
-The dm backend is slowest because it re-extracts tables from the dm object, builds rlang expressions, and runs `dm::dm_filter()` (which internally does semi-joins) on **every call**. The other backends work on pre-extracted data or push single SQL queries.
+The lookup backend pre-joins each child table with the parent to create flat lookup tables. Filtering then becomes cheap column operations on pre-joined data (~5-10ms per call). This avoids O(N×T) semi-joins per filter interaction.
 
 ## When `dm_filter()` alone is sufficient
 

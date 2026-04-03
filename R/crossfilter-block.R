@@ -10,7 +10,7 @@ utils::globalVariables(c(".count", ".selected"))
 #'
 #' A crossfilter block for a single data frame. Internally wraps the data as a
 #' one-table dm object and delegates to the dm crossfilter engine, giving it
-#' search UI, duckdb backend, date sliders, and density overlays for free.
+#' search UI, date sliders, and density overlays for free.
 #'
 #' @param filters Named list of categorical filters. Each element is a character
 #'   vector of selected values.
@@ -20,6 +20,7 @@ utils::globalVariables(c(".count", ".selected"))
 #'   E.g., `list(Sepal.Length = c(5, 7))`
 #' @param active_dims Named list of active filter columns (per-table format,
 #'   but only one table `.tbl`). E.g., `list(.tbl = c("Species", "Sepal.Width"))`
+#' @param agg_func Optional aggregation function name (e.g., `"sum"`, `"mean"`)
 #' @param ... Forwarded to [blockr.core::new_transform_block()]
 #'
 #' @return A blockr transform block that returns filtered data
