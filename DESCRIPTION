@@ -44,6 +44,7 @@ Suggests:
     blockr.dag,
     blockr.dock,
     bslib,
+    jsonlite,
     qs,
     rio,
     testthat (>= 3.0.0),

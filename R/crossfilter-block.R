@@ -20,6 +20,7 @@ utils::globalVariables(c(".count", ".selected"))
 #'   E.g., `list(Sepal.Length = c(5, 7))`
 #' @param active_dims Named list of active filter columns (per-table format,
 #'   but only one table `.tbl`). E.g., `list(.tbl = c("Species", "Sepal.Width"))`
+#' @param agg_func Optional aggregation function name (e.g., `"sum"`, `"mean"`)
 #' @param ... Forwarded to [blockr.core::new_transform_block()]
 #'
 #' @return A blockr transform block that returns filtered data
