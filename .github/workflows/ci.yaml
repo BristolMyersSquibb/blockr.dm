@@ -1,0 +1,15 @@
+on:
+  push:
+    branches: main
+  pull_request:
+    branches: main
+  merge_group:
+
+name: ci
+
+jobs:
+  ci:
+    uses: cynkra/blockr.ci/.github/workflows/ci.yaml@main
+    secrets: inherit
+    permissions:
+      contents: write
