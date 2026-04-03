@@ -10,7 +10,7 @@ utils::globalVariables(c(".count", ".selected"))
 #'
 #' A crossfilter block for a single data frame. Internally wraps the data as a
 #' one-table dm object and delegates to the dm crossfilter engine, giving it
-#' search UI, duckdb backend, date sliders, and density overlays for free.
+#' search UI, date sliders, and density overlays for free.
 #'
 #' @param filters Named list of categorical filters. Each element is a character
 #'   vector of selected values.

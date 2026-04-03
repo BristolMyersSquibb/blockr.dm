@@ -547,124 +547,94 @@ test_that("build_crossfilter_lookups builds correct lookup for parent+child", {
   expect_equal(info$dim_source[["AESEV"]], "adae")
 })
 
-test_that("lookup_crossfilter_agg matches dplyr backend for child dim", {
+test_that("lookup_crossfilter_agg correct for child dim", {
   tables <- make_test_tables()
   pks_fks <- make_test_pks_fks()
   active_dims <- list(adsl = c("SEX"), adae = c("AESEV"))
+  # SEX="F" → keys {SUBJ-2, SUBJ-4}
   cat_filters <- list(adsl = list(SEX = "F"))
   rng_filters <- list()
-
-  find_key <- function(tbl) {
-    if (tbl == "adsl") "USUBJID" else "USUBJID"
-  }
 
   info <- build_crossfilter_lookups(
     tables, active_dims, pks_fks$pks, pks_fks$fks
   )
 
-  # Lookup agg for AESEV (child dim)
-  lookup_result <- lookup_crossfilter_agg(
+  # Agg for AESEV (child dim), exclude-own-dim
+  # adae rows for SUBJ-2,4: MODERATE(1), SEVERE(1)
+  result <- lookup_crossfilter_agg(
     info, "adae", "AESEV", cat_filters, rng_filters
   )
+  sorted <- result[order(result$AESEV), ]
 
-  # dplyr agg for comparison
-  dplyr_result <- dplyr_crossfilter_agg(
-    tables, find_key, "adae", "AESEV", cat_filters, rng_filters
-  )
-
-  # Sort both for comparison
-  lookup_sorted <- lookup_result[order(lookup_result$AESEV), ]
-  dplyr_sorted <- dplyr_result[order(dplyr_result$AESEV), ]
-
-  expect_equal(lookup_sorted$AESEV, dplyr_sorted$AESEV)
-  expect_equal(lookup_sorted$.count, dplyr_sorted$.count)
+  expect_equal(sorted$AESEV, c("MODERATE", "SEVERE"))
+  expect_equal(sorted$.count, c(1L, 1L))
 })
 
-test_that("lookup_crossfilter_agg matches dplyr for parent dim", {
+test_that("lookup_crossfilter_agg correct for parent dim", {
   tables <- make_test_tables()
   pks_fks <- make_test_pks_fks()
   active_dims <- list(adsl = c("SEX"), adae = c("AESEV"))
+  # AESEV="SEVERE" → keys {SUBJ-1, SUBJ-4}
   cat_filters <- list(adae = list(AESEV = "SEVERE"))
   rng_filters <- list()
 
-  find_key <- function(tbl) "USUBJID"
-
   info <- build_crossfilter_lookups(
     tables, active_dims, pks_fks$pks, pks_fks$fks
   )
 
-  # Lookup agg for SEX (parent dim)
-  lookup_result <- lookup_crossfilter_agg(
+  # Agg for SEX (parent dim), exclude-own-dim
+  # Keys {SUBJ-1, SUBJ-4}: SEX = M(1), F(1)
+  result <- lookup_crossfilter_agg(
     info, "adsl", "SEX", cat_filters, rng_filters
   )
+  sorted <- result[order(result$SEX), ]
 
-  # dplyr agg for comparison
-  dplyr_result <- dplyr_crossfilter_agg(
-    tables, find_key, "adsl", "SEX", cat_filters, rng_filters
-  )
-
-  lookup_sorted <- lookup_result[order(lookup_result$SEX), ]
-  dplyr_sorted <- dplyr_result[order(dplyr_result$SEX), ]
-
-  expect_equal(lookup_sorted$SEX, dplyr_sorted$SEX)
-  expect_equal(lookup_sorted$.count, dplyr_sorted$.count)
+  expect_equal(sorted$SEX, c("F", "M"))
+  expect_equal(sorted$.count, c(1L, 1L))
 })
 
-test_that("lookup_crossfilter_counts matches dplyr backend", {
+test_that("lookup_crossfilter_counts correct with filter", {
   tables <- make_test_tables()
   pks_fks <- make_test_pks_fks()
   active_dims <- list(adsl = c("SEX"), adae = c("AESEV"))
+  # SEX="F" → keys {SUBJ-2, SUBJ-4}
   cat_filters <- list(adsl = list(SEX = "F"))
   rng_filters <- list()
-
-  find_key <- function(tbl) "USUBJID"
 
   info <- build_crossfilter_lookups(
     tables, active_dims, pks_fks$pks, pks_fks$fks
   )
 
-  lookup_counts <- lookup_crossfilter_counts(
+  counts <- lookup_crossfilter_counts(
     info, tables, c("adsl", "adae"), cat_filters, rng_filters
   )
 
-  dplyr_counts <- dplyr_crossfilter_counts(
-    tables, find_key, c("adsl", "adae"), cat_filters, rng_filters
-  )
-
-  expect_equal(lookup_counts$total, dplyr_counts$total)
-  expect_equal(lookup_counts$filtered, dplyr_counts$filtered)
-  expect_equal(lookup_counts$n_tables, dplyr_counts$n_tables)
+  # total: 5 adsl + 5 adae = 10
+  # filtered: 2 adsl (SUBJ-2,4) + 2 adae (SUBJ-2/MODERATE, SUBJ-4/SEVERE) = 4
+  expect_equal(counts$total, 10L)
+  expect_equal(counts$filtered, 4L)
+  expect_equal(counts$n_tables, 2L)
 })
 
-test_that("lookup_crossfilter_data matches dplyr for child table", {
+test_that("lookup_crossfilter_data correct for child table", {
   tables <- make_test_tables()
   pks_fks <- make_test_pks_fks()
   active_dims <- list(adsl = c("SEX"), adae = c("AESEV"))
+  # SEX="F" → keys {SUBJ-2, SUBJ-4}
   cat_filters <- list(adsl = list(SEX = "F"))
   rng_filters <- list()
-
-  find_key <- function(tbl) "USUBJID"
 
   info <- build_crossfilter_lookups(
     tables, active_dims, pks_fks$pks, pks_fks$fks
   )
 
   # Data for AESEV dim (child), excludes AESEV from own filters
-  lookup_data <- lookup_crossfilter_data(
+  result <- lookup_crossfilter_data(
     info, "adae", "AESEV", cat_filters, rng_filters
   )
 
-  dplyr_data <- dplyr_crossfilter_data(
-    tables, find_key, "adae", "AESEV", cat_filters, rng_filters
-  )
-
-  # Same key set
-  expect_equal(
-    sort(unique(lookup_data$USUBJID)),
-    sort(unique(dplyr_data$USUBJID))
-  )
-  # Same row count
-  expect_equal(nrow(lookup_data), nrow(dplyr_data))
+  expect_equal(sort(unique(result$USUBJID)), c("SUBJ-2", "SUBJ-4"))
+  expect_equal(nrow(result), 2L)
 })
 
 test_that("lookup with no filters returns all data", {
@@ -717,19 +687,16 @@ test_that("lookup multi-child sibling intersection", {
   info <- build_crossfilter_lookups(tables, active_dims, pks, fks)
   expect_equal(length(info$lookups), 2)  # one per child
 
-  find_key <- function(tbl) "USUBJID"
-
   # Filter AESEV=SEVERE → only S2 has severe AEs
   # S2 is in adlb → allowed keys = {S2}
   cat_filters <- list(adae = list(AESEV = "SEVERE"))
 
-  lookup_counts <- lookup_crossfilter_counts(
+  counts <- lookup_crossfilter_counts(
     info, tables, c("adsl", "adae", "adlb"), cat_filters, list()
   )
-  dplyr_counts <- dplyr_crossfilter_counts(
-    tables, find_key, c("adsl", "adae", "adlb"), cat_filters, list()
-  )
 
-  expect_equal(lookup_counts$total, dplyr_counts$total)
-  expect_equal(lookup_counts$filtered, dplyr_counts$filtered)
+  # total: 4 adsl + 3 adae + 3 adlb = 10
+  # filtered: 1 adsl (S2) + 1 adae (S2/SEVERE) + 1 adlb (S2/ALT) = 3
+  expect_equal(counts$total, 10L)
+  expect_equal(counts$filtered, 3L)
 })

@@ -32,7 +32,7 @@ A blockr transform block that returns filtered data
 \description{
 A crossfilter block for a single data frame. Internally wraps the data as a
 one-table dm object and delegates to the dm crossfilter engine, giving it
-search UI, duckdb backend, date sliders, and density overlays for free.
+search UI, date sliders, and density overlays for free.
 }
 \examples{
 if (interactive()) {
