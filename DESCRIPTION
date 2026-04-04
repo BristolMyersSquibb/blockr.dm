@@ -45,7 +45,6 @@ Suggests:
     blockr.dock,
     bslib,
     jsonlite,
-    qs,
     rio,
     testthat (>= 3.0.0),
     nycflights13,

@@ -10,7 +10,6 @@
 #'   - A ZIP file (.zip): Extracted files become dm tables
 #'   - A directory path: All data files in directory become dm tables
 #'   - An RDS file (.rds): Can contain a dm, data.frame, or list of data.frames
-#'   - A QS file (.qs): Can contain a dm, data.frame, or list of data.frames
 #'   - An RData file (.rdata, .rda): All data.frames become dm tables
 #' @param selected_tables Character vector. Optional subset of tables to include
 #'   in the output dm. Default is NULL (all tables).
@@ -33,7 +32,7 @@
 #' - Subdirectories are not traversed (flat read)
 #' - Table names are derived from file names (without extension)
 #'
-#' **Serialized files (.rds, .qs):**
+#' **Serialized files (.rds):**
 #' - If the file contains a dm object, it is returned directly
 #' - If the file contains a data.frame, it is wrapped in a dm
 #' - If the file contains a list of data.frames, each becomes a dm table
@@ -417,7 +416,7 @@ new_dm_read_block <- function(
                 inputId = ns("file_upload"),
                 label = NULL,
                 multiple = FALSE,
-                accept = c(".xlsx", ".xls", ".zip", ".rds", ".qs", ".rdata", ".rda")
+                accept = c(".xlsx", ".xls", ".zip", ".rds", ".rdata", ".rda")
               )
             ),
             blockr.io::path_input_ui(
@@ -619,11 +618,7 @@ discover_dm_tables <- function(path, input_type) {
                    stringsAsFactors = FALSE)
       },
       serialized = {
-        obj <- if (tolower(tools::file_ext(path)) == "qs") {
-          qs::qread(path)
-        } else {
-          readRDS(path)
-        }
+        obj <- readRDS(path)
         if (inherits(obj, "dm")) {
           nms <- names(obj)
           sizes <- vapply(nms, function(n) {
@@ -680,7 +675,7 @@ detect_dm_input_type <- function(path) {
   switch(ext,
     xlsx = , xls = "excel",
     zip = "zip",
-    rds = , qs = "serialized",
+    rds = "serialized",
     rdata = , rda = "rdata",
     "unknown"
   )
@@ -849,11 +844,7 @@ dm_read_expr_directory <- function(path, selected = NULL) {
 dm_read_expr_serialized <- function(path, selected = NULL) {
   bquote(
     local({
-      obj <- if (tolower(tools::file_ext(.(path))) == "qs") {
-        qs::qread(.(path))
-      } else {
-        readRDS(.(path))
-      }
+      obj <- readRDS(.(path))
 
       if (inherits(obj, "dm")) {
         if (!is.null(.(selected))) {

@@ -13,7 +13,6 @@ new_dm_read_block(path = character(), selected_tables = NULL, ...)
 \item A ZIP file (.zip): Extracted files become dm tables
 \item A directory path: All data files in directory become dm tables
 \item An RDS file (.rds): Can contain a dm, data.frame, or list of data.frames
-\item A QS file (.qs): Can contain a dm, data.frame, or list of data.frames
 \item An RData file (.rdata, .rda): All data.frames become dm tables
 }}
 
@@ -54,7 +53,7 @@ serialization formats (RDS, QS, RData).
 \item Table names are derived from file names (without extension)
 }
 
-\strong{Serialized files (.rds, .qs):}
+\strong{Serialized files (.rds):}
 \itemize{
 \item If the file contains a dm object, it is returned directly
 \item If the file contains a data.frame, it is wrapped in a dm
