@@ -225,7 +225,7 @@ new_cdisc_dm_block <- function(set_keys = TRUE, dedup_cols = TRUE, ...) {
                 remove_args <- lapply(cols, function(col) {
                   bquote(-.(as.name(col)))
                 })
-                # Avoid |> inside bquote (pipe desugaring interferes with .())
+                # Pipe operator inside bquote breaks substitution
                 body_exprs <- c(body_exprs, list(
                   bquote(result <- dm::dm_zoom_to(result, .(tbl_sym)))
                 ))
