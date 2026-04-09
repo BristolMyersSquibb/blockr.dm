@@ -24,10 +24,24 @@
 #' @export
 new_dm_example_block <- function(dataset = "bi_star_schema", ...) {
 
+  # Resolve the initial value once so the UI can use a plain string even when
+  # `dataset` is already a reactiveVal (injected by external_ctrl).
+  init_dataset <- if (inherits(dataset, "reactiveVal")) {
+    shiny::isolate(dataset())
+  } else {
+    dataset
+  }
+
   blockr.core::new_data_block(
     server = function(id) {
       shiny::moduleServer(id, function(input, output, session) {
-        dat <- shiny::reactiveVal(dataset)
+        # as_rv: if dataset is already a reactiveVal (injected by
+        # external_ctrl), reuse it; otherwise create a fresh one.
+        dat <- if (inherits(dataset, "reactiveVal")) {
+          dataset
+        } else {
+          shiny::reactiveVal(dataset)
+        }
 
         shiny::observeEvent(
           shiny::req(input$dataset),
@@ -65,7 +79,7 @@ new_dm_example_block <- function(dataset = "bi_star_schema", ...) {
         inputId = ns("dataset"),
         label = "DM Dataset",
         choices = dm_example_choices(),
-        selected = dataset
+        selected = init_dataset
       )
     },
     allow_empty_state = TRUE,

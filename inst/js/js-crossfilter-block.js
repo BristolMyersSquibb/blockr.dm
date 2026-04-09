@@ -247,18 +247,14 @@
       this.activeDims = msg.active_dims || {};
 
       // Create crossfilter instances from columnar data
-      // Shiny delivers pre-serialized json verbatim, so lookups arrive as
-      // parsed columnar objects: { col1: [...], col2: [...] }
+      // Shiny delivers pre-serialized json verbatim as parsed objects
       for (const [childTable, colsOrRows] of Object.entries(msg.lookups || {})) {
         let rows;
         if (typeof colsOrRows === 'string') {
-          // Fallback: JSON string — parse and pivot
-          const cols = JSON.parse(colsOrRows);
-          rows = columnsToRows(cols);
+          rows = columnsToRows(JSON.parse(colsOrRows));
         } else if (Array.isArray(colsOrRows)) {
-          rows = colsOrRows; // already row-oriented
+          rows = colsOrRows;
         } else {
-          // Columnar object — pivot to rows
           rows = columnsToRows(colsOrRows);
         }
         const cf = crossfilter(rows);
@@ -306,7 +302,7 @@
 
       const elapsed = Math.round(performance.now() - t0);
       this._lastSetDataMs = elapsed;
-      console.log(`[js-crossfilter] setData: ${elapsed}ms (${Object.keys(this.instances).length} tables, ${Object.keys(this.dimSource).length} dims)`);
+      console.log(`[js-crossfilter] setData: ${elapsed}ms (${childTables.length} tables, ${Object.keys(this.dimSource).length} dims)`);
       this._updateStatus();
     }
 

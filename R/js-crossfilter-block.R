@@ -224,7 +224,7 @@ js_crossfilter_server <- function(active_dims, filters, range_filters) {
         }
 
         if (!is.null(lookup_info)) {
-          # Encode NA sentinels and serialize as JSON strings (fast path)
+          # Encode NA sentinels and serialize as columnar JSON (fast path)
           encoded_lookups <- lapply(lookup_info$lookups, function(df) {
             for (cn in names(df)) {
               col <- df[[cn]]
