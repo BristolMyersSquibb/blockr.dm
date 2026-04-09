@@ -8,6 +8,8 @@ new_js_crossfilter_block(
   active_dims = list(),
   filters = list(),
   range_filters = list(),
+  measure = NULL,
+  agg_func = NULL,
   ...
 )
 }
@@ -20,6 +22,12 @@ E.g., \code{list(adae = list(AESEV = c("SEVERE")))}}
 
 \item{range_filters}{Named list of per-table range filters.
 E.g., \code{list(adsl = list(AGE = c(40, 80)))}}
+
+\item{measure}{Measure column as \code{"table.column"} string, or \code{NULL}
+for row counts. E.g., \code{"orders.amount"}.}
+
+\item{agg_func}{Aggregation function: \code{"sum"} or \code{"mean"}. Only used
+when \code{measure} is set.}
 
 \item{...}{Forwarded to \code{\link[blockr.core:new_transform_block]{blockr.core::new_transform_block()}}}
 }

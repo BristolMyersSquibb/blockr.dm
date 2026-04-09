@@ -10,18 +10,22 @@
 #'   E.g., `list(adae = list(AESEV = c("SEVERE")))`
 #' @param range_filters Named list of per-table range filters.
 #'   E.g., `list(adsl = list(AGE = c(40, 80)))`
+#' @param measure Measure column as `"table.column"` string, or `NULL`
+#'   for row counts. E.g., `"orders.amount"`.
+#' @param agg_func Aggregation function: `"sum"` or `"mean"`. Only used
+#'   when `measure` is set.
 #' @param ... Forwarded to [blockr.core::new_transform_block()]
 #'
 #' @return A blockr transform block with client-side crossfiltering
 #'
 #' @export
 new_js_crossfilter_block <- function(
-    active_dims = list(),
-    filters = list(),
-    range_filters = list(),
-    measure = NULL,
-    agg_func = NULL,
-    ...
+  active_dims = list(),
+  filters = list(),
+  range_filters = list(),
+  measure = NULL,
+  agg_func = NULL,
+  ...
 ) {
   blockr.core::new_transform_block(
     server = js_crossfilter_server(
@@ -45,9 +49,12 @@ block_output.js_crossfilter_block <- function(x, result, session) {
   }
   # Data frame or other: use blockr.extra's dynamic renderer if available,
   # otherwise a simple HTML table preview
-  if (requireNamespace("blockr.extra", quietly = TRUE) &&
-      exists("render_dynamic_output", asNamespace("blockr.extra"))) {
-    blockr.extra:::render_dynamic_output(result, x, session)
+  render_fn <- tryCatch(
+    get("render_dynamic_output", asNamespace("blockr.extra")),
+    error = function(e) NULL
+  )
+  if (!is.null(render_fn)) {
+    render_fn(result, x, session)
   } else {
     shiny::renderUI({
       if (!is.data.frame(result)) return(NULL)
@@ -81,7 +88,7 @@ block_ui.js_crossfilter_block <- function(id, x, ...) {
 #' @method block_render_trigger js_crossfilter_block
 #' @export
 block_render_trigger.js_crossfilter_block <- function(
-    x, session = blockr.core::get_session()
+  x, session = blockr.core::get_session()
 ) {
   NULL
 }
@@ -334,7 +341,10 @@ js_crossfilter_server <- function(active_dims, filters, range_filters,
           message(sprintf(
             "[js-crossfilter] R prep: %dms | lookups: %s",
             t_elapsed,
-            paste(names(sizes), round(sizes / 1024), "KB", sep = "=", collapse = ", ")
+            paste(
+              names(sizes), round(sizes / 1024), "KB",
+              sep = "=", collapse = ", "
+            )
           ))
 
           session$sendCustomMessage("js-crossfilter-data", list(
@@ -569,9 +579,15 @@ build_js_lookups_flat <- function(dm_obj, active_dims, measure_col = NULL) {
   } else {
     pks$table[1]
   }
-  parent_key <- if (!is.null(fact_pk)) fact_pk else {
+  if (!is.null(fact_pk)) {
+    parent_key <- fact_pk
+  } else {
     pk_row <- pks[pks$table == parent_table, ]
-    if (nrow(pk_row) > 0) pk_row$pk_col[[1]][[1]] else NULL
+    parent_key <- if (nrow(pk_row) > 0) {
+      pk_row$pk_col[[1]][[1]]
+    } else {
+      NULL
+    }
   }
 
   list(
@@ -591,7 +607,9 @@ build_js_lookups_flat <- function(dm_obj, active_dims, measure_col = NULL) {
 #' Each table gets its own lookup with only its active dims. No cross-table
 #' filtering is possible (no shared key), but within-table filtering works.
 #' @keywords internal
-build_js_lookups_independent <- function(tables, active_dims, measure_col = NULL) {
+build_js_lookups_independent <- function(
+  tables, active_dims, measure_col = NULL
+) {
   lookups <- list()
   dim_source <- list()
 
