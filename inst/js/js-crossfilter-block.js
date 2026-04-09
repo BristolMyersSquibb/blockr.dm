@@ -184,10 +184,11 @@
       this.popoverEl.appendChild(this._aggSection);
 
       // "Clear all" is now in the active dims header row
-      anchor.appendChild(this.popoverEl);
-
       gearHeader.appendChild(anchor);
       this.el.appendChild(gearHeader);
+
+      // Popover appended to container (not anchor) so it respects container width
+      this.el.appendChild(this.popoverEl);
 
       // Close popover on outside click
       document.addEventListener('click', (e) => {
@@ -198,13 +199,13 @@
         }
       });
 
-      // Status bar
-      this.statusEl = el('div', 'dm-cf-status-bar');
-      this.el.appendChild(this.statusEl);
-
       // Filter panels container
       this.panelsEl = el('div', 'jscf-panels');
       this.el.appendChild(this.panelsEl);
+
+      // Status footer (below panels)
+      this.statusEl = el('div', 'jscf-status-footer');
+      this.el.appendChild(this.statusEl);
     }
 
     _togglePopover() {
@@ -633,14 +634,50 @@
       });
       card.appendChild(searchInput);
 
+      // Default sort: count descending
+      card._sortCol = 'count';
+      card._sortDir = 'desc';
+
       // Scrollable table
       const scroll = el('div', 'dm-cf-tw-scroll');
       const table = el('table', 'dm-cf-tw-table');
       const thead = el('thead');
       const headRow = el('tr');
-      headRow.appendChild(el('th', 'dm-cf-tw-th', dim));
-      const countTh = el('th', 'dm-cf-tw-th', 'Count');
+
+      const valueTh = el('th', 'dm-cf-tw-th');
+      const countTh = el('th', 'dm-cf-tw-th');
       countTh.style.width = '130px';
+
+      const updateThLabels = () => {
+        valueTh.innerHTML = '';
+        countTh.innerHTML = '';
+        valueTh.appendChild(document.createTextNode(dim));
+        countTh.appendChild(document.createTextNode('Count'));
+        const iconCls = card._sortDir === 'asc' ? 'jscf-sort-icon jscf-sort-asc'
+          : 'jscf-sort-icon jscf-sort-desc';
+        if (card._sortCol === 'value') {
+          valueTh.appendChild(el('span', iconCls));
+        } else {
+          countTh.appendChild(el('span', iconCls));
+        }
+      };
+      updateThLabels();
+
+      const toggleSort = (col) => {
+        if (card._sortCol === col) {
+          card._sortDir = card._sortDir === 'desc' ? 'asc' : 'desc';
+        } else {
+          card._sortCol = col;
+          card._sortDir = col === 'count' ? 'desc' : 'asc';
+        }
+        updateThLabels();
+        this._renderCategoricalCounts(dim, this.groups[dim].all());
+      };
+
+      valueTh.addEventListener('click', () => toggleSort('value'));
+      countTh.addEventListener('click', () => toggleSort('count'));
+
+      headRow.appendChild(valueTh);
       headRow.appendChild(countTh);
       thead.appendChild(headRow);
       table.appendChild(thead);
@@ -662,9 +699,20 @@
       const gv = (d) => this._getGroupValue(d);
       const hasMeasure = this.measure && this.measure !== '.count';
 
-      const sorted = counts
-        .filter(d => gv(d) > 0 || this._isSelected(dim, d.key))
-        .sort((a, b) => gv(b) - gv(a));
+      const filtered = counts.filter(d => gv(d) > 0 || this._isSelected(dim, d.key));
+
+      // Apply card's sort state
+      const sortCol = card._sortCol || 'count';
+      const sortDir = card._sortDir || 'desc';
+      const sorted = filtered.sort((a, b) => {
+        let cmp;
+        if (sortCol === 'value') {
+          cmp = String(a.key).localeCompare(String(b.key));
+        } else {
+          cmp = gv(a) - gv(b);
+        }
+        return sortDir === 'asc' ? cmp : -cmp;
+      });
 
       const selected = this.filters[dim];
       const selectedSet = selected ? new Set(selected) : null;
@@ -1017,43 +1065,6 @@
       if (childTables.length === 0) return;
 
       const filterEntries = Object.entries(this.filters);
-      const multiTable = Object.keys(this.activeDims).length > 1;
-
-      // Filter chips
-      for (const [dim, value] of filterEntries) {
-        const chip = el('span', 'dm-cf-filter-chip');
-        const src = this.dimSource[dim];
-
-        if (multiTable && src) {
-          chip.appendChild(el('span', 'dm-cf-chip-table', src + '.'));
-        }
-
-        if (Array.isArray(value)) {
-          const display = value.length <= 2
-            ? value.map(v => v === '__NA__' ? 'NA' : v === '__EMPTY__' ? '(empty)' : v).join(', ')
-            : value[0] + ' +' + (value.length - 1);
-          chip.appendChild(document.createTextNode(dim + '=' + display));
-        } else if (value && value.min !== undefined) {
-          const fmt = value.isDate ? fmtDate : fmtNum;
-          chip.appendChild(document.createTextNode(dim + ' [' + fmt(value.min) + '\u2013' + fmt(value.max) + ']'));
-        }
-
-        this.statusEl.appendChild(chip);
-      }
-
-      // Buttons
-      if (filterEntries.length > 0) {
-        const resetBtn = el('button', 'dm-cf-reset-all-btn', ICON_RESET_SM + ' Reset all');
-        resetBtn.addEventListener('click', () => this._resetAllFilters());
-        this.statusEl.appendChild(resetBtn);
-      }
-
-      // "Clear all" is in the gear popover, not the status bar
-
-      // Separator + row count
-      if (filterEntries.length > 0 || Object.keys(this.dimSource).length > 0) {
-        this.statusEl.appendChild(el('span', 'dm-cf-separator'));
-      }
 
       let totalRows = 0;
       let filteredRows = 0;
@@ -1062,16 +1073,24 @@
         filteredRows += this.instances[ct].allFiltered().length;
       }
 
-      const countEl = el('span', 'dm-cf-row-count');
-      if (filterEntries.length > 0) {
-        countEl.textContent = `${fmtCount(filteredRows)} / ${fmtCount(totalRows)} rows`;
-      } else {
-        countEl.textContent = `${fmtCount(totalRows)} rows` +
-          (childTables.length > 1 ? ` in ${childTables.length} tables` : '');
-      }
-      this.statusEl.appendChild(countEl);
+      // Compact footer: "N filters active · X / Y rows · Reset all"
+      const parts = [];
 
-      // Timing stays in console.log only — not shown in UI
+      if (filterEntries.length > 0) {
+        parts.push(`${filterEntries.length} filter${filterEntries.length > 1 ? 's' : ''} active`);
+        parts.push(`${fmtCount(filteredRows)} / ${fmtCount(totalRows)} rows`);
+      } else {
+        parts.push(`${fmtCount(totalRows)} rows` +
+          (childTables.length > 1 ? ` in ${childTables.length} tables` : ''));
+      }
+
+      this.statusEl.appendChild(el('span', 'jscf-status-text', parts.join(' \u00b7 ')));
+
+      if (filterEntries.length > 0) {
+        const resetBtn = el('button', 'jscf-status-reset', 'Reset all');
+        resetBtn.addEventListener('click', () => this._resetAllFilters());
+        this.statusEl.appendChild(resetBtn);
+      }
     }
 
     // -- Shiny communication ------------------------------------------------
