@@ -2,10 +2,10 @@
   'use strict';
 
   // =========================================================================
-  // SVG icons (matching dm-crossfilter-block)
+  // SVG icons (blockr design system)
   // =========================================================================
 
-  const ICON_SEARCH = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="7" r="4.5"/><line x1="10.2" y1="10.2" x2="14" y2="14"/></svg>';
+  const ICON_GEAR = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16"><path d="M9.405 1.05c-.413-1.4-2.397-1.4-2.81 0l-.1.34a1.464 1.464 0 0 1-2.105.872l-.31-.17c-1.283-.698-2.686.705-1.987 1.987l.169.311c.446.82.023 1.841-.872 2.105l-.34.1c-1.4.413-1.4 2.397 0 2.81l.34.1a1.464 1.464 0 0 1 .872 2.105l-.17.31c-.698 1.283.705 2.686 1.987 1.987l.311-.169a1.464 1.464 0 0 1 2.105.872l.1.34c.413 1.4 2.397 1.4 2.81 0l.1-.34a1.464 1.464 0 0 1 2.105-.872l.31.17c1.283.698 2.686-.705 1.987-1.987l-.169-.311a1.464 1.464 0 0 1 .872-2.105l.34-.1c1.4-.413 1.4-2.397 0-2.81l-.34-.1a1.464 1.464 0 0 1-.872-2.105l.17-.31c.698-1.283-.705-2.686-1.987-1.987l-.311.169a1.464 1.464 0 0 1-2.105-.872zM8 10.93a2.929 2.929 0 1 1 0-5.86 2.929 2.929 0 0 1 0 5.858z"/></svg>';
 
   const ICON_RESET = '<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path fill-rule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 1 1 .908-.418A6 6 0 1 1 8 2v1z"/><path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466z"/></svg>';
 
@@ -96,21 +96,50 @@
     _buildDOM() {
       this.el.innerHTML = '';
 
-      // Search bar
-      const searchWrap = el('div', 'dm-cf-search-wrapper');
-      const searchIcon = el('span', 'dm-cf-search-icon', ICON_SEARCH);
-      this.searchInput = el('input', 'dm-cf-search-input');
-      this.searchInput.type = 'text';
-      this.searchInput.placeholder = 'Search columns to add filter...';
-      this.searchInput.autocomplete = 'off';
-      searchWrap.appendChild(searchIcon);
-      searchWrap.appendChild(this.searchInput);
-      this.el.appendChild(searchWrap);
+      // Gear header (top-right)
+      const gearHeader = el('div', 'jscf-gear-header');
+      const anchor = el('div', 'jscf-popover-anchor');
+      this.gearBtn = el('button', 'jscf-gear-btn', ICON_GEAR);
+      this.gearBtn.type = 'button';
+      this.gearBtn.title = 'Add / remove filters';
+      this.gearBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this._togglePopover();
+      });
+      anchor.appendChild(this.gearBtn);
 
-      // Search results dropdown
-      this.searchResultsEl = el('div', 'dm-cf-search-results');
-      this.searchResultsEl.style.display = 'none';
-      this.el.appendChild(this.searchResultsEl);
+      // Popover with search + clear
+      this.popoverEl = el('div', 'jscf-popover');
+      this.searchInput = el('input', 'jscf-popover-search');
+      this.searchInput.type = 'text';
+      this.searchInput.placeholder = 'Search columns\u2026';
+      this.searchInput.autocomplete = 'off';
+      this.searchInput.addEventListener('input', () => this._onSearchInput());
+      this.popoverEl.appendChild(this.searchInput);
+      this.searchResultsEl = el('div', 'jscf-popover-results');
+      this.popoverEl.appendChild(this.searchResultsEl);
+
+      // Clear all filters button (inside popover)
+      this.clearAllBtn = el('button', 'dm-cf-clear-btn jscf-popover-clear',
+        ICON_REMOVE_SM + ' Clear all filters');
+      this.clearAllBtn.addEventListener('click', () => {
+        this._clearAllDimensions();
+        this._closePopover();
+      });
+      this.popoverEl.appendChild(this.clearAllBtn);
+      anchor.appendChild(this.popoverEl);
+
+      gearHeader.appendChild(anchor);
+      this.el.appendChild(gearHeader);
+
+      // Close popover on outside click
+      document.addEventListener('click', (e) => {
+        if (this._popoverOpen && this.popoverEl &&
+            !this.popoverEl.contains(e.target) &&
+            !this.gearBtn.contains(e.target)) {
+          this._closePopover();
+        }
+      });
 
       // Status bar
       this.statusEl = el('div', 'dm-cf-status-bar');
@@ -119,30 +148,32 @@
       // Filter panels container
       this.panelsEl = el('div', 'jscf-panels');
       this.el.appendChild(this.panelsEl);
+    }
 
-      // Search event handlers
-      this.searchInput.addEventListener('input', () => this._onSearchInput());
-      this.searchInput.addEventListener('focus', () => {
-        this._searchFocused = true;
-        this._onSearchInput();
-      });
-      this.searchInput.addEventListener('blur', () => {
-        // Delay to allow click on result
-        setTimeout(() => {
-          this._searchFocused = false;
-          this.searchResultsEl.style.display = 'none';
-        }, 200);
-      });
+    _togglePopover() {
+      this._popoverOpen ? this._closePopover() : this._openPopover();
+    }
+    _openPopover() {
+      this.popoverEl.style.display = 'block';
+      this._popoverOpen = true;
+      this.gearBtn.classList.add('jscf-gear-active');
+      this.searchInput.value = '';
+      this._onSearchInput();
+      this.searchInput.focus();
+    }
+    _closePopover() {
+      this.popoverEl.style.display = 'none';
+      this._popoverOpen = false;
+      this.gearBtn.classList.remove('jscf-gear-active');
     }
 
     // -- Search bar ----------------------------------------------------------
 
     _onSearchInput() {
       const query = this.searchInput.value.trim().toLowerCase();
-      if (!this._searchFocused) {
-        this.searchResultsEl.style.display = 'none';
-        return;
-      }
+
+      // Show active dims with remove buttons
+      this._renderActiveDimsInPopover(query);
 
       // Build list of available (non-active) columns
       const results = [];
@@ -168,11 +199,9 @@
 
       this.searchResultsEl.innerHTML = '';
       if (results.length === 0) {
-        const empty = el('div', 'dm-cf-search-empty',
-          query ? 'No matching columns' : 'All columns are active');
-        this.searchResultsEl.appendChild(empty);
+        this.searchResultsEl.appendChild(el('div', 'jscf-search-empty',
+          query ? 'No matching columns' : 'All columns are active'));
       } else {
-        // Group by table
         const grouped = {};
         for (const r of results) {
           (grouped[r.tbl] = grouped[r.tbl] || []).push(r);
@@ -181,40 +210,78 @@
         for (const [tbl, items] of Object.entries(grouped)) {
           if (multiTable) {
             this.searchResultsEl.appendChild(
-              el('div', 'dm-cf-search-group-header', tbl)
+              el('div', 'jscf-search-group-header', tbl)
             );
           }
           for (const item of items) {
-            const row = el('div', 'dm-cf-search-item');
-            row.appendChild(el('span', 'dm-cf-search-item-icon',
+            const row = el('div', 'jscf-search-item');
+            row.appendChild(el('span', 'jscf-search-item-icon',
               TYPE_ICONS[item.type] || '\u2026'));
 
-            const nameEl = el('span', 'dm-cf-search-item-name', item.dim);
+            const nameEl = el('span', 'jscf-search-item-name', item.dim);
             if (item.label) {
-              nameEl.appendChild(el('span', 'dm-cf-search-item-label', item.label));
+              nameEl.appendChild(el('span', 'jscf-search-item-label', item.label));
             }
             row.appendChild(nameEl);
 
-            const badgeCls = item.type === 'date' ? 'dm-cf-badge-date'
-              : item.type === 'range' ? 'dm-cf-badge-numeric'
-              : 'dm-cf-badge-categorical';
+            const badgeCls = item.type === 'date' ? 'jscf-badge-date'
+              : item.type === 'range' ? 'jscf-badge-numeric'
+              : 'jscf-badge-categorical';
             const badgeText = item.type === 'date' ? 'Date'
               : item.type === 'range' ? 'Numeric' : 'Categorical';
             row.appendChild(
-              el('span', `dm-cf-search-item-badge ${badgeCls}`, badgeText)
+              el('span', `jscf-search-item-badge ${badgeCls}`, badgeText)
             );
 
             row.addEventListener('click', () => {
               this._addDimension(item.tbl, item.dim);
-              this.searchInput.value = '';
-              this.searchInput.blur();
-              this.searchResultsEl.style.display = 'none';
+              this._closePopover();
             });
             this.searchResultsEl.appendChild(row);
           }
         }
       }
-      this.searchResultsEl.style.display = '';
+    }
+
+    _renderActiveDimsInPopover(query) {
+      // Show/update the active dims section in the popover
+      if (!this._activeDimsEl) {
+        this._activeDimsEl = el('div', 'jscf-active-dims');
+        // Insert before search results
+        this.popoverEl.insertBefore(this._activeDimsEl, this.searchResultsEl);
+      }
+      this._activeDimsEl.innerHTML = '';
+
+      const activeDims = [];
+      for (const [tbl, dims] of Object.entries(this.activeDims)) {
+        for (const dim of asArray(dims)) {
+          activeDims.push({ tbl, dim });
+        }
+      }
+
+      if (activeDims.length === 0) return;
+
+      // Label
+      const label = el('div', 'jscf-active-dims-label', 'Active filters');
+      this._activeDimsEl.appendChild(label);
+
+      const chipWrap = el('div', 'jscf-active-dims-chips');
+      for (const { tbl, dim } of activeDims) {
+        // Filter by search query
+        if (query && !dim.toLowerCase().includes(query)) continue;
+
+        const chip = el('span', 'jscf-active-chip');
+        chip.appendChild(document.createTextNode(dim));
+        const removeX = el('button', 'jscf-active-chip-x', '\u00d7');
+        removeX.title = `Remove ${dim}`;
+        removeX.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this._removeDimension(tbl, dim);
+        });
+        chip.appendChild(removeX);
+        chipWrap.appendChild(chip);
+      }
+      this._activeDimsEl.appendChild(chipWrap);
     }
 
     _addDimension(tbl, dim) {
@@ -397,11 +464,7 @@
       const resetBtn = el('button', 'dm-cf-reset-btn', ICON_RESET);
       resetBtn.title = 'Reset filter';
       resetBtn.addEventListener('click', () => this._clearFilter(dim));
-      const removeBtn = el('button', 'dm-cf-remove-btn', ICON_REMOVE);
-      removeBtn.title = 'Remove filter';
-      removeBtn.addEventListener('click', () => this._removeDimension(tbl, dim));
       actions.appendChild(resetBtn);
-      actions.appendChild(removeBtn);
       header.appendChild(actions);
       card.appendChild(header);
 
@@ -533,11 +596,7 @@
       const resetBtn = el('button', 'dm-cf-reset-btn', ICON_RESET);
       resetBtn.title = 'Reset filter';
       resetBtn.addEventListener('click', () => this._clearFilter(dim));
-      const removeBtn = el('button', 'dm-cf-remove-btn', ICON_REMOVE);
-      removeBtn.title = 'Remove filter';
-      removeBtn.addEventListener('click', () => this._removeDimension(tbl, dim));
       actions.appendChild(resetBtn);
-      actions.appendChild(removeBtn);
       header.appendChild(actions);
       card.appendChild(header);
 
@@ -792,11 +851,7 @@
         this.statusEl.appendChild(resetBtn);
       }
 
-      if (Object.keys(this.dimSource).length > 0) {
-        const clearBtn = el('button', 'dm-cf-clear-btn', ICON_REMOVE_SM + ' Clear all');
-        clearBtn.addEventListener('click', () => this._clearAllDimensions());
-        this.statusEl.appendChild(clearBtn);
-      }
+      // "Clear all" is in the gear popover, not the status bar
 
       // Separator + row count
       if (filterEntries.length > 0 || Object.keys(this.dimSource).length > 0) {
@@ -819,14 +874,7 @@
       }
       this.statusEl.appendChild(countEl);
 
-      // Show last setData timing (R round-trip indicator)
-      if (this._lastSetDataMs != null) {
-        const timing = el('span', 'dm-cf-row-count');
-        timing.style.color = '#b0b7c3';
-        timing.style.fontSize = '10px';
-        timing.textContent = `${this._lastSetDataMs}ms`;
-        this.statusEl.appendChild(timing);
-      }
+      // Timing stays in console.log only — not shown in UI
     }
 
     // -- Shiny communication ------------------------------------------------

@@ -157,12 +157,9 @@ js_crossfilter_server <- function(active_dims, filters, range_filters) {
       })
 
       # --- State ---
-      as_rv <- function(x, default = x) {
-        if (inherits(x, "reactiveVal")) x else shiny::reactiveVal(default)
-      }
-      r_active_dims <- as_rv(active_dims)
-      r_filters <- as_rv(filters)
-      r_range_filters <- as_rv(range_filters)
+      r_active_dims <- shiny::reactiveVal(active_dims)
+      r_filters <- shiny::reactiveVal(filters)
+      r_range_filters <- shiny::reactiveVal(range_filters)
 
       # --- Add/remove filter dimensions from JS ---
       shiny::observeEvent(input$add_filter, {
@@ -323,7 +320,7 @@ js_crossfilter_server <- function(active_dims, filters, range_filters) {
               info <- dm_info()
               tbl_df <- info$tables[[tbl]]
               for (dim in names(tbl_rng)) {
-                rng <- tbl_rng[[dim]]
+                rng <- unlist(tbl_rng[[dim]])
                 if (!is.null(rng) && length(rng) == 2) {
                   is_date_col <- dim %in% names(tbl_df) &&
                     inherits(tbl_df[[dim]], c("Date", "POSIXct", "POSIXlt"))
