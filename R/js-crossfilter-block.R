@@ -40,13 +40,42 @@ new_js_crossfilter_block <- function(
 #' @method block_output js_crossfilter_block
 #' @export
 block_output.js_crossfilter_block <- function(x, result, session) {
-  block_output.dm_block(x, result, session)
+  if (inherits(result, "dm")) {
+    return(block_output.dm_block(x, result, session))
+  }
+  # Data frame or other: use blockr.extra's dynamic renderer if available,
+  # otherwise a simple HTML table preview
+  if (requireNamespace("blockr.extra", quietly = TRUE) &&
+      exists("render_dynamic_output", asNamespace("blockr.extra"))) {
+    blockr.extra:::render_dynamic_output(result, x, session)
+  } else {
+    shiny::renderUI({
+      if (!is.data.frame(result)) return(NULL)
+      dat <- utils::head(result, 100)
+      shiny::tags$div(
+        style = "max-height: 400px; overflow: auto;",
+        shiny::tags$table(
+          class = "table table-sm table-striped",
+          shiny::tags$thead(shiny::tags$tr(
+            lapply(names(dat), function(n) shiny::tags$th(n))
+          )),
+          shiny::tags$tbody(
+            lapply(seq_len(nrow(dat)), function(i) {
+              shiny::tags$tr(lapply(dat[i, ], function(v) {
+                shiny::tags$td(as.character(v))
+              }))
+            })
+          )
+        )
+      )
+    })
+  }
 }
 
 #' @method block_ui js_crossfilter_block
 #' @export
 block_ui.js_crossfilter_block <- function(id, x, ...) {
-  block_ui.dm_block(id, x, ...)
+  shiny::uiOutput(shiny::NS(id, "result"))
 }
 
 #' @method block_render_trigger js_crossfilter_block
@@ -66,10 +95,25 @@ js_crossfilter_server <- function(active_dims, filters, range_filters,
     shiny::moduleServer(id, function(input, output, session) {
       ns <- session$ns
 
+      # --- Coerce input: accept data.frame or dm ---
+      r_input_is_df <- shiny::reactiveVal(FALSE)
+
+      dm_data <- shiny::reactive({
+        d <- data()
+        if (is.data.frame(d)) {
+          r_input_is_df(TRUE)
+          dm::dm(.tbl = d)
+        } else {
+          shiny::req(inherits(d, "dm"))
+          tbl_names <- names(dm::dm_get_tables(d))
+          r_input_is_df(length(tbl_names) == 1)
+          d
+        }
+      })
+
       # --- dm info: extract tables, PKs, FKs ---
       dm_info <- shiny::reactive({
-        dm_obj <- data()
-        shiny::req(inherits(dm_obj, "dm"))
+        dm_obj <- dm_data()
 
         table_names <- names(dm::dm_get_tables(dm_obj))
         tables <- stats::setNames(
@@ -254,7 +298,7 @@ js_crossfilter_server <- function(active_dims, filters, range_filters,
           # Fallback: use dm_flatten_to_tbl for multi-parent schemas
           if (is.null(lookup_info)) {
             lookup_info <- build_js_lookups_flat(
-              data(), active, measure_col
+              dm_data(), active, measure_col
             )
           }
           # Last resort: no FKs at all — independent per-table lookups
@@ -408,6 +452,19 @@ js_crossfilter_server <- function(active_dims, filters, range_filters,
             return(quote(identity(data)))
           }
 
+          # Single-table input (data.frame or 1-table dm): use dplyr::filter
+          if (r_input_is_df()) {
+            # Combine all conditions (from the single table)
+            all_conds <- unname(table_conditions)
+            combined <- if (length(all_conds) == 1) {
+              all_conds[[1]]
+            } else {
+              Reduce(function(a, b) call("&", a, b), all_conds)
+            }
+            return(as.call(list(quote(dplyr::filter), quote(data), combined)))
+          }
+
+          # Multi-table dm: use dm::dm_filter
           expr <- call("dm_filter", quote(data))
           for (tbl in names(table_conditions)) {
             expr[[tbl]] <- table_conditions[[tbl]]

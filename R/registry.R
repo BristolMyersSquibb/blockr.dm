@@ -22,6 +22,7 @@ register_dm_blocks <- function() {
       "new_dm_temporal_join_block",
       "new_crossfilter_block",
       "new_dm_crossfilter_block",
+      "new_js_crossfilter_block",
       "new_dm_example_block"
     ),
     name = c(
@@ -40,6 +41,7 @@ register_dm_blocks <- function() {
       "dm Temporal join",
       "Crossfilter",
       "dm Crossfilter",
+      "JS Crossfilter",
       "DM Example"
     ),
     description = c(
@@ -58,9 +60,11 @@ register_dm_blocks <- function() {
       "Temporal join between two tables in a dm object, filtering by time window",
       "Interactive crossfilter with categorical tables and numeric range sliders",
       "Cross-table crossfilter on a dm object with per-table filter panels",
+      "Client-side crossfilter for data frames and dm objects using crossfilter2.js",
       "Load a pre-built dm object from a catalog of example datasets"
     ),
     category = c(
+      "structured",
       "structured",
       "structured",
       "structured",
@@ -94,6 +98,7 @@ register_dm_blocks <- function() {
       "clock-history",
       "sliders",
       "sliders2",
+      "lightning",
       "database"
     ),
     arguments = list(
@@ -126,7 +131,24 @@ register_dm_blocks <- function() {
           measure = NULL
         )
       ),
-      # dm_example_block (pos 15):
+      # js_crossfilter_block (pos 15):
+      structure(
+        c(
+          active_dims = "Per-table active filter columns. Object: table name -> array of column names. For a single data frame use \".tbl\" as the table name.",
+          filters = "Per-table categorical filters. Object: table name -> {column -> array of values}",
+          range_filters = "Per-table range filters. Object: table name -> {column -> [min, max]}",
+          measure = "Aggregation measure as \"table.column\" string, or null for row counts",
+          agg_func = "Aggregation function: \"sum\" or \"mean\". Only used when measure is set."
+        ),
+        examples = list(
+          active_dims = list(adsl = list("SEX", "AGE"), adae = list("AESEV")),
+          filters = list(adsl = list(SEX = list("F"))),
+          range_filters = list(adsl = list(AGE = c(40, 60))),
+          measure = NULL,
+          agg_func = "sum"
+        )
+      ),
+      # dm_example_block (pos 16):
       structure(
         c(
           dataset = "ID of the dm example dataset to load. Use dm_example_choices() to see available options."
