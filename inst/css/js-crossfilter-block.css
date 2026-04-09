@@ -479,6 +479,12 @@
   color: var(--blockr-grey-500, #6b7280);
   margin-bottom: 2px;
 }
+.dm-cf-density-svg {
+  width: 100%;
+  height: 60px;
+  display: block;
+  margin-bottom: -4px;
+}
 .dm-cf-dual-range {
   position: relative;
   height: 28px;

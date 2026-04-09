@@ -42,6 +42,38 @@
     return rows;
   }
 
+  // Kernel density estimation (Gaussian kernel)
+  function kde(values, min, max, nGrid = 64) {
+    if (values.length === 0) return Array.from({ length: nGrid }, (_, i) => ({
+      x: min + i * ((max - min) / (nGrid - 1)), y: 0
+    }));
+    const bw = (max - min) / 20;
+    const step = (max - min) / (nGrid - 1);
+    const grid = new Array(nGrid);
+    for (let i = 0; i < nGrid; i++) {
+      const x = min + i * step;
+      let y = 0;
+      for (let j = 0; j < values.length; j++) {
+        const z = (x - values[j]) / bw;
+        y += Math.exp(-0.5 * z * z);
+      }
+      grid[i] = { x, y };
+    }
+    return grid;
+  }
+
+  function kdeToSvgPath(grid, min, max, maxY, svgW, svgH) {
+    if (maxY <= 0) return '';
+    const scaleX = (x) => ((x - min) / (max - min)) * svgW;
+    const scaleY = (y) => svgH - (y / maxY) * svgH * 0.9;
+    let d = `M${scaleX(grid[0].x).toFixed(1)},${svgH}`;
+    for (const p of grid) {
+      d += ` L${scaleX(p.x).toFixed(1)},${scaleY(p.y).toFixed(1)}`;
+    }
+    d += ` L${scaleX(grid[grid.length - 1].x).toFixed(1)},${svgH} Z`;
+    return d;
+  }
+
   function fmtCount(n) {
     if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
     if (n >= 1e3) return (n / 1e3).toFixed(1) + 'K';
@@ -742,7 +774,41 @@
       const infoEl = el('div', 'dm-cf-range-info');
       card.appendChild(infoEl);
       card._infoEl = infoEl;
-      card._totalRows = cfDim.top(Infinity).length;
+
+      const allRows = cfDim.top(Infinity);
+      card._totalRows = allRows.length;
+
+      // KDE density overlay (SVG)
+      if (type !== 'date') {
+        const allValues = allRows.map(r => +r[dim]).filter(v => isFinite(v));
+        const kdeAll = kde(allValues, min, max);
+        const kdeMaxY = Math.max(...kdeAll.map(p => p.y), 1);
+
+        const svgNs = 'http://www.w3.org/2000/svg';
+        const svg = document.createElementNS(svgNs, 'svg');
+        svg.setAttribute('viewBox', '0 0 300 80');
+        svg.setAttribute('preserveAspectRatio', 'none');
+        svg.classList.add('dm-cf-density-svg');
+
+        const pathAll = document.createElementNS(svgNs, 'path');
+        pathAll.setAttribute('d', kdeToSvgPath(kdeAll, min, max, kdeMaxY, 300, 80));
+        pathAll.setAttribute('fill', 'rgba(200, 200, 200, 0.5)');
+        pathAll.setAttribute('stroke', 'rgba(160, 160, 160, 0.6)');
+        pathAll.setAttribute('stroke-width', '1');
+        svg.appendChild(pathAll);
+
+        const pathFiltered = document.createElementNS(svgNs, 'path');
+        pathFiltered.setAttribute('d', kdeToSvgPath(kdeAll, min, max, kdeMaxY, 300, 80));
+        pathFiltered.setAttribute('fill', 'rgba(37, 99, 235, 0.35)');
+        pathFiltered.setAttribute('stroke', 'rgba(37, 99, 235, 0.6)');
+        pathFiltered.setAttribute('stroke-width', '1');
+        svg.appendChild(pathFiltered);
+
+        card.appendChild(svg);
+        card._pathFiltered = pathFiltered;
+        card._kdeMaxY = kdeMaxY;
+        card._dim = dim;
+      }
 
       // Dual range slider
       const slider = el('div', 'dm-cf-dual-range');
@@ -929,9 +995,18 @@
       if (!card || !card._infoEl) return;
       const childTable = this.dimChild[dim];
       if (!childTable) return;
+
+      const filteredRows = this.instances[childTable].allFiltered();
       const total = card._totalRows || 0;
-      const filtered = this.instances[childTable].allFiltered().length;
-      card._infoEl.textContent = `${fmtCount(filtered)} of ${fmtCount(total)} rows`;
+      card._infoEl.textContent = `${fmtCount(filteredRows.length)} of ${fmtCount(total)} rows`;
+
+      // Update KDE filtered overlay
+      if (card._pathFiltered && card._dim && card._kdeMaxY) {
+        const filteredValues = filteredRows.map(r => +r[card._dim]).filter(v => isFinite(v));
+        const kdeFiltered = kde(filteredValues, card._min, card._max);
+        card._pathFiltered.setAttribute('d',
+          kdeToSvgPath(kdeFiltered, card._min, card._max, card._kdeMaxY, 300, 80));
+      }
     }
 
     // -- Status bar ---------------------------------------------------------
