@@ -115,6 +115,9 @@ dm_example_choices <- function() {
   if (requireNamespace("nycflights13", quietly = TRUE)) {
     choices[["NYC Flights (nycflights13)"]] <- "nycflights13"
   }
+  if (requireNamespace("insuranceData", quietly = TRUE)) {
+    choices[["Insurance (insuranceData)"]] <- "insurancedata"
+  }
 
   choices
 }
@@ -130,6 +133,7 @@ dm_example_expr <- function(id) {
     safetydata_adam = safetydata_adam_expr(),
     pharmaverseadam = pharmaverseadam_expr(),
     nycflights13 = nycflights13_expr(),
+    insurancedata = insurancedata_expr(),
     stop("Unknown dm example: ", id)
   )
 }
@@ -252,4 +256,25 @@ pharmaverseadam_expr <- function() {
 
 nycflights13_expr <- function() {
   quote(dm::dm_nycflights13(cycle = FALSE))
+}
+
+insurancedata_expr <- function() {
+  quote(local({
+    load_ins <- function(name) {
+      env <- new.env(parent = emptyenv())
+      utils::data(list = name, package = "insuranceData", envir = env)
+      env[[name]]
+    }
+    dm::dm(
+      dataCar = load_ins("dataCar"),
+      dataOhlsson = load_ins("dataOhlsson"),
+      AutoClaims = load_ins("AutoClaims"),
+      AutoBi = load_ins("AutoBi"),
+      AutoCollision = load_ins("AutoCollision"),
+      SingaporeAuto = load_ins("SingaporeAuto"),
+      ClaimsLong = load_ins("ClaimsLong"),
+      IndustryAuto = load_ins("IndustryAuto"),
+      WorkersComp = load_ins("WorkersComp")
+    )
+  }))
 }

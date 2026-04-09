@@ -1,0 +1,201 @@
+/* JS Crossfilter Block — minimal v1 styles */
+
+.js-crossfilter-container {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 13px;
+  padding: 8px;
+}
+
+/* Status bar */
+.jscf-status {
+  padding: 6px 8px;
+  margin-bottom: 8px;
+  color: #666;
+  font-size: 12px;
+  border-bottom: 1px solid #eee;
+}
+
+/* Panel grid */
+.jscf-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+/* Individual filter panel */
+.jscf-panel {
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.jscf-panel-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  background: #f7f7f7;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.jscf-panel-title {
+  font-weight: 600;
+  font-size: 12px;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.jscf-panel-source {
+  font-size: 10px;
+  color: #999;
+  text-transform: uppercase;
+}
+
+.jscf-panel-clear {
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: #999;
+  font-size: 16px;
+  line-height: 1;
+  padding: 0 2px;
+}
+.jscf-panel-clear:hover {
+  color: #333;
+}
+
+.jscf-panel-body {
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+/* Categorical list */
+.jscf-cat-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.jscf-cat-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  padding: 3px 8px;
+  cursor: pointer;
+  user-select: none;
+  border-bottom: 1px solid #f5f5f5;
+}
+.jscf-cat-item:last-child {
+  border-bottom: none;
+}
+.jscf-cat-item:hover {
+  background: #f0f7ff;
+}
+.jscf-cat-item.selected {
+  background: #e3f0ff;
+}
+.jscf-cat-item.selected .jscf-cat-bar {
+  background: #4a90d9;
+  opacity: 0.25;
+}
+.jscf-cat-item.zero {
+  opacity: 0.4;
+}
+
+/* Count bar */
+.jscf-cat-bar {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  background: #d0d8e0;
+  opacity: 0.3;
+  pointer-events: none;
+  transition: width 0.15s ease;
+}
+
+.jscf-cat-label {
+  position: relative;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.jscf-cat-count {
+  position: relative;
+  font-size: 11px;
+  color: #888;
+  margin-left: 8px;
+  flex-shrink: 0;
+}
+
+/* Range slider */
+.jscf-range-container {
+  padding: 10px 8px;
+}
+
+.jscf-range-label {
+  font-size: 11px;
+  color: #666;
+  text-align: center;
+  margin-bottom: 6px;
+}
+
+.jscf-range-slider {
+  position: relative;
+  height: 24px;
+}
+
+.jscf-range-slider input[type="range"] {
+  position: absolute;
+  width: 100%;
+  top: 0;
+  margin: 0;
+  padding: 0;
+  pointer-events: none;
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  height: 24px;
+}
+
+.jscf-range-slider input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #4a90d9;
+  cursor: pointer;
+  pointer-events: auto;
+  border: 2px solid #fff;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+
+.jscf-range-slider input[type="range"]::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #4a90d9;
+  cursor: pointer;
+  pointer-events: auto;
+  border: 2px solid #fff;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+
+.jscf-range-slider input[type="range"]::-webkit-slider-runnable-track {
+  height: 4px;
+  background: #ddd;
+  border-radius: 2px;
+}
+
+.jscf-range-slider input[type="range"]::-moz-range-track {
+  height: 4px;
+  background: #ddd;
+  border-radius: 2px;
+}
