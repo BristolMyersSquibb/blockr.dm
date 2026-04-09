@@ -85,9 +85,10 @@
       this.columnInfo = {};
       this.allColumns = {};   // full catalog for search
       this.activeDims = {};   // table -> [dim, ...]
+      this.measure = '.count';
+      this.aggFunc = 'sum';
       this.panels = {};
       this._submitTimer = null;
-      this._searchFocused = false;
       this._buildDOM();
     }
 
@@ -119,14 +120,38 @@
       this.searchResultsEl = el('div', 'jscf-popover-results');
       this.popoverEl.appendChild(this.searchResultsEl);
 
-      // Clear all filters button (inside popover)
-      this.clearAllBtn = el('button', 'dm-cf-clear-btn jscf-popover-clear',
-        ICON_REMOVE_SM + ' Clear all filters');
-      this.clearAllBtn.addEventListener('click', () => {
-        this._clearAllDimensions();
-        this._closePopover();
+      // Measure / aggregation controls
+      this._measureSection = el('div', 'jscf-measure-section');
+      this._measureSection.style.display = 'none'; // shown when measures available
+      const measureLabel = el('div', 'jscf-popover-label', 'Measure');
+      this._measureSelect = el('select', 'jscf-popover-select');
+      this._measureSelect.addEventListener('change', () => {
+        this._setMeasure(this._measureSelect.value);
       });
-      this.popoverEl.appendChild(this.clearAllBtn);
+      this._measureSection.appendChild(measureLabel);
+      this._measureSection.appendChild(this._measureSelect);
+
+      this._aggSection = el('div', 'jscf-measure-section');
+      this._aggSection.style.display = 'none';
+      const aggLabel = el('div', 'jscf-popover-label', 'Aggregation');
+      this._aggSelect = el('select', 'jscf-popover-select');
+      const aggOpts = [['sum', 'Sum'], ['mean', 'Mean']];
+      for (const [val, text] of aggOpts) {
+        const opt = el('option');
+        opt.value = val;
+        opt.textContent = text;
+        this._aggSelect.appendChild(opt);
+      }
+      this._aggSelect.addEventListener('change', () => {
+        this._setAggFunc(this._aggSelect.value);
+      });
+      this._aggSection.appendChild(aggLabel);
+      this._aggSection.appendChild(this._aggSelect);
+
+      this.popoverEl.appendChild(this._measureSection);
+      this.popoverEl.appendChild(this._aggSection);
+
+      // "Clear all" is now in the active dims header row
       anchor.appendChild(this.popoverEl);
 
       gearHeader.appendChild(anchor);
@@ -235,7 +260,6 @@
 
             row.addEventListener('click', () => {
               this._addDimension(item.tbl, item.dim);
-              this._closePopover();
             });
             this.searchResultsEl.appendChild(row);
           }
@@ -259,15 +283,27 @@
         }
       }
 
-      if (activeDims.length === 0) return;
+      if (activeDims.length === 0) {
+        this._activeDimsEl.style.display = 'none';
+        return;
+      }
+      this._activeDimsEl.style.display = '';
 
-      // Label
-      const label = el('div', 'jscf-active-dims-label', 'Active filters');
-      this._activeDimsEl.appendChild(label);
+      // Label + clear all on same line
+      const headerRow = el('div', 'jscf-active-dims-header');
+      headerRow.appendChild(el('span', 'jscf-active-dims-label', 'Active filters'));
+      if (activeDims.length > 1) {
+        const clearAllLink = el('button', 'jscf-active-dims-clear', 'Remove all');
+        clearAllLink.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this._clearAllDimensions();
+        });
+        headerRow.appendChild(clearAllLink);
+      }
+      this._activeDimsEl.appendChild(headerRow);
 
       const chipWrap = el('div', 'jscf-active-dims-chips');
       for (const { tbl, dim } of activeDims) {
-        // Filter by search query
         if (query && !dim.toLowerCase().includes(query)) continue;
 
         const chip = el('span', 'jscf-active-chip');
@@ -282,6 +318,47 @@
         chipWrap.appendChild(chip);
       }
       this._activeDimsEl.appendChild(chipWrap);
+    }
+
+    _setMeasure(val) {
+      const id = this.el.id;
+      const nsBase = id.replace(/-crossfilter_input$/, '');
+      Shiny.setInputValue(nsBase + '-measure_switch', val, { priority: 'event' });
+    }
+
+    _setAggFunc(val) {
+      const id = this.el.id;
+      const nsBase = id.replace(/-crossfilter_input$/, '');
+      Shiny.setInputValue(nsBase + '-agg_func_switch', val, { priority: 'event' });
+    }
+
+    _updateMeasureUI() {
+      // Populate measure dropdown from allColumns
+      const measures = [];
+      for (const [tbl, info] of Object.entries(this.allColumns)) {
+        for (const m of asArray(info.measures)) {
+          measures.push({ tbl, col: m });
+        }
+      }
+
+      this._measureSelect.innerHTML = '';
+      const countOpt = el('option');
+      countOpt.value = '.count';
+      countOpt.textContent = 'Count';
+      this._measureSelect.appendChild(countOpt);
+
+      const multiTable = Object.keys(this.allColumns).length > 1;
+      for (const { tbl, col } of measures) {
+        const opt = el('option');
+        opt.value = tbl + '.' + col;
+        opt.textContent = multiTable ? tbl + '.' + col : col;
+        this._measureSelect.appendChild(opt);
+      }
+
+      this._measureSelect.value = this.measure;
+      this._measureSection.style.display = measures.length > 0 ? '' : 'none';
+      this._aggSelect.value = this.aggFunc;
+      this._aggSection.style.display = (this.measure !== '.count') ? '' : 'none';
     }
 
     _addDimension(tbl, dim) {
@@ -312,6 +389,8 @@
       this.columnInfo = msg.column_info || {};
       this.allColumns = msg.all_columns || msg.column_info || {};
       this.activeDims = msg.active_dims || {};
+      this.measure = msg.measure || '.count';
+      this.aggFunc = msg.agg_func || 'sum';
 
       // Create crossfilter instances from columnar data
       // Shiny delivers pre-serialized json verbatim as parsed objects
@@ -350,20 +429,11 @@
         if (!childTable) continue;
         const cf = this.instances[childTable];
         this.dimensions[dim] = cf.dimension(d => d[dim]);
-
-        const isParentDim = (sourceTable === this.parentTable);
-        if (isParentDim && this.parentKey) {
-          const pk = this.parentKey;
-          this.groups[dim] = this.dimensions[dim].group().reduce(
-            (p, v) => { const k = v[pk]; p.keys[k] = (p.keys[k] || 0) + 1; p.count = Object.keys(p.keys).length; return p; },
-            (p, v) => { const k = v[pk]; p.keys[k] -= 1; if (p.keys[k] <= 0) delete p.keys[k]; p.count = Object.keys(p.keys).length; return p; },
-            () => ({ keys: {}, count: 0 })
-          );
-        } else {
-          this.groups[dim] = this.dimensions[dim].group().reduceCount();
-        }
+        this.groups[dim] = this._createGroup(dim, sourceTable);
       }
 
+      this._updateMeasureUI();
+      this._renderActiveDimsInPopover('');
       this._buildPanels();
       this._updateAllCounts();
 
@@ -387,6 +457,55 @@
       this.keyDims = {};
       this.filters = {};
       this.panels = {};
+    }
+
+    // -- Group creation (measure-aware) -------------------------------------
+
+    _createGroup(dim, sourceTable) {
+      const d = this.dimensions[dim];
+      const hasMeasure = this.measure && this.measure !== '.count';
+      const isParentDim = (sourceTable === this.parentTable);
+
+      // Parse measure: "table.column" format
+      let measureCol = null;
+      if (hasMeasure) {
+        const dot = this.measure.indexOf('.');
+        measureCol = dot >= 0 ? this.measure.slice(dot + 1) : this.measure;
+      }
+
+      if (!hasMeasure) {
+        // Count mode
+        if (isParentDim && this.parentKey) {
+          const pk = this.parentKey;
+          return d.group().reduce(
+            (p, v) => { const k = v[pk]; p.keys[k] = (p.keys[k] || 0) + 1; p.count = Object.keys(p.keys).length; return p; },
+            (p, v) => { const k = v[pk]; p.keys[k] -= 1; if (p.keys[k] <= 0) delete p.keys[k]; p.count = Object.keys(p.keys).length; return p; },
+            () => ({ keys: {}, count: 0 })
+          );
+        }
+        return d.group().reduceCount();
+      }
+
+      if (this.aggFunc === 'mean') {
+        // Mean: track sum + count, compute mean on read
+        const col = measureCol;
+        return d.group().reduce(
+          (p, v) => { const val = +v[col] || 0; p.sum += val; p.count++; p.value = p.count ? p.sum / p.count : 0; return p; },
+          (p, v) => { const val = +v[col] || 0; p.sum -= val; p.count--; p.value = p.count ? p.sum / p.count : 0; return p; },
+          () => ({ sum: 0, count: 0, value: 0 })
+        );
+      }
+
+      // Sum (default for measures)
+      return d.group().reduceSum(r => +r[measureCol] || 0);
+    }
+
+    // Extract the display value from a group entry
+    _getGroupValue(d) {
+      const v = d.value;
+      if (v == null) return 0;
+      if (typeof v === 'object') return v.value ?? v.count ?? 0;
+      return v;
     }
 
     // -- Panel building (grouped by table) ----------------------------------
@@ -508,20 +627,21 @@
       if (!card || !card._tbody) return;
       const tbody = card._tbody;
 
-      const getCount = (d) => typeof d.value === 'object' ? d.value.count : d.value;
+      const gv = (d) => this._getGroupValue(d);
+      const hasMeasure = this.measure && this.measure !== '.count';
 
       const sorted = counts
-        .filter(d => getCount(d) > 0 || this._isSelected(dim, d.key))
-        .sort((a, b) => getCount(b) - getCount(a));
+        .filter(d => gv(d) > 0 || this._isSelected(dim, d.key))
+        .sort((a, b) => gv(b) - gv(a));
 
       const selected = this.filters[dim];
       const selectedSet = selected ? new Set(selected) : null;
       const hasFilter = !!selectedSet;
-      const maxCount = sorted.reduce((m, d) => Math.max(m, getCount(d)), 0);
+      const maxVal = sorted.reduce((m, d) => Math.max(m, Math.abs(gv(d))), 0);
 
       tbody.innerHTML = '';
       for (const item of sorted) {
-        const count = getCount(item);
+        const count = gv(item);
         const isSelected = selectedSet && selectedSet.has(String(item.key));
         const isDimmed = hasFilter && !isSelected;
 
@@ -544,10 +664,12 @@
         const barCell = el('div', 'dm-cf-tw-bar-cell');
         const track = el('div', 'dm-cf-tw-bar-track');
         const fill = el('div', 'dm-cf-tw-bar-fill');
-        fill.style.width = maxCount > 0 ? `${(count / maxCount) * 100}%` : '0%';
+        const absCount = Math.abs(count);
+        fill.style.width = maxVal > 0 ? `${(absCount / maxVal) * 100}%` : '0%';
         track.appendChild(fill);
         barCell.appendChild(track);
-        barCell.appendChild(el('span', 'dm-cf-tw-bar-label', fmtCount(count)));
+        const label = hasMeasure ? fmtNum(count) : fmtCount(count);
+        barCell.appendChild(el('span', 'dm-cf-tw-bar-label', label));
         tdBar.appendChild(barCell);
         tr.appendChild(tdBar);
 

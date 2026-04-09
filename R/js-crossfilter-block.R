@@ -19,12 +19,18 @@ new_js_crossfilter_block <- function(
     active_dims = list(),
     filters = list(),
     range_filters = list(),
+    measure = NULL,
+    agg_func = NULL,
     ...
 ) {
   blockr.core::new_transform_block(
-    server = js_crossfilter_server(active_dims, filters, range_filters),
+    server = js_crossfilter_server(
+      active_dims, filters, range_filters, measure, agg_func
+    ),
     ui = js_crossfilter_ui,
-    allow_empty_state = c("active_dims", "filters", "range_filters"),
+    allow_empty_state = c(
+      "active_dims", "filters", "range_filters", "measure", "agg_func"
+    ),
     external_ctrl = TRUE,
     class = "js_crossfilter_block",
     ...
@@ -54,7 +60,8 @@ block_render_trigger.js_crossfilter_block <- function(
 
 # -- Server ------------------------------------------------------------------
 
-js_crossfilter_server <- function(active_dims, filters, range_filters) {
+js_crossfilter_server <- function(active_dims, filters, range_filters,
+                                  measure, agg_func) {
   function(id, data) {
     shiny::moduleServer(id, function(input, output, session) {
       ns <- session$ns
@@ -150,6 +157,7 @@ js_crossfilter_server <- function(active_dims, filters, range_filters) {
             dimensions = as.list(names(df)[is_dimension]),
             range_dimensions = as.list(names(df)[is_range_dim]),
             date_dimensions = as.list(names(df)[is_date_dim]),
+            measures = as.list(names(df)[is_numeric & !is_low_cardinality]),
             labels = col_labels
           )
         }
@@ -160,6 +168,8 @@ js_crossfilter_server <- function(active_dims, filters, range_filters) {
       r_active_dims <- shiny::reactiveVal(active_dims)
       r_filters <- shiny::reactiveVal(filters)
       r_range_filters <- shiny::reactiveVal(range_filters)
+      r_measure <- shiny::reactiveVal(measure %||% ".count")
+      r_agg_func <- shiny::reactiveVal(agg_func %||% "sum")
 
       # --- Add/remove filter dimensions from JS ---
       shiny::observeEvent(input$add_filter, {
@@ -204,20 +214,55 @@ js_crossfilter_server <- function(active_dims, filters, range_filters) {
         r_range_filters(list())
       })
 
+      shiny::observeEvent(input$measure_switch, {
+        val <- input$measure_switch
+        if (!is.null(val)) r_measure(val)
+      }, ignoreInit = TRUE)
+
+      shiny::observeEvent(input$agg_func_switch, {
+        val <- input$agg_func_switch
+        if (!is.null(val)) r_agg_func(val)
+      }, ignoreInit = TRUE)
+
       # --- Build lookups and send to JS ---
       shiny::observe({
         info <- dm_info()
         active <- r_active_dims()
         col_info <- column_info_per_table()
+        cur_measure <- r_measure()
+        cur_agg_func <- r_agg_func()
         t_start <- proc.time()[3]
 
         # Build lookups only if there are active dims
         lookup_info <- NULL
         has_dims <- any(vapply(active, length, integer(1)) > 0)
         if (has_dims) {
+          measure_col <- if (cur_measure != ".count") cur_measure else NULL
+          # Try standard single-parent lookup first
           lookup_info <- build_crossfilter_lookups(
-            info$tables, active, info$pks, info$fks
+            info$tables, active, info$pks, info$fks, measure_col
           )
+          # Check if all active dims are covered
+          if (!is.null(lookup_info)) {
+            all_dims <- unlist(active, use.names = FALSE)
+            covered <- names(lookup_info$dim_source)
+            if (!all(all_dims %in% covered)) {
+              # Standard builder missed some dims — use flat fallback
+              lookup_info <- NULL
+            }
+          }
+          # Fallback: use dm_flatten_to_tbl for multi-parent schemas
+          if (is.null(lookup_info)) {
+            lookup_info <- build_js_lookups_flat(
+              data(), active, measure_col
+            )
+          }
+          # Last resort: no FKs at all — independent per-table lookups
+          if (is.null(lookup_info)) {
+            lookup_info <- build_js_lookups_independent(
+              info$tables, active, measure_col
+            )
+          }
         }
 
         if (!is.null(lookup_info)) {
@@ -257,7 +302,9 @@ js_crossfilter_server <- function(active_dims, filters, range_filters) {
             child_fk_cols = lookup_info$child_fk_cols,
             column_info = col_info,
             all_columns = col_info,
-            active_dims = safe_active
+            active_dims = safe_active,
+            measure = cur_measure,
+            agg_func = cur_agg_func
           ))
         } else {
           # No active dims — send empty state with column catalog
@@ -371,11 +418,163 @@ js_crossfilter_server <- function(active_dims, filters, range_filters) {
         state = list(
           active_dims = r_active_dims,
           filters = r_filters,
-          range_filters = r_range_filters
+          range_filters = r_range_filters,
+          measure = r_measure,
+          agg_func = r_agg_func
         )
       )
     })
   }
+}
+
+
+# -- Flat lookup builder (multi-parent / snowflake schemas) ------------------
+
+#' Build crossfilter lookups using dm_flatten_to_tbl for arbitrary schemas.
+#' Falls back to a single flat table when the standard star-schema builder
+#' returns NULL.
+#' @keywords internal
+build_js_lookups_flat <- function(dm_obj, active_dims, measure_col = NULL) {
+  if (!inherits(dm_obj, "dm")) return(NULL)
+
+  table_names <- names(dm::dm_get_tables(dm_obj))
+  pks <- dm::dm_get_all_pks(dm_obj)
+  fks <- dm::dm_get_all_fks(dm_obj)
+
+  # Need at least one FK to flatten
+  if (nrow(fks) == 0) return(NULL)
+
+  # Find the "fact table" — the table with most outgoing FKs
+  fk_counts <- vapply(table_names, function(tbl) {
+    sum(fks$child_table == tbl)
+  }, integer(1))
+  fact_table <- names(which.max(fk_counts))
+  if (is.null(fact_table) || fk_counts[fact_table] == 0) return(NULL)
+
+  # Flatten the dm starting from the fact table.
+  # Non-recursive joins direct parents; if that misses dims, try recursive.
+  flat <- tryCatch(
+    dm::dm_flatten_to_tbl(dm_obj, !!rlang::sym(fact_table),
+                          .join = dplyr::left_join),
+    error = function(e) NULL
+  )
+  # If some active dims are missing, try recursive flatten
+  if (!is.null(flat)) {
+    all_dims <- unlist(active_dims, use.names = FALSE)
+    missing <- setdiff(all_dims, names(flat))
+    if (length(missing) > 0) {
+      flat_r <- tryCatch(
+        dm::dm_flatten_to_tbl(dm_obj, !!rlang::sym(fact_table),
+                              .recursive = TRUE, .join = dplyr::left_join),
+        error = function(e) NULL
+      )
+      if (!is.null(flat_r)) flat <- flat_r
+    }
+  }
+  if (is.null(flat) || nrow(flat) == 0) return(NULL)
+
+  # Select only the columns we need: active dims + key + measure
+  all_dims <- unlist(active_dims, use.names = FALSE)
+  keep_cols <- intersect(
+    unique(c(all_dims, if (!is.null(measure_col)) {
+      sub("^[^.]+\\.", "", measure_col)
+    })),
+    names(flat)
+  )
+  if (length(keep_cols) == 0) return(NULL)
+
+  # Find a key column (PK of fact table or first available PK)
+  fact_pk <- NULL
+  pk_row <- pks[pks$table == fact_table, ]
+  if (nrow(pk_row) > 0) fact_pk <- pk_row$pk_col[[1]][[1]]
+
+  if (!is.null(fact_pk) && fact_pk %in% names(flat)) {
+    keep_cols <- unique(c(fact_pk, keep_cols))
+  }
+
+  lookup <- flat[, keep_cols, drop = FALSE]
+
+  # Build dim_source: map each dim to its original table
+  dim_source <- list()
+  for (tbl in names(active_dims)) {
+    for (d in active_dims[[tbl]]) {
+      dim_source[[d]] <- tbl
+    }
+  }
+
+  # Determine parent table (table with PK, no outgoing FKs)
+  parent_candidates <- setdiff(
+    pks$table,
+    fks$child_table
+  )
+  parent_table <- if (length(parent_candidates) > 0) {
+    parent_candidates[1]
+  } else {
+    pks$table[1]
+  }
+  parent_key <- if (!is.null(fact_pk)) fact_pk else {
+    pk_row <- pks[pks$table == parent_table, ]
+    if (nrow(pk_row) > 0) pk_row$pk_col[[1]][[1]] else NULL
+  }
+
+  list(
+    lookups = stats::setNames(list(lookup), fact_table),
+    dim_source = dim_source,
+    parent_key = parent_key,
+    child_fk_cols = stats::setNames(parent_key, fact_table),
+    parent_table = parent_table,
+    child_tables = fact_table
+  )
+}
+
+
+# -- Independent lookup builder (no FK relationships) -----------------------
+
+#' Build per-table lookups when there are no FK relationships.
+#' Each table gets its own lookup with only its active dims. No cross-table
+#' filtering is possible (no shared key), but within-table filtering works.
+#' @keywords internal
+build_js_lookups_independent <- function(tables, active_dims, measure_col = NULL) {
+  lookups <- list()
+  dim_source <- list()
+
+  for (tbl in names(active_dims)) {
+    dims <- active_dims[[tbl]]
+    if (length(dims) == 0) next
+    df <- tables[[tbl]]
+    if (is.null(df) || !is.data.frame(df)) next
+
+    # Select active dims + measure column
+    keep <- intersect(dims, names(df))
+    if (!is.null(measure_col)) {
+      mc <- sub("^[^.]+\\.", "", measure_col)
+      if (mc %in% names(df)) keep <- unique(c(keep, mc))
+    }
+    if (length(keep) == 0) next
+
+    lookups[[tbl]] <- df[, keep, drop = FALSE]
+    for (d in dims) {
+      if (d %in% names(df)) dim_source[[d]] <- tbl
+    }
+  }
+
+  if (length(lookups) == 0) return(NULL)
+
+  # No parent/child structure — each table is independent.
+  # Use empty strings for FK cols (no cross-table join possible).
+  child_fk_cols <- as.list(stats::setNames(
+    rep("", length(lookups)),
+    names(lookups)
+  ))
+
+  list(
+    lookups = lookups,
+    dim_source = dim_source,
+    parent_key = "",
+    child_fk_cols = child_fk_cols,
+    parent_table = "",
+    child_tables = names(lookups)
+  )
 }
 
 

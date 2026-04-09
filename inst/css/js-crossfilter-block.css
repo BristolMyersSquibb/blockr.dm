@@ -154,11 +154,28 @@
   padding-bottom: 8px;
   border-bottom: 1px solid var(--blockr-grey-200, #e5e7eb);
 }
+.jscf-active-dims-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
 .jscf-active-dims-label {
   font-size: var(--blockr-font-size-xs, 0.75rem);
   font-weight: var(--blockr-font-weight-medium, 500);
   color: var(--blockr-grey-500, #6b7280);
-  margin-bottom: 4px;
+}
+.jscf-active-dims-clear {
+  font-size: var(--blockr-font-size-xs, 0.75rem);
+  color: var(--blockr-grey-400, #9ca3af);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  transition: color 0.15s;
+}
+.jscf-active-dims-clear:hover {
+  color: #dc3545;
 }
 .jscf-active-dims-chips {
   display: flex;
@@ -197,12 +214,34 @@
   background: rgba(220, 53, 69, 0.08);
 }
 
-/* Clear all button in popover */
-.jscf-popover-clear {
+/* Measure / aggregation controls in popover */
+.jscf-measure-section {
   margin-top: 8px;
-  width: 100%;
-  justify-content: center;
+  padding-top: 8px;
+  border-top: 1px solid var(--blockr-grey-200, #e5e7eb);
 }
+.jscf-popover-label {
+  font-size: var(--blockr-font-size-xs, 0.75rem);
+  font-weight: var(--blockr-font-weight-medium, 500);
+  color: var(--blockr-grey-500, #6b7280);
+  margin-bottom: 4px;
+}
+.jscf-popover-select {
+  width: 100%;
+  padding: 6px 10px;
+  font-size: var(--blockr-font-size-sm, 0.8125rem);
+  border: 1px solid var(--blockr-color-border, #e5e7eb);
+  border-radius: 6px;
+  background: var(--blockr-color-bg-input, #f9fafb);
+  color: var(--blockr-color-text-primary, #111827);
+  outline: none;
+  box-sizing: border-box;
+}
+.jscf-popover-select:focus {
+  border-color: var(--blockr-color-primary, #2563eb);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+}
+
 
 /* ============================================================
    Status bar
