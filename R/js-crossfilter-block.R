@@ -147,9 +147,9 @@ js_crossfilter_server <- function(active_dims, filters, range_filters) {
           }, character(1))
 
           result[[tbl_name]] <- list(
-            dimensions = names(df)[is_dimension],
-            range_dimensions = names(df)[is_range_dim],
-            date_dimensions = names(df)[is_date_dim],
+            dimensions = as.list(names(df)[is_dimension]),
+            range_dimensions = as.list(names(df)[is_range_dim]),
+            date_dimensions = as.list(names(df)[is_date_dim]),
             labels = col_labels
           )
         }
@@ -164,43 +164,119 @@ js_crossfilter_server <- function(active_dims, filters, range_filters) {
       r_filters <- as_rv(filters)
       r_range_filters <- as_rv(range_filters)
 
+      # --- Add/remove filter dimensions from JS ---
+      shiny::observeEvent(input$add_filter, {
+        req <- input$add_filter
+        tbl <- req$table
+        dim <- req$dim
+        active <- r_active_dims()
+        current <- active[[tbl]] %||% character()
+        if (!dim %in% current) {
+          active[[tbl]] <- c(current, dim)
+          r_active_dims(active)
+        }
+      })
+
+      shiny::observeEvent(input$remove_filter, {
+        req <- input$remove_filter
+        tbl <- req$table
+        dim <- req$dim
+        active <- r_active_dims()
+        current <- active[[tbl]] %||% character()
+        active[[tbl]] <- setdiff(current, dim)
+        if (length(active[[tbl]]) == 0) active[[tbl]] <- NULL
+        r_active_dims(active)
+        # Also clear any filter on this dim
+        flt <- r_filters()
+        if (!is.null(flt[[tbl]])) {
+          flt[[tbl]][[dim]] <- NULL
+          if (length(flt[[tbl]]) == 0) flt[[tbl]] <- NULL
+          r_filters(flt)
+        }
+        rflt <- r_range_filters()
+        if (!is.null(rflt[[tbl]])) {
+          rflt[[tbl]][[dim]] <- NULL
+          if (length(rflt[[tbl]]) == 0) rflt[[tbl]] <- NULL
+          r_range_filters(rflt)
+        }
+      })
+
+      shiny::observeEvent(input$clear_filters, {
+        r_active_dims(list())
+        r_filters(list())
+        r_range_filters(list())
+      })
+
       # --- Build lookups and send to JS ---
       shiny::observe({
         info <- dm_info()
         active <- r_active_dims()
         col_info <- column_info_per_table()
-        lookup_info <- build_crossfilter_lookups(
-          info$tables, active, info$pks, info$fks
-        )
-        shiny::req(lookup_info)
+        t_start <- proc.time()[3]
 
-        # Encode NA sentinels and convert to row-oriented lists for JS
-        encoded_lookups <- lapply(lookup_info$lookups, function(df) {
-          for (cn in names(df)) {
-            col <- df[[cn]]
-            if (is.character(col) || is.factor(col)) {
-              col <- as.character(col)
-              col[is.na(col)] <- CROSSFILTER_NA
-              col[col == ""] <- CROSSFILTER_EMPTY
-              df[[cn]] <- col
+        # Build lookups only if there are active dims
+        lookup_info <- NULL
+        has_dims <- any(vapply(active, length, integer(1)) > 0)
+        if (has_dims) {
+          lookup_info <- build_crossfilter_lookups(
+            info$tables, active, info$pks, info$fks
+          )
+        }
+
+        if (!is.null(lookup_info)) {
+          # Encode NA sentinels and serialize as JSON strings (fast path)
+          encoded_lookups <- lapply(lookup_info$lookups, function(df) {
+            for (cn in names(df)) {
+              col <- df[[cn]]
+              if (is.character(col) || is.factor(col)) {
+                col <- as.character(col)
+                col[is.na(col)] <- CROSSFILTER_NA
+                col[col == ""] <- CROSSFILTER_EMPTY
+                df[[cn]] <- col
+              }
             }
-          }
-          # Convert to list-of-rows so Shiny serializes as a JSON array of objects
-          lapply(seq_len(nrow(df)), function(i) as.list(df[i, , drop = FALSE]))
-        })
+            # toJSON returns a "json" class; Shiny embeds it verbatim
+            # (json_verbatim = TRUE). JS receives a parsed columnar object.
+            jsonlite::toJSON(df, dataframe = "columns")
+          })
 
-        # Determine parent table name for JS
-        parent_table <- lookup_info$parent_table
+          # Force arrays for length-1 vectors (avoid JSON scalar unboxing)
+          safe_active <- lapply(active, as.list)
 
-        session$sendCustomMessage("js-crossfilter-data", list(
-          id = ns("crossfilter_input"),
-          lookups = encoded_lookups,
-          dim_source = lookup_info$dim_source,
-          parent_key = lookup_info$parent_key,
-          parent_table = parent_table,
-          child_fk_cols = lookup_info$child_fk_cols,
-          column_info = col_info
-        ))
+          t_elapsed <- round((proc.time()[3] - t_start) * 1000)
+          sizes <- vapply(encoded_lookups, nchar, numeric(1))
+          message(sprintf(
+            "[js-crossfilter] R prep: %dms | lookups: %s",
+            t_elapsed,
+            paste(names(sizes), round(sizes / 1024), "KB", sep = "=", collapse = ", ")
+          ))
+
+          session$sendCustomMessage("js-crossfilter-data", list(
+            id = ns("crossfilter_input"),
+            lookups = encoded_lookups,
+            dim_source = lookup_info$dim_source,
+            parent_key = lookup_info$parent_key,
+            parent_table = lookup_info$parent_table,
+            child_fk_cols = lookup_info$child_fk_cols,
+            column_info = col_info,
+            all_columns = col_info,
+            active_dims = safe_active
+          ))
+        } else {
+          # No active dims — send empty state with column catalog
+          safe_active <- lapply(active, as.list)
+          session$sendCustomMessage("js-crossfilter-data", list(
+            id = ns("crossfilter_input"),
+            lookups = list(),
+            dim_source = list(),
+            parent_key = NULL,
+            parent_table = NULL,
+            child_fk_cols = list(),
+            column_info = col_info,
+            all_columns = col_info,
+            active_dims = safe_active
+          ))
+        }
       })
 
       # --- JS -> R: receive filter state ---
