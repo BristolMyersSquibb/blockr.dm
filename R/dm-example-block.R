@@ -50,6 +50,7 @@ new_dm_example_block <- function(dataset = "bi_star_schema", ...) {
 
         shiny::observeEvent(
           shiny::req(dat()),
+          ignoreInit = TRUE,
           {
             if (!identical(dat(), input$dataset)) {
               shiny::updateSelectInput(
@@ -103,7 +104,10 @@ block_ui.dm_example_block <- function(id, x, ...) {
 
 #' @method block_render_trigger dm_example_block
 #' @export
-block_render_trigger.dm_example_block <- function(x, session = blockr.core::get_session()) {
+block_render_trigger.dm_example_block <- function(
+  x,
+  session = blockr.core::get_session()
+) {
   NULL
 }
 
@@ -182,8 +186,10 @@ bi_star_schema_expr <- function() {
                "Eve", "Frank", "Grace", "Hank"),
       city = c("New York", "Chicago", "Boston", "Denver",
                "Seattle", "Miami", "Portland", "Austin"),
-      segment = c("Consumer", "Business", "Consumer", "Enterprise",
-                   "Consumer", "Business", "Enterprise", "Consumer"),
+      segment = c(
+        "Consumer", "Business", "Consumer", "Enterprise",
+        "Consumer", "Business", "Enterprise", "Consumer"
+      ),
       stringsAsFactors = FALSE
     )
 
@@ -194,10 +200,12 @@ bi_star_schema_expr <- function() {
       customer_id = sample(1:8, n_orders, replace = TRUE),
       product_id = sample(1:12, n_orders, replace = TRUE),
       quantity = sample(1:5, n_orders, replace = TRUE),
-      order_date = as.Date("2024-01-01") + sample(0:364, n_orders, replace = TRUE),
+      order_date = as.Date("2024-01-01") +
+        sample(0:364, n_orders, replace = TRUE),
       stringsAsFactors = FALSE
     )
-    orders$amount <- orders$quantity * products$unit_price[orders$product_id]
+    orders$amount <-
+      orders$quantity * products$unit_price[orders$product_id]
 
     result <- dm::dm(
       categories = categories,

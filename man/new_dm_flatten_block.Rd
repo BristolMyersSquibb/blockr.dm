@@ -15,11 +15,11 @@ new_dm_flatten_block(
 \arguments{
 \item{start_table}{Character, the table to start flattening from. Default "".}
 
-\item{include_tables}{Character vector, specific tables to include in the join.
-If empty, all reachable tables are included.}
+\item{include_tables}{Character vector, specific tables to include
+in the join. If empty, all reachable tables are included.}
 
-\item{join_type}{Character, type of join to use: "left", "inner", "full", "right".
-Default "left".}
+\item{join_type}{Character, type of join to use: "left", "inner",
+"full", "right". Default "left".}
 
 \item{recursive}{Logical, whether to recursively join all related tables.
 Default TRUE.}

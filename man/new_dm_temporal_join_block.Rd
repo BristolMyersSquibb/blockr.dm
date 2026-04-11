@@ -15,22 +15,29 @@ new_dm_temporal_join_block(
 )
 }
 \arguments{
-\item{left_table}{Character, the name of the left table (e.g., "adae"). Default "".}
+\item{left_table}{Character, the name of the left table
+(e.g., "adae"). Default "".}
 
-\item{left_date}{Character, the date column in left table (e.g., "ASTDT"). Default "".}
+\item{left_date}{Character, the date column in left table
+(e.g., "ASTDT"). Default "".}
 
-\item{right_table}{Character, the name of the right table (e.g., "adlb"). Default "".}
+\item{right_table}{Character, the name of the right table
+(e.g., "adlb"). Default "".}
 
-\item{right_date}{Character, the date column in right table (e.g., "ADT"). Default "".}
+\item{right_date}{Character, the date column in right table
+(e.g., "ADT"). Default "".}
 
-\item{window_days}{Numeric, the time window in days. Default 7.}
+\item{window_days}{Numeric, the time window in days.
+Default 7.}
 
-\item{direction}{Character, one of "after", "before", or "around". Default "after".}
+\item{direction}{Character, one of "after", "before", or
+"around". Default "after".}
 
 \item{...}{Forwarded to \code{\link[blockr.core:new_transform_block]{blockr.core::new_transform_block()}}}
 }
 \value{
-A block object that outputs a data frame with the temporal join result
+A block object that outputs a data frame with the
+temporal join result
 }
 \description{
 This block creates a temporal join between two tables in a dm object.

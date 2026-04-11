@@ -53,9 +53,9 @@
 #' @importFrom shinyjs useShinyjs
 #' @export
 new_dm_read_block <- function(
-    path = character(),
-    selected_tables = NULL,
-    ...
+  path = character(),
+  selected_tables = NULL,
+  ...
 ) {
   upload_path <- blockr.core::blockr_option(
     "upload_path",
@@ -130,7 +130,7 @@ new_dm_read_block <- function(
             data_dir <- data_dir_reactive()
             if (
               nzchar(data_dir) &&
-              !grepl("^(/|~|[A-Za-z]:)", path_val)
+                !grepl("^(/|~|[A-Za-z]:)", path_val)
             ) {
               resolved <- file.path(data_dir, path_val)
             }
@@ -196,7 +196,7 @@ new_dm_read_block <- function(
             resolved <- path_val
             if (
               nzchar(data_dir) &&
-              !grepl("^(/|~|[A-Za-z]:)", path_val)
+                !grepl("^(/|~|[A-Za-z]:)", path_val)
             ) {
               resolved <- file.path(data_dir, path_val)
             }
@@ -221,8 +221,11 @@ new_dm_read_block <- function(
             if (!is.null(current_selected)) {
               current_selected <- intersect(current_selected, tbl_info$name)
             }
-            shiny::updateSelectizeInput(session, "table_select",
-              choices = choices, selected = current_selected)
+            shiny::updateSelectizeInput(
+              session, "table_select",
+              choices = choices,
+              selected = current_selected
+            )
           })
 
           shiny::observeEvent(input$table_select, {
@@ -242,12 +245,14 @@ new_dm_read_block <- function(
             resolved <- path_val
             if (
               nzchar(data_dir) &&
-              !grepl("^(/|~|[A-Za-z]:)", path_val)
+                !grepl("^(/|~|[A-Za-z]:)", path_val)
             ) {
               resolved <- file.path(data_dir, path_val)
             }
 
-            r_expr_armed(dm_read_expr(resolved, input_type, selected))
+            r_expr_armed(
+              dm_read_expr(resolved, input_type, selected)
+            )
           })
 
           # Auto-arm on restore so block produces output immediately
@@ -257,13 +262,15 @@ new_dm_read_block <- function(
               data_dir <- data_dir_reactive()
               if (
                 nzchar(data_dir) &&
-                !grepl("^(/|~|[A-Za-z]:)", resolved)
+                  !grepl("^(/|~|[A-Za-z]:)", resolved)
               ) {
                 resolved <- file.path(data_dir, resolved)
               }
-              r_expr_armed(
-                dm_read_expr(resolved, detect_dm_input_type(resolved), selected_tables)
-              )
+              r_expr_armed(dm_read_expr(
+                resolved,
+                detect_dm_input_type(resolved),
+                selected_tables
+              ))
             }) |> shiny::bindEvent(TRUE, once = TRUE)
           }
 
@@ -300,7 +307,9 @@ new_dm_read_block <- function(
           })
 
           list(
-            expr = shiny::reactive({ r_expr_armed() }),
+            expr = shiny::reactive({
+              r_expr_armed()
+            }),
             state = list(
               path = r_path,
               selected_tables = r_selected_tables
@@ -359,12 +368,16 @@ new_dm_read_block <- function(
               border-color: #0a58ca;
             }
             .blockr-table-confirm-btn.has-selection + .dummy,
-            .blockr-table-selector:has(.blockr-table-confirm-btn.has-selection) .selectize-input {
+            .blockr-table-selector:has(
+              .blockr-table-confirm-btn.has-selection
+            ) .selectize-input {
               border-right: none !important;
               border-top-right-radius: 0 !important;
               border-bottom-right-radius: 0 !important;
             }
-            .blockr-table-selector:has(.blockr-table-confirm-btn.has-selection) .selectize-dropdown {
+            .blockr-table-selector:has(
+              .blockr-table-confirm-btn.has-selection
+            ) .selectize-dropdown {
               border-top-right-radius: 0;
             }
             .blockr-table-confirm-btn.confirmed {
@@ -408,7 +421,9 @@ new_dm_read_block <- function(
             shiny::tags$h4("File Location", class = "mb-3"),
             shiny::tags$p(
               class = "blockr-path-hint",
-              "Enter path to an Excel file, ZIP archive, directory, or serialized R object."
+              "Enter path to an Excel file,",
+              "ZIP archive, directory, or",
+              "serialized R object."
             ),
             shiny::div(
               style = "display: none;",
@@ -433,13 +448,23 @@ new_dm_read_block <- function(
               class = "block-section",
               shiny::tags$label(
                 class = "control-label",
-                style = "display: flex; align-items: baseline; justify-content: space-between; margin-top: 16px; width: 100%;",
+                style = paste0(
+                  "display: flex; align-items: baseline;",
+                  " justify-content: space-between;",
+                  " margin-top: 16px; width: 100%;"
+                ),
                 `for` = ns("table_select"),
                 shiny::span("Tables to include"),
                 shiny::span(
                   class = "blockr-select-all-link",
-                  shiny::tags$a(id = ns("select_all_tables"), href = "#", "All"),
-                  shiny::tags$a(id = ns("select_none_tables"), href = "#", "None")
+                  shiny::tags$a(
+                    id = ns("select_all_tables"),
+                    href = "#", "All"
+                  ),
+                  shiny::tags$a(
+                    id = ns("select_none_tables"),
+                    href = "#", "None"
+                  )
                 )
               ),
               shiny::div(
@@ -453,20 +478,25 @@ new_dm_read_block <- function(
                   options = list(
                     placeholder = "Select tables to load...",
                     render = I("{
-                      option: function(data, escape) {
-                        var parts = data.label.split('|||');
-                        var name = parts[0] || '', ext = parts[1] || '', size = parts[2] || '';
-                        return '<div class=\"blockr-table-item\">' +
-                          '<span class=\"blockr-table-name\">' + escape(name) + '</span>' +
-                          (ext ? '<span class=\"blockr-table-badge\">' + escape(ext) + '</span>' : '') +
-                          (size ? '<span class=\"blockr-table-size\">' + escape(size) + '</span>' : '') +
-                        '</div>';
-                      },
-                      item: function(data, escape) {
-                        var name = data.label.split('|||')[0];
-                        return '<div>' + escape(name) + '</div>';
-                      }
-                    }")
+  option: function(data, escape) {
+    var p = data.label.split('|||');
+    var nm = p[0] || '';
+    var ext = p[1] || '';
+    var sz = p[2] || '';
+    return '<div class=\"blockr-table-item\">' +
+      '<span class=\"blockr-table-name\">' +
+      escape(nm) + '</span>' +
+      (ext ? '<span class=\"blockr-table-badge\">' +
+      escape(ext) + '</span>' : '') +
+      (sz ? '<span class=\"blockr-table-size\">' +
+      escape(sz) + '</span>' : '') +
+      '</div>';
+  },
+  item: function(data, escape) {
+    var nm = data.label.split('|||')[0];
+    return '<div>' + escape(nm) + '</div>';
+  }
+}")
                   )
                 ),
                 shiny::tags$button(
@@ -494,8 +524,22 @@ new_dm_read_block <- function(
                     if (!sel || !sel.selectize) return;
                     var sz = sel.selectize;
                     var btn = document.getElementById('%s');
-                    var arrowIcon = '<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><line x1=\"5\" y1=\"12\" x2=\"19\" y2=\"12\"></line><polyline points=\"12 5 19 12 12 19\"></polyline></svg>';
-                    var checkIcon = '<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><polyline points=\"20 6 9 17 4 12\"></polyline></svg>';
+                    var svgA = '<svg xmlns=\"http://www.w3.org/2000/svg\"';
+                    var svgB = ' width=\"16\" height=\"16\"';
+                    var svgC = ' viewBox=\"0 0 24 24\" fill=\"none\"';
+                    var svgD = ' stroke=\"currentColor\"';
+                    var svgE = ' stroke-width=\"2.5\"';
+                    var svgF = ' stroke-linecap=\"round\"';
+                    var svgG = ' stroke-linejoin=\"round\">';
+                    var svgH = svgA+svgB+svgC+svgD+svgE+svgF+svgG;
+                    var arrowIcon = svgH +
+                      '<line x1=\"5\" y1=\"12\" x2=\"19\"' +
+                      ' y2=\"12\"></line>' +
+                      '<polyline points=\"12 5 19 12' +
+                      ' 12 19\"></polyline></svg>';
+                    var checkIcon = svgH +
+                      '<polyline points=\"20 6 9 17' +
+                      ' 4 12\"></polyline></svg>';
                     function syncBtn() {
                       if (!btn) return;
                       btn.classList.remove('confirmed');
@@ -506,23 +550,29 @@ new_dm_read_block <- function(
                         btn.classList.remove('has-selection');
                       }
                     }
-                    // Initial state: if tables already selected, show as confirmed (green)
+                    // If already selected, show confirmed
                     if (btn && sz.items.length > 0) {
                       btn.classList.add('has-selection');
                       btn.classList.add('confirmed');
                       btn.innerHTML = checkIcon;
                     }
-                    if (sz.items.length === 0 && Object.keys(sz.options).length > 0) {
+                    var noItems = sz.items.length === 0;
+                    var hasOpts = Object.keys(sz.options).length > 0;
+                    if (noItems && hasOpts) {
                       sz.open();
                     }
                     // User-driven changes: show blue (needs confirmation)
                     sz.on('change', syncBtn);
                     // All / None links
-                    $('#%s').off('click.selall').on('click.selall', function(e) {
+                    var allSel = '#%s';
+                    $(allSel).off('click.selall').on(
+                      'click.selall', function(e) {
                       e.preventDefault();
                       sz.setValue(Object.keys(sz.options));
                     });
-                    $('#%s').off('click.selnone').on('click.selnone', function(e) {
+                    var noneSel = '#%s';
+                    $(noneSel).off('click.selnone').on(
+                      'click.selnone', function(e) {
                       e.preventDefault();
                       sz.clear();
                     });
@@ -530,9 +580,19 @@ new_dm_read_block <- function(
                 });
                 $('#%s').on('click', function() {
                   var sel = $('#%s')[0];
-                  if (sel && sel.selectize && sel.selectize.items.length > 0) {
+                  var ok = sel && sel.selectize;
+                  if (ok && sel.selectize.items.length > 0) {
                     this.classList.add('confirmed');
-                    this.innerHTML = '<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><polyline points=\"20 6 9 17 4 12\"></polyline></svg>';
+                    var s = '<svg xmlns=\"http://www.w3.org/';
+                    s += '2000/svg\" width=\"16\" height=';
+                    s += '\"16\" viewBox=\"0 0 24 24\"';
+                    s += ' fill=\"none\" stroke=';
+                    s += '\"currentColor\" stroke-width=';
+                    s += '\"2.5\" stroke-linecap=\"round\"';
+                    s += ' stroke-linejoin=\"round\">';
+                    s += '<polyline points=\"20 6 9 17';
+                    s += ' 4 12\"></polyline></svg>';
+                    this.innerHTML = s;
                   }
                 });
                 ",
@@ -575,7 +635,8 @@ format_bytes <- function(bytes) {
 #' format types where discovery is possible (Excel, ZIP, directory).
 #'
 #' @param path Path to file or directory
-#' @param input_type Character: "excel", "zip", "directory", "serialized", "rdata"
+#' @param input_type Character: "excel", "zip", "directory",
+#'   "serialized", "rdata"
 #' @return A data.frame with columns `name`, `ext`, and `size`
 #' @noRd
 discover_dm_tables <- function(path, input_type) {
@@ -663,7 +724,8 @@ discover_dm_tables <- function(path, input_type) {
 
 #' Detect dm input type from path
 #' @param path Path to file or directory
-#' @return Character: "excel", "zip", "directory", "serialized", "rdata", or "unknown"
+#' @return Character: "excel", "zip", "directory",
+#'   "serialized", "rdata", or "unknown"
 #' @noRd
 detect_dm_input_type <- function(path) {
   if (dir.exists(path)) {
@@ -752,7 +814,10 @@ dm_read_expr_zip <- function(path, selected = NULL) {
       }
 
       # Get table names and filter to selected
-      table_names <- make.names(tools::file_path_sans_ext(basename(files)), unique = TRUE)
+      table_names <- make.names(
+        tools::file_path_sans_ext(basename(files)),
+        unique = TRUE
+      )
       if (!is.null(.(selected))) {
         keep <- table_names %in% .(selected)
         files <- files[keep]
@@ -795,15 +860,23 @@ dm_read_expr_directory <- function(path, selected = NULL) {
     local({
       # Find all data files
       extensions <- blockr.io::file_extensions()
-      pattern <- paste0("\\.(", paste(extensions, collapse = "|"), ")$")
-      files <- list.files(.(path), pattern = pattern, ignore.case = TRUE, full.names = TRUE)
+      pattern <- paste0(
+        "\\.(", paste(extensions, collapse = "|"), ")$"
+      )
+      files <- list.files(
+        .(path), pattern = pattern,
+        ignore.case = TRUE, full.names = TRUE
+      )
 
       if (length(files) == 0) {
         stop("No data files found in directory")
       }
 
       # Get table names and filter to selected
-      table_names <- make.names(tools::file_path_sans_ext(basename(files)), unique = TRUE)
+      table_names <- make.names(
+        tools::file_path_sans_ext(basename(files)),
+        unique = TRUE
+      )
       if (!is.null(.(selected))) {
         keep <- table_names %in% .(selected)
         files <- files[keep]
@@ -923,6 +996,9 @@ block_ui.dm_read_block <- function(id, x, ...) {
 
 #' @method block_render_trigger dm_read_block
 #' @export
-block_render_trigger.dm_read_block <- function(x, session = blockr.core::get_session()) {
+block_render_trigger.dm_read_block <- function(
+  x,
+  session = blockr.core::get_session()
+) {
   NULL
 }

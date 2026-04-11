@@ -9,7 +9,8 @@ build_crossfilter_lookups(tables, active_dims, pks, fks, measure_col = NULL)
 \arguments{
 \item{tables}{Named list of data frames}
 
-\item{active_dims}{Named list: tbl_name -> character vector of active dim columns}
+\item{active_dims}{Named list: tbl_name -> character vector
+of active dim columns}
 
 \item{pks}{PK tibble from dm::dm_get_all_pks()}
 

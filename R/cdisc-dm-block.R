@@ -23,7 +23,17 @@ find_cdisc_parent <- function(dm_obj) {
 #' @keywords internal
 find_duplicated_cols <- function(dm_obj, parent_name) {
   parent_cols <- names(dm_obj[[parent_name]])
-  keep_always <- c("USUBJID", "STUDYID")
+  keep_always <- "USUBJID"
+
+  # Keep STUDYID only if there are multiple studies — otherwise it's
+ # safe to deduplicate (single value repeated across all tables).
+  if ("STUDYID" %in% parent_cols) {
+    n_studies <- length(unique(dm_obj[[parent_name]][["STUDYID"]]))
+    if (n_studies > 1L) {
+      keep_always <- c(keep_always, "STUDYID")
+    }
+  }
+
   result <- list()
 
   for (tbl_name in setdiff(names(dm_obj), parent_name)) {
@@ -73,10 +83,14 @@ new_cdisc_dm_block <- function(set_keys = TRUE, dedup_cols = TRUE, ...) {
         set_keys_rv <- shiny::reactiveVal(set_keys)
         dedup_rv <- shiny::reactiveVal(dedup_cols)
 
-        shiny::observeEvent(input$set_keys, set_keys_rv(input$set_keys),
-          ignoreInit = TRUE)
-        shiny::observeEvent(input$dedup_cols, dedup_rv(input$dedup_cols),
-          ignoreInit = TRUE)
+        shiny::observeEvent(
+          input$set_keys, set_keys_rv(input$set_keys),
+          ignoreInit = TRUE
+        )
+        shiny::observeEvent(
+          input$dedup_cols, dedup_rv(input$dedup_cols),
+          ignoreInit = TRUE
+        )
 
         output$cdisc_badge <- shiny::renderUI({
           dm_input <- data()

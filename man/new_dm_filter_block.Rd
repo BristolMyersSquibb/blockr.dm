@@ -9,7 +9,8 @@ new_dm_filter_block(table = "", expr = "", ...)
 \arguments{
 \item{table}{Character, the name of the table to filter. Default "".}
 
-\item{expr}{Character, the filter expression (e.g., "AVAL > 100"). Default "".}
+\item{expr}{Character, the filter expression
+(e.g., "AVAL > 100"). Default "".}
 
 \item{...}{Forwarded to \code{\link[blockr.core:new_transform_block]{blockr.core::new_transform_block()}}}
 }

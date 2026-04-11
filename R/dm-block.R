@@ -52,11 +52,14 @@ infer_keys_from_column_names <- function(dm_obj) {
   # For each shared column, determine PK/FK relationships
   for (col in shared_cols) {
     # Find tables that have this column
-    tables_with_col <- table_names[vapply(all_cols, function(cols) col %in% cols, logical(1))]
+    has_col <- vapply(
+      all_cols, function(cols) col %in% cols, logical(1)
+    )
+    tables_with_col <- table_names[has_col]
 
     if (length(tables_with_col) < 2) next
 
-    # Check which tables have unique values for this column (potential PK)
+    # Check which tables have unique values (potential PK)
     uniqueness <- vapply(tables_with_col, function(tbl) {
       vals <- dm_obj[[tbl]][[col]]
       # A column is a PK candidate if all values are unique and no NAs
@@ -66,8 +69,8 @@ infer_keys_from_column_names <- function(dm_obj) {
     pk_tables <- tables_with_col[uniqueness]
     fk_tables <- tables_with_col[!uniqueness]
 
-    # If at least one table has unique values and others don't, establish relationship
-    # When multiple PK candidates exist, pick the first one
+    # If one table has unique values and others don't,
+    # establish relationship. Pick first PK candidate.
     if (length(pk_tables) >= 1 && length(fk_tables) >= 1) {
       pk_table <- pk_tables[1]
 
@@ -77,7 +80,9 @@ infer_keys_from_column_names <- function(dm_obj) {
 
       # Add PK if not already set
       if (!has_pk) {
-        dm_obj <- dm::dm_add_pk(dm_obj, !!rlang::sym(pk_table), !!rlang::sym(col))
+        dm_obj <- dm::dm_add_pk(
+          dm_obj, !!rlang::sym(pk_table), !!rlang::sym(col)
+        )
       }
 
       # Add FKs from other tables
@@ -91,7 +96,10 @@ infer_keys_from_column_names <- function(dm_obj) {
 
         if (!has_fk) {
           dm_obj <- tryCatch(
-            dm::dm_add_fk(dm_obj, !!rlang::sym(fk_table), !!rlang::sym(col), !!rlang::sym(pk_table)),
+            dm::dm_add_fk(
+              dm_obj, !!rlang::sym(fk_table),
+              !!rlang::sym(col), !!rlang::sym(pk_table)
+            ),
             error = function(e) dm_obj
           )
         }
@@ -134,8 +142,12 @@ infer_keys_from_column_names <- function(dm_obj) {
 #'   serve(
 #'     new_board(
 #'       blocks = list(
-#'         airlines = new_dataset_block(dataset = "airlines", package = "nycflights13"),
-#'         flights = new_dataset_block(dataset = "flights", package = "nycflights13"),
+#'         airlines = new_dataset_block(
+#'           dataset = "airlines", package = "nycflights13"
+#'         ),
+#'         flights = new_dataset_block(
+#'           dataset = "flights", package = "nycflights13"
+#'         ),
 #'         dm_obj = new_dm_block()
 #'       ),
 #'       links = c(
@@ -149,7 +161,7 @@ infer_keys_from_column_names <- function(dm_obj) {
 #' @export
 new_dm_block <- function(infer_keys = TRUE, ...) {
   blockr.core::new_transform_block(
-    server = function(id, ...args) {
+    server = function(id, ...args) { # nolint object_name_linter
       shiny::moduleServer(
         id,
         function(input, output, session) {
@@ -209,7 +221,9 @@ new_dm_block <- function(infer_keys = TRUE, ...) {
 
             # Analyze tables for key relationships
             table_names <- names(info$all_tables)
-            all_cols <- lapply(table_names, function(tbl) names(info$all_tables[[tbl]]))
+            all_cols <- lapply(table_names, function(tbl) {
+              names(info$all_tables[[tbl]])
+            })
             names(all_cols) <- table_names
 
             # Find shared columns
@@ -221,7 +235,11 @@ new_dm_block <- function(infer_keys = TRUE, ...) {
             fks <- list()
 
             for (col in shared_cols) {
-              tables_with_col <- table_names[vapply(all_cols, function(cols) col %in% cols, logical(1))]
+              has_col <- vapply(
+                all_cols,
+                function(cols) col %in% cols, logical(1)
+              )
+              tables_with_col <- table_names[has_col]
               if (length(tables_with_col) < 2) next
 
               # Check uniqueness
@@ -233,8 +251,8 @@ new_dm_block <- function(infer_keys = TRUE, ...) {
               pk_tables <- tables_with_col[uniqueness]
               fk_tables <- tables_with_col[!uniqueness]
 
-              # If at least one table has unique values and others don't, establish relationship
-              # When multiple PK candidates exist, pick the first one
+              # If one table has unique values and others
+              # don't, establish relationship
               if (length(pk_tables) >= 1 && length(fk_tables) >= 1) {
                 pk_table <- pk_tables[1]
                 pks <- c(pks, list(list(table = pk_table, column = col)))
@@ -274,7 +292,10 @@ new_dm_block <- function(infer_keys = TRUE, ...) {
                       result_dm <- dm::dm_bind(result_dm, input_data)
                     } else {
                       new_dm <- dm::dm()
-                      new_dm <- dm::dm(new_dm, !!rlang::sym(input_name) := input_data)
+                      new_dm <- dm::dm(
+                        new_dm,
+                        !!rlang::sym(input_name) := input_data
+                      )
                       result_dm <- dm::dm_bind(result_dm, new_dm)
                     }
                   }
@@ -342,7 +363,7 @@ new_dm_block <- function(infer_keys = TRUE, ...) {
         )
       )
     },
-    dat_valid = function(...args) {
+    dat_valid = function(...args) { # nolint object_name_linter
       # Check that we have at least one input
       if (length(...args) < 1L) {
         stop("At least one data input is required")
@@ -362,7 +383,8 @@ new_dm_block <- function(infer_keys = TRUE, ...) {
 
 #' Custom output for dm blocks
 #'
-#' Displays dm structure as an interactive diagram showing tables and relationships.
+#' Displays dm structure as an interactive diagram showing tables
+#' and relationships.
 #'
 #' @param x The block object
 #' @param result The dm result
@@ -398,7 +420,10 @@ block_output.dm_block <- function(x, result, session) {
     table_name <- selected_table()
     shiny::req(table_name)
 
-    tbl <- tryCatch(as.data.frame(result[[table_name]]), error = function(e) NULL)
+    tbl <- tryCatch(
+      as.data.frame(result[[table_name]]),
+      error = function(e) NULL
+    )
     if (is.null(tbl)) return(NULL)
 
     page_size <- 5L
@@ -538,6 +563,9 @@ block_ui.dm_block <- function(id, x, ...) {
 #'
 #' @method block_render_trigger dm_block
 #' @export
-block_render_trigger.dm_block <- function(x, session = blockr.core::get_session()) {
+block_render_trigger.dm_block <- function(
+  x,
+  session = blockr.core::get_session()
+) {
   NULL
 }

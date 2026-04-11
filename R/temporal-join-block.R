@@ -32,12 +32,12 @@
 #'
 #' @export
 new_temporal_join_block <- function(
-    by = character(),
-    left_date = character(),
-    right_date = character(),
-    window_days = 7,
-    direction = "after",
-    ...
+  by = character(),
+  left_date = character(),
+  right_date = character(),
+  window_days = 7,
+  direction = "after",
+  ...
 ) {
   direction <- match.arg(direction, c("after", "before", "around"))
 
@@ -46,25 +46,36 @@ new_temporal_join_block <- function(
       shiny::moduleServer(
         id,
         function(input, output, session) {
-          ns <- session$ns
-
           # State
-          r_by <- shiny::reactiveVal(if (length(by) > 0 && nzchar(by)) by else character())
-          r_left_date <- shiny::reactiveVal(if (length(left_date) > 0 && nzchar(left_date)) left_date else character())
-          r_right_date <- shiny::reactiveVal(if (length(right_date) > 0 && nzchar(right_date)) right_date else character())
+          r_by <- shiny::reactiveVal(
+            if (length(by) > 0 && nzchar(by)) by else character()
+          )
+          r_left_date <- shiny::reactiveVal(
+            if (length(left_date) > 0 && nzchar(left_date)) {
+              left_date
+            } else {
+              character()
+            }
+          )
+          r_right_date <- shiny::reactiveVal(
+            if (length(right_date) > 0 && nzchar(right_date)) {
+              right_date
+            } else {
+              character()
+            }
+          )
           r_window_days <- shiny::reactiveVal(window_days)
           r_direction <- shiny::reactiveVal(direction)
-
-          # Detect common columns for join key
-          common_cols <- shiny::reactive({
-            shiny::req(x(), y())
-            intersect(colnames(x()), colnames(y()))
-          })
 
           # Detect date columns in a data frame
           get_date_cols <- function(df) {
             if (!is.data.frame(df)) return(character())
-            names(df)[vapply(df, function(col) inherits(col, c("Date", "POSIXt")), logical(1))]
+            is_date <- vapply(
+              df,
+              function(col) inherits(col, c("Date", "POSIXt")),
+              logical(1)
+            )
+            names(df)[is_date]
           }
 
           # Update UI when data changes
@@ -83,14 +94,21 @@ new_temporal_join_block <- function(
               # Auto-detect: pick the first common non-date column
               date_cols <- union(x_dates, y_dates)
               candidates <- setdiff(common, date_cols)
-              selected_by <- if (length(candidates) > 0) candidates[1] else {
-                if (length(common) > 0) common[1] else ""
+              selected_by <- if (length(candidates) > 0) {
+                candidates[1]
+              } else if (length(common) > 0) {
+                common[1]
+              } else {
+                ""
               }
               r_by(selected_by)
             } else {
               selected_by <- current_by
             }
-            shiny::updateSelectInput(session, "by", choices = common, selected = selected_by)
+            shiny::updateSelectInput(
+              session, "by",
+              choices = common, selected = selected_by
+            )
 
             # Update left_date
             current_ld <- r_left_date()
@@ -100,7 +118,10 @@ new_temporal_join_block <- function(
             } else {
               selected_ld <- current_ld
             }
-            shiny::updateSelectInput(session, "left_date", choices = x_dates, selected = selected_ld)
+            shiny::updateSelectInput(
+              session, "left_date",
+              choices = x_dates, selected = selected_ld
+            )
 
             # Update right_date
             current_rd <- r_right_date()
@@ -110,15 +131,33 @@ new_temporal_join_block <- function(
             } else {
               selected_rd <- current_rd
             }
-            shiny::updateSelectInput(session, "right_date", choices = y_dates, selected = selected_rd)
+            shiny::updateSelectInput(
+              session, "right_date",
+              choices = y_dates, selected = selected_rd
+            )
           })
 
           # Sync UI inputs to state
-          shiny::observeEvent(input$by, r_by(input$by), ignoreInit = TRUE)
-          shiny::observeEvent(input$left_date, r_left_date(input$left_date), ignoreInit = TRUE)
-          shiny::observeEvent(input$right_date, r_right_date(input$right_date), ignoreInit = TRUE)
-          shiny::observeEvent(input$window_days, r_window_days(input$window_days), ignoreInit = TRUE)
-          shiny::observeEvent(input$direction, r_direction(input$direction), ignoreInit = TRUE)
+          shiny::observeEvent(
+            input$by, r_by(input$by), ignoreInit = TRUE
+          )
+          shiny::observeEvent(
+            input$left_date, r_left_date(input$left_date),
+            ignoreInit = TRUE
+          )
+          shiny::observeEvent(
+            input$right_date, r_right_date(input$right_date),
+            ignoreInit = TRUE
+          )
+          shiny::observeEvent(
+            input$window_days,
+            r_window_days(input$window_days),
+            ignoreInit = TRUE
+          )
+          shiny::observeEvent(
+            input$direction, r_direction(input$direction),
+            ignoreInit = TRUE
+          )
 
           list(
             expr = shiny::reactive({
@@ -144,8 +183,16 @@ new_temporal_join_block <- function(
               expr_text <- sprintf(
                 'local({
   window_days <- %s
-  dplyr::left_join(x, y, by = "%s", suffix = c("", ".y"), relationship = "many-to-many") |>
-    dplyr::mutate(days_diff = as.numeric(.data[["%s"]] - .data[["%s"]])) |>
+  dplyr::left_join(
+    x, y, by = "%s",
+    suffix = c("", ".y"),
+    relationship = "many-to-many"
+  ) |>
+    dplyr::mutate(
+      days_diff = as.numeric(
+        .data[["%s"]] - .data[["%s"]]
+      )
+    ) |>
     dplyr::filter(%s)
 })',
                 wd, by_col, rd, ld, filter_expr
@@ -186,7 +233,11 @@ new_temporal_join_block <- function(
                   shiny::selectInput(
                     ns("by"),
                     label = "Join key",
-                    choices = if (length(by) > 0 && nzchar(by)) by else character(),
+                    choices = if (length(by) > 0 && nzchar(by)) {
+                      by
+                    } else {
+                      character()
+                    },
                     selected = if (length(by) > 0 && nzchar(by)) by else NULL,
                     width = "100%"
                   )
@@ -204,8 +255,20 @@ new_temporal_join_block <- function(
                   shiny::selectInput(
                     ns("left_date"),
                     label = "Date in x (left)",
-                    choices = if (length(left_date) > 0 && nzchar(left_date)) left_date else character(),
-                    selected = if (length(left_date) > 0 && nzchar(left_date)) left_date else NULL,
+                    choices = if (
+                      length(left_date) > 0 && nzchar(left_date)
+                    ) {
+                      left_date
+                    } else {
+                      character()
+                    },
+                    selected = if (
+                      length(left_date) > 0 && nzchar(left_date)
+                    ) {
+                      left_date
+                    } else {
+                      NULL
+                    },
                     width = "100%"
                   )
                 ),
@@ -214,8 +277,20 @@ new_temporal_join_block <- function(
                   shiny::selectInput(
                     ns("right_date"),
                     label = "Date in y (right)",
-                    choices = if (length(right_date) > 0 && nzchar(right_date)) right_date else character(),
-                    selected = if (length(right_date) > 0 && nzchar(right_date)) right_date else NULL,
+                    choices = if (
+                      length(right_date) > 0 && nzchar(right_date)
+                    ) {
+                      right_date
+                    } else {
+                      character()
+                    },
+                    selected = if (
+                      length(right_date) > 0 && nzchar(right_date)
+                    ) {
+                      right_date
+                    } else {
+                      NULL
+                    },
                     width = "100%"
                   )
                 )

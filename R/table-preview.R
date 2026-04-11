@@ -63,8 +63,16 @@ build_html_table <- function(dat, total_rows, sort_state = NULL, ns = NULL,
   sort_col <- sort_state$col
   sort_dir <- sort_state$dir
 
-  sort_input_id <- if (!is.null(ns)) ns("blockr_table_sort") else "blockr_table_sort"
-  page_input_id <- if (!is.null(ns)) ns("blockr_table_page") else "blockr_table_page"
+  sort_input_id <- if (!is.null(ns)) {
+    ns("blockr_table_sort")
+  } else {
+    "blockr_table_sort"
+  }
+  page_input_id <- if (!is.null(ns)) {
+    ns("blockr_table_page")
+  } else {
+    "blockr_table_page"
+  }
 
   # Handle empty data frame
   if (n_cols == 0) {
@@ -76,7 +84,10 @@ build_html_table <- function(dat, total_rows, sort_state = NULL, ns = NULL,
           `data-page-input` = page_input_id,
           shiny::tags$div(
             class = "blockr-table-footer",
-            shiny::tags$span(class = "blockr-table-range", "Empty data frame (0 columns)")
+            shiny::tags$span(
+              class = "blockr-table-range",
+              "Empty data frame (0 columns)"
+            )
           )
         ),
         table_preview_css(),
@@ -185,7 +196,9 @@ build_html_table <- function(dat, total_rows, sort_state = NULL, ns = NULL,
 
   for (i in seq_len(n_showing)) {
     row_cells <- vector("list", n_cols + 1L)
-    row_cells[[1L]] <- shiny::tags$td(class = "blockr-row-number", start_row_num + i)
+    row_cells[[1L]] <- shiny::tags$td(
+      class = "blockr-row-number", start_row_num + i
+    )
 
     for (j in seq_along(col_names)) {
       is_na <- col_na[[j]][i]
@@ -204,7 +217,9 @@ build_html_table <- function(dat, total_rows, sort_state = NULL, ns = NULL,
       }
 
       cell_title <- if (!is_na) formatted[[j]][i] else NULL
-      row_cells[[j + 1L]] <- shiny::tags$td(class = cell_class, title = cell_title, content)
+      row_cells[[j + 1L]] <- shiny::tags$td(
+        class = cell_class, title = cell_title, content
+      )
     }
 
     body_rows[[i]] <- do.call(shiny::tags$tr, row_cells)
@@ -233,7 +248,11 @@ build_html_table <- function(dat, total_rows, sort_state = NULL, ns = NULL,
         shiny::HTML("&#x2039;")
       ),
       shiny::tags$button(
-        class = if (page >= max_page) "blockr-nav-btn disabled" else "blockr-nav-btn",
+        class = if (page >= max_page) {
+          "blockr-nav-btn disabled"
+        } else {
+          "blockr-nav-btn"
+        },
         disabled = if (page >= max_page) "disabled" else NULL,
         `data-direction` = "next",
         shiny::HTML("&#x203A;")
@@ -535,7 +554,8 @@ table_sort_js <- function() {
           var saved = window.blockrScrollRestore[key];
           if (saved) {
             if (saved.col) {
-              var th = wrapper.querySelector('th[data-column=\"' + saved.col + '\"]');
+              var sel = 'th[data-column=\"' + saved.col + '\"]';
+              var th = wrapper.querySelector(sel);
               if (th) {
                 wrapper.scrollLeft = th.offsetLeft - saved.visualOffset;
               } else {
@@ -570,13 +590,15 @@ table_sort_js <- function() {
             visualOffset: header.offsetLeft - wrapper.scrollLeft
           };
         }
-        var currentDir = header.classList.contains('blockr-sort-asc') ? 'asc' :
-                         header.classList.contains('blockr-sort-desc') ? 'desc' :
-                         header.classList.contains('blockr-sort-na') ? 'na' : 'none';
+        var cl = header.classList;
+        var currentDir = cl.contains('blockr-sort-asc') ? 'asc' :
+          cl.contains('blockr-sort-desc') ? 'desc' :
+          cl.contains('blockr-sort-na') ? 'na' : 'none';
         var newDir = currentDir === 'none' ? 'asc' :
                      currentDir === 'asc' ? 'desc' :
                      currentDir === 'desc' ? 'na' : 'none';
-        Shiny.setInputValue(inputId, {col: col, dir: newDir}, {priority: 'event'});
+        Shiny.setInputValue(inputId,
+          {col: col, dir: newDir}, {priority: 'event'});
         var pageInputId = container.dataset.pageInput;
         if (pageInputId) {
           Shiny.setInputValue(pageInputId, 1, {priority: 'event'});

@@ -42,7 +42,11 @@ new_dm_select_block <- function(tables = character(), ...) {
             shiny::updateSelectizeInput(
               session, "tables",
               choices = choices,
-              selected = if (length(valid_selection) > 0) valid_selection else choices
+              selected = if (length(valid_selection) > 0) {
+                valid_selection
+              } else {
+                choices
+              }
             )
           })
 
@@ -130,6 +134,9 @@ block_ui.dm_select_block <- function(id, x, ...) {
 
 #' @method block_render_trigger dm_select_block
 #' @export
-block_render_trigger.dm_select_block <- function(x, session = blockr.core::get_session()) {
+block_render_trigger.dm_select_block <- function(
+  x,
+  session = blockr.core::get_session()
+) {
   NULL
 }

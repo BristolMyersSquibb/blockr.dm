@@ -4,10 +4,10 @@
 #' all related tables based on their foreign key relationships.
 #'
 #' @param start_table Character, the table to start flattening from. Default "".
-#' @param include_tables Character vector, specific tables to include in the join.
-#'   If empty, all reachable tables are included.
-#' @param join_type Character, type of join to use: "left", "inner", "full", "right".
-#'   Default "left".
+#' @param include_tables Character vector, specific tables to include
+#'   in the join. If empty, all reachable tables are included.
+#' @param join_type Character, type of join to use: "left", "inner",
+#'   "full", "right". Default "left".
 #' @param recursive Logical, whether to recursively join all related tables.
 #'   Default TRUE.
 #' @param ... Forwarded to [blockr.core::new_transform_block()]
@@ -36,11 +36,11 @@
 #'
 #' @export
 new_dm_flatten_block <- function(
-    start_table = "",
-    include_tables = character(),
-    join_type = "left",
-    recursive = TRUE,
-    ...
+  start_table = "",
+  include_tables = character(),
+  join_type = "left",
+  recursive = TRUE,
+  ...
 ) {
   join_type <- match.arg(join_type, c("left", "inner", "full", "right"))
 
@@ -81,7 +81,11 @@ new_dm_flatten_block <- function(
               current_include <- r_include_tables()
 
               # Keep current start selection if valid, otherwise use first table
-              selected_start <- if (current_start %in% tables) current_start else tables[1]
+              selected_start <- if (current_start %in% tables) {
+                current_start
+              } else {
+                tables[1]
+              }
               shiny::updateSelectInput(
                 session, "start_table",
                 choices = tables,
@@ -131,7 +135,10 @@ new_dm_flatten_block <- function(
                 if (jtype == "left") {
                   # Default left_join - don't need to specify .join
                   bquote(
-                    dm::dm_flatten_to_tbl(data, .(tbl_sym), .recursive = .(is_recursive)),
+                    dm::dm_flatten_to_tbl(
+                      data, .(tbl_sym),
+                      .recursive = .(is_recursive)
+                    ),
                     list(
                       tbl_sym = as.name(tbl),
                       is_recursive = is_recursive
@@ -144,7 +151,11 @@ new_dm_flatten_block <- function(
                     "right" = quote(dplyr::right_join)
                   )
                   bquote(
-                    dm::dm_flatten_to_tbl(data, .(tbl_sym), .join = .(join_fn), .recursive = .(is_recursive)),
+                    dm::dm_flatten_to_tbl(
+                      data, .(tbl_sym),
+                      .join = .(join_fn),
+                      .recursive = .(is_recursive)
+                    ),
                     list(
                       tbl_sym = as.name(tbl),
                       join_fn = join_fn,
@@ -201,7 +212,11 @@ new_dm_flatten_block <- function(
                   shiny::selectInput(
                     shiny::NS(id, "start_table"),
                     label = "Start from table",
-                    choices = if (nzchar(start_table)) start_table else character(),
+                    choices = if (nzchar(start_table)) {
+                      start_table
+                    } else {
+                      character()
+                    },
                     selected = start_table
                   )
                 ),
@@ -244,7 +259,8 @@ new_dm_flatten_block <- function(
               ),
               shiny::tags$p(
                 class = "text-muted",
-                "Joins related tables into a single data frame based on foreign keys."
+                "Joins related tables into a single data",
+                "frame based on foreign keys."
               )
             )
           )

@@ -87,7 +87,8 @@ new_dm_pull_block <- function(table = "", ...) {
               ),
               shiny::tags$p(
                 class = "text-muted",
-                "Extracts selected table as a data frame for further processing."
+                "Extracts selected table as a data frame",
+                "for further processing."
               )
             )
           )

@@ -21,8 +21,6 @@ new_dm_nested_view_block <- function(root_table = character(), ...) {
       shiny::moduleServer(
         id,
         function(input, output, session) {
-          ns <- session$ns
-
           root_rv <- shiny::reactiveVal(root_table)
 
           # Get available tables from dm
@@ -84,7 +82,9 @@ new_dm_nested_view_block <- function(root_table = character(), ...) {
               # Build chain: dm_nest_tbl(dm_nest_tbl(data, child1), child2) ...
               nest_expr <- quote(data)
               for (child in children) {
-                nest_expr <- bquote(dm::dm_nest_tbl(.(nest_expr), .(as.name(child))))
+                nest_expr <- bquote(
+                  dm::dm_nest_tbl(.(nest_expr), .(as.name(child)))
+                )
               }
 
               # Final expression: pull_tbl(nested_dm, root)
@@ -202,7 +202,10 @@ block_output.dm_nested_view_block <- function(x, result, session) {
     }
 
     htmltools::div(
-      style = "padding: 10px; background: #f8f9fa; border-left: 3px solid #dee2e6;",
+      style = paste0(
+        "padding: 10px; background: #f8f9fa;",
+        " border-left: 3px solid #dee2e6;"
+      ),
       sections
     )
   }

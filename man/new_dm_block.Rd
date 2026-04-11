@@ -42,8 +42,12 @@ if (interactive()) {
   serve(
     new_board(
       blocks = list(
-        airlines = new_dataset_block(dataset = "airlines", package = "nycflights13"),
-        flights = new_dataset_block(dataset = "flights", package = "nycflights13"),
+        airlines = new_dataset_block(
+          dataset = "airlines", package = "nycflights13"
+        ),
+        flights = new_dataset_block(
+          dataset = "flights", package = "nycflights13"
+        ),
         dm_obj = new_dm_block()
       ),
       links = c(

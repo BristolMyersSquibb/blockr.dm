@@ -65,8 +65,15 @@ new_dm_add_keys_block <- function(
 
               # Update PK table
               current_pk <- r_pk_table()
-              selected_pk <- if (current_pk %in% tables) current_pk else tables[1]
-              shiny::updateSelectInput(session, "pk_table", choices = tables, selected = selected_pk)
+              selected_pk <- if (current_pk %in% tables) {
+                current_pk
+              } else {
+                tables[1]
+              }
+              shiny::updateSelectInput(
+                session, "pk_table",
+                choices = tables, selected = selected_pk
+              )
               r_pk_table(selected_pk)
 
               # Update FK tables (multi-select)
@@ -93,7 +100,10 @@ new_dm_add_keys_block <- function(
                 cols <- colnames(tbl_data)
                 current <- r_pk_column()
                 selected <- if (current %in% cols) current else cols[1]
-                shiny::updateSelectInput(session, "pk_column", choices = cols, selected = selected)
+                shiny::updateSelectInput(
+                  session, "pk_column",
+                  choices = cols, selected = selected
+                )
                 r_pk_column(selected)
               }
             }
@@ -120,11 +130,22 @@ new_dm_add_keys_block <- function(
               }
               if (!is.null(common_cols) && length(common_cols) > 0) {
                 current <- r_fk_column()
-                selected <- if (current %in% common_cols) current else common_cols[1]
-                shiny::updateSelectInput(session, "fk_column", choices = c("", common_cols), selected = selected)
+                selected <- if (current %in% common_cols) {
+                  current
+                } else {
+                  common_cols[1]
+                }
+                shiny::updateSelectInput(
+                  session, "fk_column",
+                  choices = c("", common_cols),
+                  selected = selected
+                )
               }
             } else {
-              shiny::updateSelectInput(session, "fk_column", choices = character(), selected = "")
+              shiny::updateSelectInput(
+                session, "fk_column",
+                choices = character(), selected = ""
+              )
             }
           })
 
@@ -150,7 +171,10 @@ new_dm_add_keys_block <- function(
               if (length(fk_tbls) > 0 && nzchar(fk_col)) {
                 for (fk_tbl in fk_tbls) {
                   result_expr <- bquote(
-                    dm::dm_add_fk(.(inner), .(fk_tbl_sym), .(fk_col_sym), .(pk_tbl_sym)),
+                    dm::dm_add_fk(
+                      .(inner), .(fk_tbl_sym),
+                      .(fk_col_sym), .(pk_tbl_sym)
+                    ),
                     list(
                       inner = result_expr,
                       fk_tbl_sym = as.name(fk_tbl),
@@ -214,7 +238,11 @@ new_dm_add_keys_block <- function(
                   shiny::selectizeInput(
                     shiny::NS(id, "fk_tables"),
                     label = "Tables",
-                    choices = if (length(fk_tables) > 0) fk_tables else character(),
+                    choices = if (length(fk_tables) > 0) {
+                      fk_tables
+                    } else {
+                      character()
+                    },
                     selected = fk_tables,
                     multiple = TRUE
                   )

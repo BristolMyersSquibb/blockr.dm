@@ -45,23 +45,47 @@ register_dm_blocks <- function() {
       "DM Example"
     ),
     description = c(
-      "Read multiple tables from Excel, ZIP, or directory into a dm object",
+      "Read tables from Excel, ZIP, or directory into dm",
       "Write dm object to Excel, ZIP, or directory",
-      "Combine multiple data frames into a dm (data model) object",
-      "Set CDISC keys (USUBJID PK/FK) and optionally deduplicate subject columns",
-      "Select a subset of tables to keep in a dm object",
-      "Add primary and foreign key relationships to a dm object",
-      "Filter a dm by condition in any table, cascading to related tables via foreign keys",
-      "Filter a dm by selecting a table, column, and value from dropdowns",
-      "Extract a single table from a dm object as a data frame",
-      "Flatten a dm into a single data frame by joining related tables",
-      "Display dm as nested table with expandable child rows",
-      "Join two tables and filter by time window between date columns",
-      "Temporal join between two tables in a dm object, filtering by time window",
-      "Interactive crossfilter with categorical tables and numeric range sliders",
-      "Cross-table crossfilter on a dm object with per-table filter panels",
-      "Client-side crossfilter for data frames and dm objects using crossfilter2.js",
-      "Load a pre-built dm object from a catalog of example datasets"
+      "Combine data frames into a dm (data model) object",
+      paste(
+        "Set CDISC keys (USUBJID PK/FK) and",
+        "optionally deduplicate subject columns"
+      ),
+      "Select a subset of tables to keep in a dm",
+      "Add primary and foreign key relationships to dm",
+      paste(
+        "Filter dm by condition in any table,",
+        "cascading to related tables via FKs"
+      ),
+      paste(
+        "Filter dm by selecting a table, column,",
+        "and value from dropdowns"
+      ),
+      "Extract a single table from dm as a data frame",
+      "Flatten dm into a single data frame by joining",
+      "Display dm as nested table with expandable rows",
+      paste(
+        "Join two tables and filter by time window",
+        "between date columns"
+      ),
+      paste(
+        "Temporal join between two dm tables,",
+        "filtering by time window"
+      ),
+      paste(
+        "Interactive crossfilter with categorical",
+        "tables and numeric range sliders"
+      ),
+      paste(
+        "Cross-table crossfilter on dm with",
+        "per-table filter panels"
+      ),
+      paste(
+        "Client-side crossfilter for data frames",
+        "and dm objects using crossfilter2.js"
+      ),
+      "Load a pre-built dm from example datasets"
     ),
     category = c(
       "structured",
@@ -102,48 +126,108 @@ register_dm_blocks <- function() {
       "database"
     ),
     arguments = list(
-      NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+      NULL, NULL, NULL, NULL, NULL, NULL,
+      NULL, NULL, NULL, NULL, NULL, NULL, NULL,
       # crossfilter_block (pos 13):
       structure(
         c(
-          filters = "Categorical filters. Object: column name -> array of selected values (strings)",
-          range_filters = "Range filters for numeric columns. Object: column name -> [min, max]",
-          active_dims = "Active filter columns. Object with key \".tbl\" -> array of column names"
+          filters = paste(
+            "Categorical filters. Object:",
+            "column name -> array of selected",
+            "values (strings)"
+          ),
+          range_filters = paste(
+            "Range filters for numeric columns.",
+            "Object: column name -> [min, max]"
+          ),
+          active_dims = paste(
+            "Active filter columns. Object with",
+            "key \".tbl\" -> array of column names"
+          )
         ),
         examples = list(
-          filters = list(Species = list("setosa", "virginica")),
+          filters = list(
+            Species = list("setosa", "virginica")
+          ),
           range_filters = list(Sepal.Length = c(5, 7)),
-          active_dims = list(.tbl = list("Species", "Sepal.Width"))
+          active_dims = list(
+            .tbl = list("Species", "Sepal.Width")
+          )
         )
       ),
       # dm_crossfilter_block (pos 14):
       structure(
         c(
-          active_dims = "Per-table active filter columns. Object: table name -> array of column names",
-          filters = "Per-table categorical filters. Object: table name -> {column -> array of values (strings)}",
-          range_filters = "Per-table range filters. Object: table name -> {column -> [min, max]}",
-          measure = "Aggregation measure as \"table.column\" string, or null for row counts"
+          active_dims = paste(
+            "Per-table active filter columns.",
+            "Object: table name -> array of",
+            "column names"
+          ),
+          filters = paste(
+            "Per-table categorical filters.",
+            "Object: table name ->",
+            "{column -> array of values (strings)}"
+          ),
+          range_filters = paste(
+            "Per-table range filters. Object:",
+            "table name -> {column -> [min, max]}"
+          ),
+          measure = paste(
+            "Aggregation measure as",
+            "\"table.column\" string,",
+            "or null for row counts"
+          )
         ),
         examples = list(
-          active_dims = list(adsl = list("SEX", "AGE"), adae = list("AESEV")),
+          active_dims = list(
+            adsl = list("SEX", "AGE"),
+            adae = list("AESEV")
+          ),
           filters = list(adsl = list(SEX = list("F"))),
-          range_filters = list(adsl = list(AGE = c(40, 60))),
+          range_filters = list(
+            adsl = list(AGE = c(40, 60))
+          ),
           measure = NULL
         )
       ),
       # js_crossfilter_block (pos 15):
       structure(
         c(
-          active_dims = "Per-table active filter columns. Object: table name -> array of column names. For a single data frame use \".tbl\" as the table name.",
-          filters = "Per-table categorical filters. Object: table name -> {column -> array of values}",
-          range_filters = "Per-table range filters. Object: table name -> {column -> [min, max]}",
-          measure = "Aggregation measure as \"table.column\" string, or null for row counts",
-          agg_func = "Aggregation function: \"sum\" or \"mean\". Only used when measure is set."
+          active_dims = paste(
+            "Per-table active filter columns.",
+            "Object: table name -> array of",
+            "column names. For a single data",
+            "frame use \".tbl\" as the table name."
+          ),
+          filters = paste(
+            "Per-table categorical filters.",
+            "Object: table name ->",
+            "{column -> array of values}"
+          ),
+          range_filters = paste(
+            "Per-table range filters. Object:",
+            "table name -> {column -> [min, max]}"
+          ),
+          measure = paste(
+            "Aggregation measure as",
+            "\"table.column\" string,",
+            "or null for row counts"
+          ),
+          agg_func = paste(
+            "Aggregation function:",
+            "\"sum\" or \"mean\".",
+            "Only used when measure is set."
+          )
         ),
         examples = list(
-          active_dims = list(adsl = list("SEX", "AGE"), adae = list("AESEV")),
+          active_dims = list(
+            adsl = list("SEX", "AGE"),
+            adae = list("AESEV")
+          ),
           filters = list(adsl = list(SEX = list("F"))),
-          range_filters = list(adsl = list(AGE = c(40, 60))),
+          range_filters = list(
+            adsl = list(AGE = c(40, 60))
+          ),
           measure = NULL,
           agg_func = "sum"
         )
@@ -151,7 +235,11 @@ register_dm_blocks <- function() {
       # dm_example_block (pos 16):
       structure(
         c(
-          dataset = "ID of the dm example dataset to load. Use dm_example_choices() to see available options."
+          dataset = paste(
+            "ID of the dm example dataset to",
+            "load. Use dm_example_choices()",
+            "to see available options."
+          )
         ),
         examples = list(
           dataset = "bi_star_schema"

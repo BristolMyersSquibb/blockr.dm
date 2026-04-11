@@ -15,10 +15,18 @@ data_schema.dm <- function(x, ...) {
     pks <- dm::dm_get_all_pks(x)
     if (nrow(pks) > 0) {
       lines <- vapply(seq_len(nrow(pks)), function(i) {
-        paste0("  ", pks$table[i], ": ", paste(pks$pk_col[[i]], collapse = ", "))
+        paste0(
+          "  ", pks$table[i], ": ",
+          paste(pks$pk_col[[i]], collapse = ", ")
+        )
       }, character(1))
-      paste0("\nPrimary keys:\n", paste(lines, collapse = "\n"))
-    } else ""
+      paste0(
+        "\nPrimary keys:\n",
+        paste(lines, collapse = "\n")
+      )
+    } else {
+      ""
+    }
   }, error = function(e) "")
 
   # Foreign keys
@@ -26,13 +34,24 @@ data_schema.dm <- function(x, ...) {
     fks <- dm::dm_get_all_fks(x)
     if (nrow(fks) > 0) {
       lines <- vapply(seq_len(nrow(fks)), function(i) {
+        child_fk <- paste(
+          fks$child_fk_cols[[i]], collapse = ", "
+        )
+        parent_pk <- paste(
+          fks$parent_key_cols[[i]], collapse = ", "
+        )
         paste0(
-          "  ", fks$child_table[i], ".", paste(fks$child_fk_cols[[i]], collapse = ", "),
-          " -> ", fks$parent_table[i], ".", paste(fks$parent_key_cols[[i]], collapse = ", ")
+          "  ", fks$child_table[i], ".", child_fk,
+          " -> ", fks$parent_table[i], ".", parent_pk
         )
       }, character(1))
-      paste0("\nForeign keys:\n", paste(lines, collapse = "\n"))
-    } else ""
+      paste0(
+        "\nForeign keys:\n",
+        paste(lines, collapse = "\n")
+      )
+    } else {
+      ""
+    }
   }, error = function(e) "")
 
   # Per-table column names only (concise — LLM can use data_query to drill in)

@@ -31,5 +31,6 @@
 \item{session}{Shiny session}
 }
 \description{
-Displays dm structure as an interactive diagram showing tables and relationships.
+Displays dm structure as an interactive diagram showing tables
+and relationships.
 }

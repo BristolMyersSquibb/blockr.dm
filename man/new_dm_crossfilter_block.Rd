@@ -14,7 +14,8 @@ new_dm_crossfilter_block(
 )
 }
 \arguments{
-\item{active_dims}{Named list of per-table active filter columns. Each element
+\item{active_dims}{Named list of per-table active
+filter columns. Each element
 is a character vector of column names to show as filter widgets.
 E.g., \code{list(adsl_data = c("SEX", "AGE"), adlb_data = c("PARAMCD"))}
 Start with an empty list (default) to show no filters initially.}
@@ -29,7 +30,8 @@ E.g., \code{list(adsl = list(AGE = c(65, 80)))}}
 
 \item{measure}{Measure column to aggregate in categorical filters, as
 \code{"table.column"} (e.g., \code{"sales.amount"}). Defaults to \code{NULL} (row count).
-When set, categorical filter bars show aggregated values per dimension value
+When set, categorical filter bars show aggregated
+values per dimension value
 instead of row counts.}
 
 \item{agg_func}{Aggregation function name: \code{"sum"} (default), \code{"mean"},

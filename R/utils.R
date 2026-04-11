@@ -90,7 +90,8 @@ block_container_script <- function() {
 #' animated chevron indicator.
 #'
 #' @param id Character string, the namespaced ID for the advanced options div.
-#' @param use_subgrid Logical, whether to use CSS subgrid for better grid integration.
+#' @param use_subgrid Logical, whether to use CSS subgrid for
+#'   better grid integration.
 #' @return HTML style tag with advanced toggle CSS
 #' @noRd
 css_advanced_toggle <- function(id, use_subgrid = FALSE) {
@@ -139,8 +140,6 @@ css_advanced_toggle <- function(id, use_subgrid = FALSE) {
       transform: rotate(90deg);
     }
     ",
-    id,
-    subgrid_css,
-    id
+    id, subgrid_css, id
   )))
 }

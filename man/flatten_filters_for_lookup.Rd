@@ -11,10 +11,12 @@ flatten_filters_for_lookup(cat_filters, rng_filters, lookup_columns)
 
 \item{rng_filters}{Named list of per-table range filters}
 
-\item{lookup_columns}{Character vector of column names in the lookup table}
+\item{lookup_columns}{Character vector of column names in
+the lookup table}
 }
 \value{
-List with \code{cat} (flat categorical) and \code{rng} (flat range) filter lists
+List with \code{cat} (flat categorical) and \code{rng}
+(flat range) filter lists
 }
 \description{
 Converts nested per-table filter lists (e.g., \code{list(adsl = list(SEX = "F"))})

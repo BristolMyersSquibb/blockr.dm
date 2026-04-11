@@ -24,7 +24,9 @@
 #' new_dm_filter_value_block(table = "adsl", column = "SEX", value = "F")
 #'
 #' @export
-new_dm_filter_value_block <- function(table = "", column = "", value = "", ...) {
+new_dm_filter_value_block <- function(
+  table = "", column = "", value = "", ...
+) {
   blockr.core::new_transform_block(
     server = function(id, data) {
       shiny::moduleServer(
@@ -47,7 +49,7 @@ new_dm_filter_value_block <- function(table = "", column = "", value = "", ...) 
             r_value(input$value %||% "")
           })
 
-          # Populate table + column choices whenever data arrives or table changes
+          # Populate table + column choices when data arrives
           shiny::observe({
             dm_obj <- data()
             shiny::req(inherits(dm_obj, "dm"))
@@ -55,7 +57,11 @@ new_dm_filter_value_block <- function(table = "", column = "", value = "", ...) 
 
             # Update table dropdown
             current_tbl <- r_table()
-            selected_tbl <- if (current_tbl %in% tables) current_tbl else tables[1]
+            selected_tbl <- if (current_tbl %in% tables) {
+              current_tbl
+            } else {
+              tables[1]
+            }
             shiny::updateSelectInput(
               session, "table",
               choices = tables,
@@ -118,7 +124,7 @@ new_dm_filter_value_block <- function(table = "", column = "", value = "", ...) 
                 num_val <- suppressWarnings(as.numeric(val))
                 filter_val <- if (!is.na(num_val)) num_val else val
 
-                # Build: column == value
+                # Equality filter call
                 filter_call <- call("==", as.symbol(col), filter_val)
 
                 # Build: dm::dm_filter(data, <table> = <condition>)
@@ -180,7 +186,8 @@ new_dm_filter_value_block <- function(table = "", column = "", value = "", ...) 
               ),
               shiny::tags$p(
                 class = "text-muted",
-                "Filter cascades to related tables via foreign key relationships."
+                "Filter cascades to related tables",
+                "via foreign key relationships."
               )
             )
           )

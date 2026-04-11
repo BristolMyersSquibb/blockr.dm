@@ -19,7 +19,8 @@ utils::globalVariables(c(".count", ".selected"))
 #'   numeric vector of length 2 (min, max).
 #'   E.g., `list(Sepal.Length = c(5, 7))`
 #' @param active_dims Named list of active filter columns (per-table format,
-#'   but only one table `.tbl`). E.g., `list(.tbl = c("Species", "Sepal.Width"))`
+#'   but only one table `.tbl`).
+#'   E.g., `list(.tbl = c("Species", "Sepal.Width"))`
 #' @param agg_func Optional aggregation function name (e.g., `"sum"`, `"mean"`)
 #' @param ... Forwarded to [blockr.core::new_transform_block()]
 #'
@@ -38,11 +39,11 @@ utils::globalVariables(c(".count", ".selected"))
 #'   )
 #' }
 new_crossfilter_block <- function(
-    filters = list(),
-    range_filters = list(),
-    active_dims = list(),
-    agg_func = NULL,
-    ...
+  filters = list(),
+  range_filters = list(),
+  active_dims = list(),
+  agg_func = NULL,
+  ...
 ) {
   blockr.core::new_transform_block(
     server = function(id, data) {
@@ -67,7 +68,7 @@ new_crossfilter_block <- function(
           }
         )
 
-        # Sync flat → per-table (AI sets flat filters → dm engine gets per-table)
+        # Sync flat to per-table (AI sets flat filters)
         shiny::observeEvent(filters(), {
           val <- if (length(filters()) > 0) list(.tbl = filters()) else list()
           if (!identical(dm_rv_filters(), val)) dm_rv_filters(val)
@@ -197,7 +198,9 @@ new_crossfilter_block <- function(
         stop("Input must be a data frame")
       }
     },
-    allow_empty_state = c("active_dims", "filters", "range_filters", "agg_func"),
+    allow_empty_state = c(
+      "active_dims", "filters", "range_filters", "agg_func"
+    ),
     external_ctrl = TRUE,
     class = "crossfilter_block",
     ...

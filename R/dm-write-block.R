@@ -1,7 +1,8 @@
 #' Write dm object to files
 #'
-#' A block for writing dm (data model) objects to files. Supports writing to
-#' Excel files (each table as a sheet), ZIP archives (containing multiple files),
+#' A block for writing dm (data model) objects to files.
+#' Supports writing to Excel files (each table as a sheet),
+#' ZIP archives (containing multiple files),
 #' or directories (one file per table).
 #'
 #' @param directory Character. Default directory for file output.
@@ -11,8 +12,9 @@
 #'   - **If empty** (default): Generates timestamped filename
 #' @param format Character. Output format: "excel", "csv", or "parquet".
 #'   Default: "excel" (best for multi-table dm objects).
-#' @param auto_write Logical. When TRUE, automatically writes files when data changes
-#'   (requires a non-empty directory). Default: FALSE.
+#' @param auto_write Logical. When TRUE, automatically writes
+#'   files when data changes (requires a non-empty directory).
+#'   Default: FALSE.
 #' @param ... Forwarded to [blockr.core::new_transform_block()]
 #'
 #' @details
@@ -57,11 +59,11 @@
 #' @importFrom shinyjs useShinyjs
 #' @export
 new_dm_write_block <- function(
-    directory = "",
-    filename = "",
-    format = "excel",
-    auto_write = FALSE,
-    ...
+  directory = "",
+  filename = "",
+  format = "excel",
+  auto_write = FALSE,
+  ...
 ) {
   # Validate parameters
   format <- match.arg(format, c("excel", "csv", "parquet"))
@@ -129,7 +131,7 @@ new_dm_write_block <- function(
             data_dir <- data_dir_reactive()
             if (
               nzchar(data_dir) &&
-              !grepl("^(/|~|[A-Za-z]:)", path_val)
+                !grepl("^(/|~|[A-Za-z]:)", path_val)
             ) {
               resolved <- file.path(data_dir, path_val)
             }
@@ -160,7 +162,10 @@ new_dm_write_block <- function(
             r_dir_existed(existed)
             if (!existed) {
               tryCatch({
-                dir.create(r_directory(), recursive = TRUE, showWarnings = FALSE)
+                dir.create(
+                  r_directory(),
+                  recursive = TRUE, showWarnings = FALSE
+                )
                 if (!dir.exists(r_directory())) {
                   r_write_status(sprintf(
                     "\u2717 Cannot create directory: %s", r_directory()
@@ -535,12 +540,13 @@ new_dm_write_block <- function(
                   class = if (!auto_write) "active" else "",
                   onclick = sprintf(
                     "
-                    document.getElementById('%s').value = 'manual';
-                    document.getElementById('%s').dispatchEvent(new Event('change'));
+                    var el = document.getElementById('%s');
+                    el.value = 'manual';
+                    el.dispatchEvent(new Event('change'));
                     this.classList.add('active');
                     this.nextElementSibling.classList.remove('active');
                     ",
-                    ns("write_mode"), ns("write_mode")
+                    ns("write_mode")
                   )
                 ),
                 shiny::tags$button(
@@ -548,12 +554,13 @@ new_dm_write_block <- function(
                   class = if (auto_write) "active" else "",
                   onclick = sprintf(
                     "
-                    document.getElementById('%s').value = 'auto';
-                    document.getElementById('%s').dispatchEvent(new Event('change'));
+                    var el = document.getElementById('%s');
+                    el.value = 'auto';
+                    el.dispatchEvent(new Event('change'));
                     this.classList.add('active');
                     this.previousElementSibling.classList.remove('active');
                     ",
-                    ns("write_mode"), ns("write_mode")
+                    ns("write_mode")
                   )
                 )
               ),
@@ -633,7 +640,11 @@ dm_write_expr <- function(directory, filename, format) {
   } else {
     # CSV or Parquet as individual files in a subdirectory
     ext <- if (format == "csv") ".csv" else ".parquet"
-    write_fn <- if (format == "csv") quote(readr::write_csv) else quote(arrow::write_parquet)
+    write_fn <- if (format == "csv") {
+      quote(readr::write_csv)
+    } else {
+      quote(arrow::write_parquet)
+    }
 
     bquote(
       local({
@@ -672,6 +683,9 @@ block_ui.dm_write_block <- function(id, x, ...) {
 
 #' @method block_render_trigger dm_write_block
 #' @export
-block_render_trigger.dm_write_block <- function(x, session = blockr.core::get_session()) {
+block_render_trigger.dm_write_block <- function(
+  x,
+  session = blockr.core::get_session()
+) {
   NULL
 }

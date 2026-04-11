@@ -60,7 +60,10 @@ if (interactive()) {
 
   orders <- data.frame(
     id = 1:100,
-    region = sample(c("North", "South", "East", "West"), 100, replace = TRUE),
+    region = sample(
+      c("North", "South", "East", "West"), 100,
+      replace = TRUE
+    ),
     amount = runif(100, 10, 1000)
   )
   items <- data.frame(

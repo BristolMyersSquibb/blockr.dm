@@ -1,10 +1,11 @@
 # --- Crossfilter Backend Implementations ---
 
 # Sentinel value representing R's NA in the crossfilter pipeline.
-# JS has no R-style NA, and `%in%` can't match NA — this sentinel flows through
-# Shiny.setInputValue and back, letting us distinguish real NA from literal "NA".
-CROSSFILTER_NA <- "__NA__"
-CROSSFILTER_EMPTY <- "__EMPTY__"
+# JS has no R-style NA, and `%in%` can't match NA -- this
+# sentinel flows through Shiny.setInputValue and back, letting
+# us distinguish real NA from literal "NA".
+CROSSFILTER_NA <- "__NA__" # nolint object_name_linter
+CROSSFILTER_EMPTY <- "__EMPTY__" # nolint object_name_linter
 
 # Lookup-based crossfilter backend for the dm crossfilter hot path.
 # Pre-joins each child table with the parent to create flat lookup tables,
@@ -39,7 +40,9 @@ apply_crossfilter_filters <- function(df, cat_f, rng_f, exclude_dim = NULL) {
       match_vals <- non_sentinel_vals
       if (has_empty) match_vals <- c(match_vals, "")
       if (has_na && length(match_vals) > 0) {
-        df <- dplyr::filter(df, is.na(.data[[dim]]) | .data[[dim]] %in% match_vals)
+        df <- dplyr::filter(
+          df, is.na(.data[[dim]]) | .data[[dim]] %in% match_vals
+        )
       } else if (has_na) {
         df <- dplyr::filter(df, is.na(.data[[dim]]))
       } else if (length(match_vals) > 0) {
@@ -76,10 +79,14 @@ apply_crossfilter_filters <- function(df, cat_f, rng_f, exclude_dim = NULL) {
 #'
 #' @param cat_filters Named list of per-table categorical filters
 #' @param rng_filters Named list of per-table range filters
-#' @param lookup_columns Character vector of column names in the lookup table
-#' @return List with `cat` (flat categorical) and `rng` (flat range) filter lists
+#' @param lookup_columns Character vector of column names in
+#'   the lookup table
+#' @return List with `cat` (flat categorical) and `rng`
+#'   (flat range) filter lists
 #' @keywords internal
-flatten_filters_for_lookup <- function(cat_filters, rng_filters, lookup_columns) {
+flatten_filters_for_lookup <- function(
+  cat_filters, rng_filters, lookup_columns
+) {
   flat_cat <- list()
   flat_rng <- list()
   for (tbl in names(cat_filters)) {
@@ -107,15 +114,17 @@ flatten_filters_for_lookup <- function(cat_filters, rng_filters, lookup_columns)
 #' column filtering on flat tables remains.
 #'
 #' @param tables Named list of data frames
-#' @param active_dims Named list: tbl_name -> character vector of active dim columns
+#' @param active_dims Named list: tbl_name -> character vector
+#'   of active dim columns
 #' @param pks PK tibble from dm::dm_get_all_pks()
 #' @param fks FK tibble from dm::dm_get_all_fks()
 #' @param measure_col Optional measure spec (".count" or "table.column")
 #' @return List with lookups, dim_source, parent_key, child_fk_cols,
 #'   parent_table, child_tables; or NULL if topology doesn't support lookup
 #' @keywords internal
-build_crossfilter_lookups <- function(tables, active_dims, pks, fks,
-                                       measure_col = NULL) {
+build_crossfilter_lookups <- function(
+  tables, active_dims, pks, fks, measure_col = NULL
+) {
   if (nrow(fks) == 0 || nrow(pks) == 0) return(NULL)
 
   # No active dims means no filtering needed
@@ -165,14 +174,21 @@ build_crossfilter_lookups <- function(tables, active_dims, pks, fks,
 
     # Columns from child: FK + child dims + measure (if applicable)
     child_select <- unique(c(child_fk_col, child_dims))
-    if (!is.null(measure_tbl) && measure_tbl == child_tbl && !is.null(measure_cn)) {
+    if (
+      !is.null(measure_tbl) && measure_tbl == child_tbl &&
+        !is.null(measure_cn)
+    ) {
       child_select <- unique(c(child_select, measure_cn))
     }
     child_select <- intersect(child_select, names(child_df))
 
-    # Columns from parent: PK + parent dims + measure (if applicable)
+    # Columns from parent: PK + parent dims + measure
     parent_select <- unique(c(parent_key, parent_dims))
-    if (!is.null(measure_tbl) && measure_tbl == parent_table && !is.null(measure_cn)) {
+    if (
+      !is.null(measure_tbl) &&
+        measure_tbl == parent_table &&
+        !is.null(measure_cn)
+    ) {
       parent_select <- unique(c(parent_select, measure_cn))
     }
     parent_select <- intersect(parent_select, names(parent_df))
@@ -189,7 +205,9 @@ build_crossfilter_lookups <- function(tables, active_dims, pks, fks,
     parent_sub <- unique(parent_df[, parent_select, drop = FALSE])
 
     by_spec <- stats::setNames(parent_key, child_fk_col)
-    lookups[[child_tbl]] <- dplyr::left_join(child_sub, parent_sub, by = by_spec)
+    lookups[[child_tbl]] <- dplyr::left_join(
+      child_sub, parent_sub, by = by_spec
+    )
   }
 
   if (length(lookups) == 0) return(NULL)
@@ -213,8 +231,9 @@ build_crossfilter_lookups <- function(tables, active_dims, pks, fks,
 #' @param rng_filters Named list of per-table range filters
 #' @return Filtered data frame from the lookup, or NULL on failure
 #' @keywords internal
-lookup_crossfilter_data <- function(lookup_info, tbl_name, exclude_dim,
-                                     cat_filters, rng_filters) {
+lookup_crossfilter_data <- function(
+  lookup_info, tbl_name, exclude_dim, cat_filters, rng_filters
+) {
   lookups <- lookup_info$lookups
   child_fk_cols <- lookup_info$child_fk_cols
   child_tables <- lookup_info$child_tables
@@ -234,30 +253,39 @@ lookup_crossfilter_data <- function(lookup_info, tbl_name, exclude_dim,
   primary_key_col <- child_fk_cols[[primary_child]]
 
   # Flatten and apply filters (excluding target dim)
-  flat <- flatten_filters_for_lookup(cat_filters, rng_filters,
-                                      names(primary_lookup))
-  filtered <- apply_crossfilter_filters(primary_lookup, flat$cat, flat$rng,
-                                         exclude_dim = exclude_dim)
+  flat <- flatten_filters_for_lookup(
+    cat_filters, rng_filters, names(primary_lookup)
+  )
+  filtered <- apply_crossfilter_filters(
+    primary_lookup, flat$cat, flat$rng,
+    exclude_dim = exclude_dim
+  )
 
-  # Sibling key intersection (also exclude own dim for correct crossfilter)
+  # Sibling key intersection (exclude own dim for crossfilter)
   for (other_child in child_tables) {
     if (other_child == primary_child) next
     other_lookup <- lookups[[other_child]]
     if (is.null(other_lookup)) next
     other_key_col <- child_fk_cols[[other_child]]
 
-    other_flat <- flatten_filters_for_lookup(cat_filters, rng_filters,
-                                              names(other_lookup))
-    other_filtered <- apply_crossfilter_filters(other_lookup, other_flat$cat,
-                                                 other_flat$rng,
-                                                 exclude_dim = exclude_dim)
+    other_flat <- flatten_filters_for_lookup(
+      cat_filters, rng_filters, names(other_lookup)
+    )
+    other_filtered <- apply_crossfilter_filters(
+      other_lookup, other_flat$cat, other_flat$rng,
+      exclude_dim = exclude_dim
+    )
     other_keys <- unique(other_filtered[[other_key_col]])
-    filtered <- dplyr::filter(filtered, .data[[primary_key_col]] %in% other_keys)
+    filtered <- dplyr::filter(
+      filtered, .data[[primary_key_col]] %in% other_keys
+    )
   }
 
   # For parent table requests, deduplicate to parent granularity
   if (tbl_name == parent_table) {
-    filtered <- filtered[!duplicated(filtered[[primary_key_col]]), , drop = FALSE]
+    filtered <- filtered[
+      !duplicated(filtered[[primary_key_col]]), , drop = FALSE
+    ]
   }
 
   filtered
@@ -272,8 +300,9 @@ lookup_crossfilter_data <- function(lookup_info, tbl_name, exclude_dim,
 #' @param dim The categorical dimension column name
 #' @return Data frame with columns: dim, .count
 #' @keywords internal
-lookup_crossfilter_agg <- function(lookup_info, tbl_name, dim,
-                                    cat_filters, rng_filters) {
+lookup_crossfilter_agg <- function(
+  lookup_info, tbl_name, dim, cat_filters, rng_filters
+) {
   lookups <- lookup_info$lookups
   dim_source <- lookup_info$dim_source
   child_fk_cols <- lookup_info$child_fk_cols
@@ -299,42 +328,55 @@ lookup_crossfilter_agg <- function(lookup_info, tbl_name, dim,
   primary_key_col <- child_fk_cols[[primary_child]]
 
   # Flatten and apply filters (excluding target dim)
-  flat <- flatten_filters_for_lookup(cat_filters, rng_filters,
-                                      names(primary_lookup))
-  filtered <- apply_crossfilter_filters(primary_lookup, flat$cat, flat$rng,
-                                         exclude_dim = dim)
+  flat <- flatten_filters_for_lookup(
+    cat_filters, rng_filters, names(primary_lookup)
+  )
+  filtered <- apply_crossfilter_filters(
+    primary_lookup, flat$cat, flat$rng,
+    exclude_dim = dim
+  )
 
-  # Sibling key intersection (also exclude own dim for correct crossfilter)
+  # Sibling key intersection (exclude own dim for crossfilter)
   for (other_child in child_tables) {
     if (other_child == primary_child) next
     other_lookup <- lookups[[other_child]]
     if (is.null(other_lookup)) next
     other_key_col <- child_fk_cols[[other_child]]
 
-    other_flat <- flatten_filters_for_lookup(cat_filters, rng_filters,
-                                              names(other_lookup))
-    other_filtered <- apply_crossfilter_filters(other_lookup, other_flat$cat,
-                                                 other_flat$rng,
-                                                 exclude_dim = dim)
+    other_flat <- flatten_filters_for_lookup(
+      cat_filters, rng_filters, names(other_lookup)
+    )
+    other_filtered <- apply_crossfilter_filters(
+      other_lookup, other_flat$cat, other_flat$rng,
+      exclude_dim = dim
+    )
     other_keys <- unique(other_filtered[[other_key_col]])
-    filtered <- dplyr::filter(filtered, .data[[primary_key_col]] %in% other_keys)
+    filtered <- dplyr::filter(
+      filtered, .data[[primary_key_col]] %in% other_keys
+    )
   }
 
   if (nrow(filtered) == 0) {
-    return(data.frame(x = character(0), .count = integer(0),
-                      stringsAsFactors = FALSE))
+    return(data.frame(
+      x = character(0), .count = integer(0),
+      stringsAsFactors = FALSE
+    ))
   }
 
   # Granularity-aware counting
   if (dim_is_parent) {
     # Parent dim: count distinct keys per dim value (subject-level)
     distinct_rows <- unique(filtered[, c(primary_key_col, dim), drop = FALSE])
-    agg <- dplyr::summarise(distinct_rows, .count = dplyr::n(),
-                             .by = dplyr::all_of(dim))
+    agg <- dplyr::summarise(
+      distinct_rows, .count = dplyr::n(),
+      .by = dplyr::all_of(dim)
+    )
   } else {
     # Child dim: count rows (event-level)
-    agg <- dplyr::summarise(filtered, .count = dplyr::n(),
-                             .by = dplyr::all_of(dim))
+    agg <- dplyr::summarise(
+      filtered, .count = dplyr::n(),
+      .by = dplyr::all_of(dim)
+    )
   }
 
   agg <- dplyr::mutate(agg, !!dim := as.character(.data[[dim]]))
@@ -355,8 +397,9 @@ lookup_crossfilter_agg <- function(lookup_info, tbl_name, dim,
 #' @param rng_filters Named list of per-table range filters
 #' @return List with total, filtered, n_tables
 #' @keywords internal
-lookup_crossfilter_counts <- function(lookup_info, tables, table_names,
-                                       cat_filters, rng_filters) {
+lookup_crossfilter_counts <- function(
+  lookup_info, tables, table_names, cat_filters, rng_filters
+) {
   lookups <- lookup_info$lookups
   child_fk_cols <- lookup_info$child_fk_cols
   parent_table <- lookup_info$parent_table
@@ -375,7 +418,11 @@ lookup_crossfilter_counts <- function(lookup_info, tables, table_names,
   }
 
   # Step 2: intersect all key sets
-  allowed_keys <- if (length(key_sets) > 0) Reduce(intersect, key_sets) else NULL
+  allowed_keys <- if (length(key_sets) > 0) {
+    Reduce(intersect, key_sets)
+  } else {
+    NULL
+  }
 
   # Step 3: count per original table
   total <- 0L

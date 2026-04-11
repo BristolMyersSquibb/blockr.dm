@@ -5,7 +5,8 @@
 #' relationships, keeping only rows that match across the data model.
 #'
 #' @param table Character, the name of the table to filter. Default "".
-#' @param expr Character, the filter expression (e.g., "AVAL > 100"). Default "".
+#' @param expr Character, the filter expression
+#'   (e.g., "AVAL > 100"). Default "".
 #' @param ... Forwarded to [blockr.core::new_transform_block()]
 #'
 #' @return A block object for filtering dm objects
@@ -75,7 +76,7 @@ new_dm_filter_block <- function(table = "", expr = "", ...) {
                 quote(data)
               } else {
                 # Build dm_filter call
-                # dm::dm_filter(dm, table = (condition))
+                # dm::dm_filter(dm, table = (condition)) # nolint
                 filter_call <- tryCatch(
                   parse(text = filter_expr)[[1]],
                   error = function(e) NULL
@@ -84,8 +85,8 @@ new_dm_filter_block <- function(table = "", expr = "", ...) {
                 if (is.null(filter_call)) {
                   quote(data)
                 } else {
-                  # Construct call manually since dm_filter uses special syntax
-                  # dm_filter(dm, table = (condition))
+                  # Construct call manually; dm_filter uses
+                  # special named-arg syntax
                   call <- call("dm_filter", quote(data))
                   # Add the table argument with the filter as its value
                   call[[tbl]] <- filter_call
@@ -135,7 +136,8 @@ new_dm_filter_block <- function(table = "", expr = "", ...) {
               ),
               shiny::tags$p(
                 class = "text-muted",
-                "Filter cascades to related tables via foreign key relationships."
+                "Filter cascades to related tables",
+                "via foreign key relationships."
               )
             )
           )

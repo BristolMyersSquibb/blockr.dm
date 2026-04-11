@@ -22,7 +22,8 @@ numeric vector of length 2 (min, max).
 E.g., \code{list(Sepal.Length = c(5, 7))}}
 
 \item{active_dims}{Named list of active filter columns (per-table format,
-but only one table \code{.tbl}). E.g., \code{list(.tbl = c("Species", "Sepal.Width"))}}
+but only one table \code{.tbl}).
+E.g., \code{list(.tbl = c("Species", "Sepal.Width"))}}
 
 \item{agg_func}{Optional aggregation function name (e.g., \code{"sum"}, \code{"mean"})}
 

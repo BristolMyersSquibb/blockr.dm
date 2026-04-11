@@ -25,8 +25,9 @@ Can be configured via \code{options(blockr.write_dir = "/path")}. Default: \code
 \item{format}{Character. Output format: "excel", "csv", or "parquet".
 Default: "excel" (best for multi-table dm objects).}
 
-\item{auto_write}{Logical. When TRUE, automatically writes files when data changes
-(requires a non-empty directory). Default: FALSE.}
+\item{auto_write}{Logical. When TRUE, automatically writes
+files when data changes (requires a non-empty directory).
+Default: FALSE.}
 
 \item{...}{Forwarded to \code{\link[blockr.core:new_transform_block]{blockr.core::new_transform_block()}}}
 }
@@ -34,8 +35,9 @@ Default: "excel" (best for multi-table dm objects).}
 A blockr transform block that writes dm objects to files
 }
 \description{
-A block for writing dm (data model) objects to files. Supports writing to
-Excel files (each table as a sheet), ZIP archives (containing multiple files),
+A block for writing dm (data model) objects to files.
+Supports writing to Excel files (each table as a sheet),
+ZIP archives (containing multiple files),
 or directories (one file per table).
 }
 \details{

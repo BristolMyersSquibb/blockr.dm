@@ -6,15 +6,22 @@
 #'
 #' Returns a data frame with the joined result.
 #'
-#' @param left_table Character, the name of the left table (e.g., "adae"). Default "".
-#' @param left_date Character, the date column in left table (e.g., "ASTDT"). Default "".
-#' @param right_table Character, the name of the right table (e.g., "adlb"). Default "".
-#' @param right_date Character, the date column in right table (e.g., "ADT"). Default "".
-#' @param window_days Numeric, the time window in days. Default 7.
-#' @param direction Character, one of "after", "before", or "around". Default "after".
+#' @param left_table Character, the name of the left table
+#'   (e.g., "adae"). Default "".
+#' @param left_date Character, the date column in left table
+#'   (e.g., "ASTDT"). Default "".
+#' @param right_table Character, the name of the right table
+#'   (e.g., "adlb"). Default "".
+#' @param right_date Character, the date column in right table
+#'   (e.g., "ADT"). Default "".
+#' @param window_days Numeric, the time window in days.
+#'   Default 7.
+#' @param direction Character, one of "after", "before", or
+#'   "around". Default "after".
 #' @param ... Forwarded to [blockr.core::new_transform_block()]
 #'
-#' @return A block object that outputs a data frame with the temporal join result
+#' @return A block object that outputs a data frame with the
+#'   temporal join result
 #'
 #' @details
 #' The temporal join:
@@ -39,13 +46,13 @@
 #'
 #' @export
 new_dm_temporal_join_block <- function(
-    left_table = "",
-    left_date = "",
-    right_table = "",
-    right_date = "",
-    window_days = 7,
-    direction = "after",
-    ...
+  left_table = "",
+  left_date = "",
+  right_table = "",
+  right_date = "",
+  window_days = 7,
+  direction = "after",
+  ...
 ) {
   blockr.core::new_transform_block(
     server = function(id, data) {
@@ -61,11 +68,21 @@ new_dm_temporal_join_block <- function(
           r_direction <- shiny::reactiveVal(direction)
 
           # Update reactives from inputs
-          shiny::observeEvent(input$left_table, r_left_table(input$left_table))
-          shiny::observeEvent(input$right_table, r_right_table(input$right_table))
-          shiny::observeEvent(input$left_date, r_left_date(input$left_date))
-          shiny::observeEvent(input$right_date, r_right_date(input$right_date))
-          shiny::observeEvent(input$window_days, r_window_days(input$window_days))
+          shiny::observeEvent(
+            input$left_table, r_left_table(input$left_table)
+          )
+          shiny::observeEvent(
+            input$right_table, r_right_table(input$right_table)
+          )
+          shiny::observeEvent(
+            input$left_date, r_left_date(input$left_date)
+          )
+          shiny::observeEvent(
+            input$right_date, r_right_date(input$right_date)
+          )
+          shiny::observeEvent(
+            input$window_days, r_window_days(input$window_days)
+          )
           shiny::observeEvent(input$direction, r_direction(input$direction))
 
           # Get table names from dm
@@ -101,9 +118,15 @@ new_dm_temporal_join_block <- function(
             if (length(tables) > 0) {
               # Left table
               current_left <- r_left_table()
-              selected_left <- if (current_left %in% tables) current_left else tables[1]
-              shiny::updateSelectInput(session, "left_table",
-                choices = tables, selected = selected_left)
+              selected_left <- if (current_left %in% tables) {
+                current_left
+              } else {
+                tables[1]
+              }
+              shiny::updateSelectInput(
+                session, "left_table",
+                choices = tables, selected = selected_left
+              )
               r_left_table(selected_left)
 
               # Right table
@@ -115,8 +138,10 @@ new_dm_temporal_join_block <- function(
               } else {
                 tables[1]
               }
-              shiny::updateSelectInput(session, "right_table",
-                choices = tables, selected = selected_right)
+              shiny::updateSelectInput(
+                session, "right_table",
+                choices = tables, selected = selected_right
+              )
               r_right_table(selected_right)
             }
           })
@@ -127,11 +152,17 @@ new_dm_temporal_join_block <- function(
             tbl_name <- r_left_table()
             date_cols <- get_date_columns(dm_obj, tbl_name)
             current <- r_left_date()
-            selected <- if (current %in% date_cols) current else {
-              if (length(date_cols) > 0) date_cols[1] else ""
+            selected <- if (current %in% date_cols) {
+              current
+            } else if (length(date_cols) > 0) {
+              date_cols[1]
+            } else {
+              ""
             }
-            shiny::updateSelectInput(session, "left_date",
-              choices = date_cols, selected = selected)
+            shiny::updateSelectInput(
+              session, "left_date",
+              choices = date_cols, selected = selected
+            )
             if (nzchar(selected)) r_left_date(selected)
           })
 
@@ -141,11 +172,17 @@ new_dm_temporal_join_block <- function(
             tbl_name <- r_right_table()
             date_cols <- get_date_columns(dm_obj, tbl_name)
             current <- r_right_date()
-            selected <- if (current %in% date_cols) current else {
-              if (length(date_cols) > 0) date_cols[1] else ""
+            selected <- if (current %in% date_cols) {
+              current
+            } else if (length(date_cols) > 0) {
+              date_cols[1]
+            } else {
+              ""
             }
-            shiny::updateSelectInput(session, "right_date",
-              choices = date_cols, selected = selected)
+            shiny::updateSelectInput(
+              session, "right_date",
+              choices = date_cols, selected = selected
+            )
             if (nzchar(selected)) r_right_date(selected)
           })
 
@@ -244,7 +281,10 @@ local({
               shiny::tags$h4("Temporal Join"),
               shiny::div(
                 class = "block-help-text",
-                shiny::tags$p("Find rows from right table within time window of left table")
+                shiny::tags$p(
+                  "Find rows from right table within",
+                  "time window of left table"
+                )
               )
             ),
 
@@ -259,7 +299,11 @@ local({
                   shiny::selectInput(
                     shiny::NS(id, "left_table"),
                     label = "Table",
-                    choices = if (nzchar(left_table)) left_table else character(),
+                    choices = if (nzchar(left_table)) {
+                      left_table
+                    } else {
+                      character()
+                    },
                     selected = left_table,
                     width = "100%"
                   )
@@ -288,7 +332,11 @@ local({
                   shiny::selectInput(
                     shiny::NS(id, "right_table"),
                     label = "Table",
-                    choices = if (nzchar(right_table)) right_table else character(),
+                    choices = if (nzchar(right_table)) {
+                      right_table
+                    } else {
+                      character()
+                    },
                     selected = right_table,
                     width = "100%"
                   )
@@ -298,7 +346,11 @@ local({
                   shiny::selectInput(
                     shiny::NS(id, "right_date"),
                     label = "Date column",
-                    choices = if (nzchar(right_date)) right_date else character(),
+                    choices = if (nzchar(right_date)) {
+                      right_date
+                    } else {
+                      character()
+                    },
                     selected = right_date,
                     width = "100%"
                   )
