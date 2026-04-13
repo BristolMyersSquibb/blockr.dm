@@ -263,15 +263,20 @@ pharmaverseadam_expr <- function() {
     adlb <- pharmaverseadam::adlb
     advs <- pharmaverseadam::advs
     adcm <- pharmaverseadam::adcm
+    adeg <- pharmaverseadam::adeg
+    adex <- pharmaverseadam::adex
 
     result <- dm::dm(
-      adsl = adsl, adae = adae, adlb = adlb, advs = advs, adcm = adcm
+      adsl = adsl, adae = adae, adlb = adlb, advs = advs,
+      adcm = adcm, adeg = adeg, adex = adex
     )
     result <- dm::dm_add_pk(result, adsl, USUBJID)
     result <- dm::dm_add_fk(result, adae, USUBJID, adsl)
     result <- dm::dm_add_fk(result, adlb, USUBJID, adsl)
     result <- dm::dm_add_fk(result, advs, USUBJID, adsl)
     result <- dm::dm_add_fk(result, adcm, USUBJID, adsl)
+    result <- dm::dm_add_fk(result, adeg, USUBJID, adsl)
+    result <- dm::dm_add_fk(result, adex, USUBJID, adsl)
     result
   }))
 }

@@ -56,7 +56,7 @@ format_column_inner <- function(x, max_chars = 50) {
 
 #' @keywords internal
 build_html_table <- function(dat, total_rows, sort_state = NULL, ns = NULL,
-                             page = 1L, page_size = 5L) {
+                             page = 1L, page_size = 5L, table_label = NULL) {
   n_showing <- nrow(dat)
   n_cols <- ncol(dat)
 
@@ -236,9 +236,33 @@ build_html_table <- function(dat, total_rows, sort_state = NULL, ns = NULL,
     sprintf("%d\u2013%d of %d", start_row, end_row, total_rows)
   }
 
+  # Build optional table label span (displayed in footer next to row range)
+  table_label_tag <- NULL
+  if (!is.null(table_label) && nzchar(table_label)) {
+    is_truncated <- nchar(table_label) > 60
+    display_text <- if (is_truncated) {
+      paste0(substr(table_label, 1, 58), "\u2026")
+    } else {
+      table_label
+    }
+    label_args <- list(
+      class = "blockr-table-label",
+      shiny::HTML("&middot;&nbsp;"),
+      display_text
+    )
+    if (is_truncated) {
+      label_args[["data-full-label"]] <- table_label
+    }
+    table_label_tag <- do.call(shiny::tags$span, label_args)
+  }
+
   footer <- shiny::tags$div(
     class = "blockr-table-footer",
-    shiny::tags$span(class = "blockr-table-range", range_text),
+    shiny::tags$div(
+      class = "blockr-table-footer-info",
+      shiny::tags$span(class = "blockr-table-range", range_text),
+      table_label_tag
+    ),
     shiny::tags$div(
       class = "blockr-table-nav",
       shiny::tags$button(
@@ -344,6 +368,18 @@ table_preview_css <- function() {
       cursor: text;
     }
 
+    .blockr-table-label {
+      font-size: 12px;
+      font-weight: 400;
+      color: var(--blockr-color-text-muted, #6b7280);
+      margin-left: 6px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      min-width: 0;
+      flex-shrink: 1;
+    }
+
     .blockr-col-label {
       display: block;
       font-size: 11px;
@@ -427,11 +463,22 @@ table_preview_css <- function() {
       justify-content: space-between;
       padding: 12px 16px;
       border-top: 1px solid var(--blockr-color-border, #e5e7eb);
+      gap: 8px;
+    }
+
+    .blockr-table-footer-info {
+      display: flex;
+      align-items: center;
+      min-width: 0;
+      flex: 1 1 auto;
+      overflow: hidden;
     }
 
     .blockr-table-range {
       font-size: 12px;
       color: #6B7280;
+      white-space: nowrap;
+      flex-shrink: 0;
     }
 
     .blockr-table-nav {

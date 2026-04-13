@@ -420,11 +420,12 @@ block_output.dm_block <- function(x, result, session) {
     table_name <- selected_table()
     shiny::req(table_name)
 
-    tbl <- tryCatch(
-      as.data.frame(result[[table_name]]),
-      error = function(e) NULL
-    )
+    raw_tbl <- tryCatch(result[[table_name]], error = function(e) NULL)
+    tbl <- tryCatch(as.data.frame(raw_tbl), error = function(e) NULL)
     if (is.null(tbl)) return(NULL)
+
+    # Preserve table-level label attribute (stripped by as.data.frame)
+    tbl_label <- attr(raw_tbl, "label")
 
     page_size <- 5L
 
@@ -462,7 +463,8 @@ block_output.dm_block <- function(x, result, session) {
         sort_state = current_sort,
         ns = ns,
         page = page,
-        page_size = page_size
+        page_size = page_size,
+        table_label = tbl_label
       )
     )
   })
