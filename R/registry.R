@@ -21,8 +21,6 @@ register_dm_blocks <- function() {
       "new_temporal_join_block",
       "new_dm_temporal_join_block",
       "new_crossfilter_block",
-      "new_dm_crossfilter_block",
-      "new_js_crossfilter_block",
       "new_dm_example_block"
     ),
     name = c(
@@ -40,8 +38,6 @@ register_dm_blocks <- function() {
       "Temporal join",
       "dm Temporal join",
       "Crossfilter",
-      "dm Crossfilter",
-      "JS Crossfilter",
       "DM Example"
     ),
     description = c(
@@ -74,22 +70,12 @@ register_dm_blocks <- function() {
         "filtering by time window"
       ),
       paste(
-        "Interactive crossfilter with categorical",
-        "tables and numeric range sliders"
-      ),
-      paste(
-        "Cross-table crossfilter on dm with",
-        "per-table filter panels"
-      ),
-      paste(
         "Client-side crossfilter for data frames",
         "and dm objects using crossfilter2.js"
       ),
       "Load a pre-built dm from example datasets"
     ),
     category = c(
-      "structured",
-      "structured",
       "structured",
       "structured",
       "structured",
@@ -120,77 +106,13 @@ register_dm_blocks <- function() {
       "list-nested",
       "clock-history",
       "clock-history",
-      "sliders",
-      "sliders2",
       "lightning",
       "database"
     ),
     arguments = list(
       NULL, NULL, NULL, NULL, NULL, NULL,
       NULL, NULL, NULL, NULL, NULL, NULL, NULL,
-      # crossfilter_block (pos 13):
-      structure(
-        c(
-          filters = paste(
-            "Categorical filters. Object:",
-            "column name -> array of selected",
-            "values (strings)"
-          ),
-          range_filters = paste(
-            "Range filters for numeric columns.",
-            "Object: column name -> [min, max]"
-          ),
-          active_dims = paste(
-            "Active filter columns. Object with",
-            "key \".tbl\" -> array of column names"
-          )
-        ),
-        examples = list(
-          filters = list(
-            Species = list("setosa", "virginica")
-          ),
-          range_filters = list(Sepal.Length = c(5, 7)),
-          active_dims = list(
-            .tbl = list("Species", "Sepal.Width")
-          )
-        )
-      ),
-      # dm_crossfilter_block (pos 14):
-      structure(
-        c(
-          active_dims = paste(
-            "Per-table active filter columns.",
-            "Object: table name -> array of",
-            "column names"
-          ),
-          filters = paste(
-            "Per-table categorical filters.",
-            "Object: table name ->",
-            "{column -> array of values (strings)}"
-          ),
-          range_filters = paste(
-            "Per-table range filters. Object:",
-            "table name -> {column -> [min, max]}"
-          ),
-          measure = paste(
-            "Aggregation measure as",
-            "\"table.column\" string,",
-            "or null for row counts"
-          )
-        ),
-        examples = list(
-          active_dims = list(
-            adsl = list("SEX", "AGE"),
-            adae = list("AESEV")
-          ),
-          filters = list(adsl = list(SEX = list("F"))),
-          range_filters = list(
-            adsl = list(AGE = c(40, 60))
-          ),
-          measure = NULL
-        )
-      ),
-      # js_crossfilter_block (pos 15):
+      # crossfilter_block (pos 14):
       structure(
         c(
           active_dims = paste(
@@ -232,7 +154,7 @@ register_dm_blocks <- function() {
           agg_func = "sum"
         )
       ),
-      # dm_example_block (pos 16):
+      # dm_example_block (pos 15):
       structure(
         c(
           dataset = paste(

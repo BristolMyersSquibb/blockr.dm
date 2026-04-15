@@ -18,7 +18,7 @@ library(blockr.core)
 library(blockr.dm)
 
 serve(
-  new_dm_crossfilter_block(),
+  new_crossfilter_block(),
   data = list(data = new_dm_example_block(dataset = "safetydata_adam"))
 )
 ```
@@ -38,8 +38,7 @@ This loads a multi-table ADaM dataset and launches a crossfilter UI with linked 
 - **new_cdisc_dm_block()** -- Auto-detect CDISC parent table and set keys on USUBJID
 
 ### Filtering
-- **new_dm_crossfilter_block()** -- Interactive crossfilter with linked widgets across tables
-- **new_crossfilter_block()** -- Single-table crossfilter (wraps a data frame)
+- **new_crossfilter_block()** -- Client-side crossfilter (crossfilter2.js) for data frames and dm objects, with linked widgets, search, and automatic cascade via foreign keys
 - **new_dm_filter_block()** -- Filter by R expression, cascades via foreign keys
 - **new_dm_filter_value_block()** -- Point-and-click filter (table/column/value dropdowns)
 

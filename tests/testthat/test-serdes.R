@@ -221,9 +221,3 @@ test_that("ser/deser crossfilter_block", {
   restored <- ser_deser(blk)
   expect_s3_class(restored, class(blk))
 })
-
-test_that("ser/deser dm_crossfilter_block", {
-  blk <- new_dm_crossfilter_block()
-  restored <- ser_deser(blk)
-  expect_s3_class(restored, class(blk))
-})

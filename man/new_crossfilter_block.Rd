@@ -2,49 +2,51 @@
 % Please edit documentation in R/crossfilter-block.R
 \name{new_crossfilter_block}
 \alias{new_crossfilter_block}
+\alias{new_js_crossfilter_block}
 \title{Crossfilter Block}
 \usage{
 new_crossfilter_block(
+  active_dims = list(),
   filters = list(),
   range_filters = list(),
+  measure = NULL,
+  agg_func = NULL,
+  ...
+)
+
+new_js_crossfilter_block(
   active_dims = list(),
+  filters = list(),
+  range_filters = list(),
+  measure = NULL,
   agg_func = NULL,
   ...
 )
 }
 \arguments{
-\item{filters}{Named list of categorical filters. Each element is a character
-vector of selected values.
-E.g., \code{list(Species = c("setosa", "virginica"))}}
+\item{active_dims}{Named list of per-table active filter columns.
+E.g., \code{list(adsl = c("SEX", "AGE"), adae = c("AESEV"))}}
 
-\item{range_filters}{Named list of range filters. Each element is a
-numeric vector of length 2 (min, max).
-E.g., \code{list(Sepal.Length = c(5, 7))}}
+\item{filters}{Named list of per-table categorical filters.
+E.g., \code{list(adae = list(AESEV = c("SEVERE")))}}
 
-\item{active_dims}{Named list of active filter columns (per-table format,
-but only one table \code{.tbl}).
-E.g., \code{list(.tbl = c("Species", "Sepal.Width"))}}
+\item{range_filters}{Named list of per-table range filters.
+E.g., \code{list(adsl = list(AGE = c(40, 80)))}}
 
-\item{agg_func}{Optional aggregation function name (e.g., \code{"sum"}, \code{"mean"})}
+\item{measure}{Measure column as \code{"table.column"} string, or \code{NULL}
+for row counts. E.g., \code{"orders.amount"}.}
+
+\item{agg_func}{Aggregation function: \code{"sum"} or \code{"mean"}. Only used
+when \code{measure} is set.}
 
 \item{...}{Forwarded to \code{\link[blockr.core:new_transform_block]{blockr.core::new_transform_block()}}}
 }
 \value{
-A blockr transform block that returns filtered data
+A blockr transform block with client-side crossfiltering
 }
 \description{
-A crossfilter block for a single data frame. Internally wraps the data as a
-one-table dm object and delegates to the dm crossfilter engine, giving it
-search UI, date sliders, and density overlays for free.
-}
-\examples{
-if (interactive()) {
-  library(blockr.core)
-  library(blockr.dm)
-
-  serve(
-    new_crossfilter_block(),
-    data = list(data = iris)
-  )
-}
+Client-side crossfilter using crossfilter2.js. R builds lookup tables and
+ships them to the browser; all filtering, counting, and UI updates happen
+in JavaScript for instant responsiveness. Accepts either a data frame or
+a \link[dm:dm]{dm} object.
 }
