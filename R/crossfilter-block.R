@@ -42,9 +42,127 @@ new_crossfilter_block <- function(
   )
 }
 
-#' @rdname new_crossfilter_block
+# Internal helper that builds the deprecation-banner UI wrapper shared
+# by the legacy js_crossfilter_block and dm_crossfilter_block constructors.
+deprecated_crossfilter_banner <- function(legacy_name) {
+  shiny::div(
+    class = "alert alert-warning blockr-deprecated-banner",
+    role = "alert",
+    style = paste0(
+      "margin: 8px 0; padding: 10px 12px; border-radius: 4px; ",
+      "background-color: #fff3cd; color: #856404; ",
+      "border: 1px solid #ffeeba; font-size: 0.9rem;"
+    ),
+    shiny::tags$strong("Deprecated block: "),
+    "this is the legacy ",
+    shiny::tags$code(legacy_name),
+    ". Use ",
+    shiny::tags$code("crossfilter_block"),
+    " instead \u2014 same functionality, canonical name."
+  )
+}
+
+#' Legacy constructor for the crossfilter block (deprecated)
+#'
+#' `new_js_crossfilter_block()` is the pre-rename alias kept so saved boards
+#' that reference the `js_crossfilter_block` UID continue to deserialize.
+#' All new code should use [new_crossfilter_block()] directly. This wrapper
+#' emits a [.Deprecated()] warning at construction time and tags the
+#' produced block with a `js_crossfilter_block` subclass so the served
+#' Shiny UI renders a visible deprecation banner above the normal block
+#' output.
+#'
+#' @inheritParams new_crossfilter_block
+#' @return A crossfilter block carrying a `js_crossfilter_block` subclass.
 #' @export
-new_js_crossfilter_block <- new_crossfilter_block
+new_js_crossfilter_block <- function(
+  active_dims = list(),
+  filters = list(),
+  range_filters = list(),
+  measure = NULL,
+  agg_func = NULL,
+  ...
+) {
+  .Deprecated(
+    new = "new_crossfilter_block",
+    package = "blockr.dm",
+    msg = paste0(
+      "'new_js_crossfilter_block' is deprecated and will be removed in a ",
+      "future release. Use 'new_crossfilter_block' instead \u2014 it has the ",
+      "same signature and behaviour under the canonical name."
+    )
+  )
+  blk <- new_crossfilter_block(
+    active_dims = active_dims,
+    filters = filters,
+    range_filters = range_filters,
+    measure = measure,
+    agg_func = agg_func,
+    ...
+  )
+  class(blk) <- c("js_crossfilter_block", class(blk))
+  blk
+}
+
+#' @method block_ui js_crossfilter_block
+#' @export
+block_ui.js_crossfilter_block <- function(id, x, ...) {
+  shiny::tagList(
+    deprecated_crossfilter_banner("js_crossfilter_block"),
+    NextMethod()
+  )
+}
+
+#' Legacy dm-only crossfilter constructor (deprecated)
+#'
+#' `new_dm_crossfilter_block()` is the pre-unification alias kept so saved
+#' boards that reference the `dm_crossfilter_block` UID continue to
+#' deserialize. The block now delegates to [new_crossfilter_block()] —
+#' which accepts both data frames and dm objects — and emits a
+#' [.Deprecated()] warning at construction time. Produced blocks carry
+#' a `dm_crossfilter_block` subclass so the served Shiny UI renders a
+#' visible deprecation banner above the normal block output.
+#'
+#' @inheritParams new_crossfilter_block
+#' @return A crossfilter block carrying a `dm_crossfilter_block` subclass.
+#' @export
+new_dm_crossfilter_block <- function(
+  active_dims = list(),
+  filters = list(),
+  range_filters = list(),
+  measure = NULL,
+  agg_func = NULL,
+  ...
+) {
+  .Deprecated(
+    new = "new_crossfilter_block",
+    package = "blockr.dm",
+    msg = paste0(
+      "'new_dm_crossfilter_block' is deprecated and will be removed in a ",
+      "future release. Use 'new_crossfilter_block' instead \u2014 it handles ",
+      "both dm and data.frame inputs under the canonical name."
+    )
+  )
+  blk <- new_crossfilter_block(
+    active_dims = active_dims,
+    filters = filters,
+    range_filters = range_filters,
+    measure = measure,
+    agg_func = agg_func,
+    ...
+  )
+  class(blk) <- c("dm_crossfilter_block", class(blk))
+  blk
+}
+
+#' @method block_ui dm_crossfilter_block
+#' @export
+block_ui.dm_crossfilter_block <- function(id, x, ...) {
+  shiny::tagList(
+    deprecated_crossfilter_banner("dm_crossfilter_block"),
+    NextMethod()
+  )
+}
 
 #' @method block_output crossfilter_block
 #' @export
