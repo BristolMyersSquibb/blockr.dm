@@ -110,63 +110,21 @@ register_dm_blocks <- function() {
       "database"
     ),
     arguments = list(
-      NULL, NULL, NULL, NULL, NULL, NULL,
-      NULL, NULL, NULL, NULL, NULL, NULL, NULL,
-      # crossfilter_block (pos 14):
-      structure(
-        c(
-          active_dims = paste(
-            "Per-table active filter columns.",
-            "Object: table name -> array of",
-            "column names. For a single data",
-            "frame use \".tbl\" as the table name."
-          ),
-          filters = paste(
-            "Per-table categorical filters.",
-            "Object: table name ->",
-            "{column -> array of values}"
-          ),
-          range_filters = paste(
-            "Per-table range filters. Object:",
-            "table name -> {column -> [min, max]}"
-          ),
-          measure = paste(
-            "Aggregation measure as",
-            "\"table.column\" string,",
-            "or null for row counts"
-          ),
-          agg_func = paste(
-            "Aggregation function:",
-            "\"sum\" or \"mean\".",
-            "Only used when measure is set."
-          )
-        ),
-        examples = list(
-          active_dims = list(
-            adsl = list("SEX", "AGE"),
-            adae = list("AESEV")
-          ),
-          filters = list(adsl = list(SEX = list("F"))),
-          range_filters = list(
-            adsl = list(AGE = c(40, 60))
-          ),
-          measure = NULL,
-          agg_func = "sum"
-        )
-      ),
-      # dm_example_block (pos 15):
-      structure(
-        c(
-          dataset = paste(
-            "ID of the dm example dataset to",
-            "load. Use dm_example_choices()",
-            "to see available options."
-          )
-        ),
-        examples = list(
-          dataset = "bi_star_schema"
-        )
-      )
+      dm_read_arguments(),
+      dm_write_arguments(),
+      dm_block_arguments(),
+      cdisc_dm_arguments(),
+      dm_select_arguments(),
+      dm_add_keys_arguments(),
+      dm_filter_arguments(),
+      dm_filter_value_arguments(),
+      dm_pull_arguments(),
+      dm_flatten_arguments(),
+      dm_nested_view_arguments(),
+      temporal_join_arguments(),
+      dm_temporal_join_arguments(),
+      crossfilter_arguments(),
+      dm_example_arguments()
     ),
     package = utils::packageName(),
     overwrite = TRUE
