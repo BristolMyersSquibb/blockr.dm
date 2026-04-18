@@ -39,8 +39,7 @@ This loads a multi-table ADaM dataset and launches a crossfilter UI with linked 
 
 ### Filtering
 - **new_crossfilter_block()** -- Client-side crossfilter (crossfilter2.js) for data frames and dm objects, with linked widgets, search, and automatic cascade via foreign keys
-- **new_dm_filter_block()** -- Filter by R expression, cascades via foreign keys
-- **new_dm_filter_value_block()** -- Point-and-click filter (table/column/value dropdowns)
+- **new_dm_filter_block()** -- Type-aware filter UI (reused from blockr.dplyr) on one dm table; cascades via foreign keys
 
 ### Extracting
 - **new_dm_pull_block()** -- Extract one table as a data frame

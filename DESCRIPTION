@@ -21,6 +21,7 @@ RoxygenNote: 7.3.3
 Imports:
     blockr.ai,
     blockr.core,
+    blockr.dplyr,
     blockr.io,
     DiagrammeR,
     dm,
@@ -55,6 +56,7 @@ Config/testthat/edition: 3
 Remotes:
     BristolMyersSquibb/blockr.ai,
     BristolMyersSquibb/blockr.core,
+    BristolMyersSquibb/blockr.dplyr,
     BristolMyersSquibb/blockr.io,
     BristolMyersSquibb/blockr,
     BristolMyersSquibb/blockr.dag,

@@ -160,55 +160,34 @@ dm_filter_arguments <- function() {
   structure(
     c(
       table = paste0(
-        "Character. Name of the table within the dm where the filter ",
-        "expression evaluates. Rows removed from this table cascade to ",
-        "related tables via the dm's FK relationships."
+        "Character. Name of the table within the dm where conditions are ",
+        "applied. Rows removed from this table cascade to related tables ",
+        "via the dm's FK relationships."
       ),
-      expr = paste0(
-        "Character. R expression evaluated in the context of `table`. ",
-        "Use standard dplyr filter syntax (e.g. \"ARM == 'Drug A'\", ",
-        "\"AGE >= 65 & SEX == 'F'\")."
+      state = paste0(
+        "List with `conditions` and `operator`. Matches the state format ",
+        "of blockr.dplyr::new_filter_block - condition types `values`, ",
+        "`numeric`, and `expr`, combined with `&` or `|`."
       )
     ),
     examples = list(
       table = "adsl",
-      expr = "ARM == 'Drug A' & AGE >= 18"
+      state = list(
+        conditions = list(list(
+          type = "values", column = "ARM",
+          values = list("Drug A"), mode = "include"
+        )),
+        operator = "&"
+      )
     ),
     prompt = paste(
-      "Filter a dm by a dplyr-style expression evaluated on ONE table;",
-      "matching rows are kept and cascade to all related tables via the",
-      "dm's FK relationships. Example: filtering adsl to `ARM == 'Drug A'`",
-      "also drops the ADAE / ADLBC rows for excluded patients.",
-      "\n\nUse when the upstream is a keyed dm and the filter is naturally",
-      "expressed as an R condition. For click-to-pick dropdown filtering,",
-      "prefer dm_filter_value_block.",
-      "\n\nDo NOT use blockr.dplyr::filter_block on a dm — it doesn't",
+      "Filter a dm by one or more conditions on ONE selected table;",
+      "matching rows cascade to all related tables via the dm's FK",
+      "relationships. Reuses blockr.dplyr's type-aware filter UI",
+      "(categorical multi-select, numeric operator+value, or free R",
+      "expression) combined with & or |.",
+      "\n\nDo NOT use blockr.dplyr::filter_block on a dm - it doesn't",
       "understand cascading."
-    )
-  )
-}
-
-#' @noRd
-dm_filter_value_arguments <- function() {
-  structure(
-    c(
-      table = "Character. Name of the table within the dm to filter on.",
-      column = "Character. Column name on `table` to filter.",
-      value = paste0(
-        "Character. Value to match. Only one value is supported — for ",
-        "multi-value or expression-based filtering use dm_filter_block."
-      )
-    ),
-    examples = list(
-      table = "adsl",
-      column = "ARM",
-      value = "Drug A"
-    ),
-    prompt = paste(
-      "Filter a dm by a single picked value in a pick-list UI. Simpler",
-      "dropdown equivalent of dm_filter_block. Filters cascade to related",
-      "tables via FK relationships. Prefer this when the user wants",
-      "\"select a value and filter\" rather than writing an expression."
     )
   )
 }

@@ -7,7 +7,7 @@
 new_dm_pull_block(table = "", ...)
 }
 \arguments{
-\item{table}{Character, the name of the table to extract. Default "".}
+\item{table}{Character, the name of the table to extract. Default \code{""}.}
 
 \item{...}{Forwarded to \code{\link[blockr.core:new_transform_block]{blockr.core::new_transform_block()}}}
 }
@@ -15,12 +15,11 @@ new_dm_pull_block(table = "", ...)
 A block object for extracting tables from dm objects
 }
 \description{
-This block extracts a single table from a dm object as a regular data frame.
-Use this after filtering to get a specific table for further analysis
-or visualization.
+This block extracts a single table from a dm object as a regular data
+frame. Use this after filtering to get a specific table for further
+analysis or visualization.
 }
 \examples{
-# Create a dm pull block
 new_dm_pull_block(table = "flights")
 
 }

@@ -44,7 +44,19 @@ test_that("full ADaM workflow works end-to-end", {
       ),
       filtered_dm = new_dm_filter_block(
         table = "adlb_data",
-        expr = "PARAMCD == 'NEUT' & AVAL > 5"
+        state = list(
+          conditions = list(
+            list(
+              type = "values", column = "PARAMCD",
+              values = list("NEUT"), mode = "include"
+            ),
+            list(
+              type = "numeric", column = "AVAL",
+              op = ">", value = 5
+            )
+          ),
+          operator = "&"
+        )
       ),
       ae_results = new_dm_pull_block(table = "adae_data")
     ),

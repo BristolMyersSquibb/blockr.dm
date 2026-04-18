@@ -24,15 +24,16 @@
 #' but not ADLB).
 #'
 #' @examples
-#' # Create a dm flatten block
 #' new_dm_flatten_block(start_table = "flights", recursive = TRUE)
 #'
-#' # Flatten with specific tables and inner join
 #' new_dm_flatten_block(
 #'   start_table = "ADSL",
 #'   include_tables = c("ADAE"),
 #'   join_type = "inner"
 #' )
+#'
+#' @importFrom shiny moduleServer reactive reactiveVal observeEvent NS div
+#'   tagList req isolate
 #'
 #' @export
 new_dm_flatten_block <- function(
@@ -49,91 +50,90 @@ new_dm_flatten_block <- function(
       shiny::moduleServer(
         id,
         function(input, output, session) {
-          # Reactive values
-          r_start_table <- shiny::reactiveVal(start_table)
-          r_include_tables <- shiny::reactiveVal(include_tables)
-          r_join_type <- shiny::reactiveVal(join_type)
-          r_recursive <- shiny::reactiveVal(recursive)
+          ns <- session$ns
+          r_start_table <- reactiveVal(start_table)
+          r_include_tables <- reactiveVal(include_tables)
+          r_join_type <- reactiveVal(join_type)
+          r_recursive <- reactiveVal(recursive)
 
-          # Update reactives from inputs
-          shiny::observeEvent(input$start_table, {
-            r_start_table(input$start_table)
+          observeEvent(input$start_table, {
+            val <- input$start_table
+            if (!is.null(val) && nzchar(val)) r_start_table(val)
           })
 
-          shiny::observeEvent(input$include_tables, {
-            r_include_tables(input$include_tables)
-          }, ignoreNULL = FALSE)
+          observeEvent(input$include_tables, {
+            # multi-picker: NULL means no tables chosen, keep existing
+            val <- input$include_tables
+            if (is.null(val)) return()
+            r_include_tables(val)
+          })
 
-          shiny::observeEvent(input$join_type, {
+          observeEvent(input$join_type, {
             r_join_type(input$join_type)
           })
 
-          shiny::observeEvent(input$recursive, {
+          observeEvent(input$recursive, {
             r_recursive(input$recursive)
           })
 
-          # Update table choices when dm changes
-          shiny::observeEvent(data(), {
-            dm_obj <- data()
-            if (inherits(dm_obj, "dm")) {
-              tables <- names(dm::dm_get_tables(dm_obj))
-              current_start <- r_start_table()
-              current_include <- r_include_tables()
-
-              # Keep current start selection if valid, otherwise use first table
-              selected_start <- if (current_start %in% tables) {
-                current_start
-              } else {
-                tables[1]
-              }
-              shiny::updateSelectInput(
-                session, "start_table",
-                choices = tables,
+          # Send start-table picker options on data change
+          observeEvent(data(), {
+            opts <- build_dm_table_options(data())
+            tbl_names <- vapply(opts, `[[`, character(1), "value")
+            current_start <- isolate(r_start_table())
+            selected_start <- if (current_start %in% tbl_names) {
+              current_start
+            } else if (length(tbl_names) > 0L) {
+              tbl_names[[1L]]
+            } else {
+              ""
+            }
+            session$sendCustomMessage(
+              "dm-table-picker",
+              list(
+                id = ns("start_table"),
+                mode = "single",
+                options = opts,
                 selected = selected_start
               )
-              r_start_table(selected_start)
-
-              # Update include tables (exclude start table from choices)
-              other_tables <- setdiff(tables, selected_start)
-              valid_include <- intersect(current_include, other_tables)
-              shiny::updateSelectizeInput(
-                session, "include_tables",
-                choices = other_tables,
-                selected = valid_include
-              )
-            }
+            )
+            r_start_table(selected_start)
           })
 
-          # Update include choices when start table changes
-          shiny::observeEvent(r_start_table(), {
+          # Include-tables picker: options depend on the currently selected
+          # start table (exclude it from choices).
+          observeEvent(list(r_start_table(), data()), {
             dm_obj <- data()
-            if (inherits(dm_obj, "dm")) {
-              tables <- names(dm::dm_get_tables(dm_obj))
-              other_tables <- setdiff(tables, r_start_table())
-              current_include <- r_include_tables()
-              valid_include <- intersect(current_include, other_tables)
-              shiny::updateSelectizeInput(
-                session, "include_tables",
-                choices = other_tables,
-                selected = valid_include
+            if (!inherits(dm_obj, "dm")) return()
+            opts <- build_dm_table_options(dm_obj)
+            other_opts <- Filter(function(o) o$value != r_start_table(), opts)
+            current_include <- isolate(r_include_tables())
+            other_names <- vapply(other_opts, `[[`, character(1), "value")
+            valid_include <- intersect(current_include, other_names)
+            session$sendCustomMessage(
+              "dm-table-picker",
+              list(
+                id = ns("include_tables"),
+                mode = "multi",
+                options = other_opts,
+                selected = valid_include,
+                placeholder = "All reachable tables"
               )
-            }
+            )
+            r_include_tables(valid_include)
           })
 
           list(
-            expr = shiny::reactive({
+            expr = reactive({
               tbl <- r_start_table()
               include <- r_include_tables()
               jtype <- r_join_type()
               is_recursive <- r_recursive()
 
-              shiny::req(tbl, nzchar(tbl))
+              req(tbl, nzchar(tbl))
 
               if (length(include) == 0) {
-                # No specific tables selected - use default (all reachable)
-                # Build expression based on join type
                 if (jtype == "left") {
-                  # Default left_join - don't need to specify .join
                   bquote(
                     dm::dm_flatten_to_tbl(
                       data, .(tbl_sym),
@@ -164,7 +164,6 @@ new_dm_flatten_block <- function(
                   )
                 }
               } else {
-                # Specific tables selected - pass them to ...
                 include_syms <- lapply(include, as.name)
                 join_fn <- switch(jtype,
                   "left" = quote(dplyr::left_join),
@@ -172,7 +171,6 @@ new_dm_flatten_block <- function(
                   "full" = quote(dplyr::full_join),
                   "right" = quote(dplyr::right_join)
                 )
-                # Build call with spliced table symbols
                 tbl_sym <- as.name(tbl)
                 call_args <- c(
                   list(quote(dm::dm_flatten_to_tbl)),
@@ -196,48 +194,44 @@ new_dm_flatten_block <- function(
       )
     },
     ui = function(id) {
-      shiny::tagList(
+      tagList(
+        dm_table_picker_deps(),
         block_responsive_css(),
-        shiny::div(
+        div(
           class = "block-container",
-          shiny::div(
+          div(
             class = "block-form-grid",
-            shiny::div(
+            div(
               class = "block-section",
               shiny::tags$h4("Flatten dm"),
-              shiny::div(
+              div(
                 class = "block-section-grid",
-                shiny::div(
+                div(
                   class = "block-input-wrapper",
-                  shiny::selectInput(
-                    shiny::NS(id, "start_table"),
-                    label = "Start from table",
-                    choices = if (nzchar(start_table)) {
-                      start_table
-                    } else {
-                      character()
-                    },
-                    selected = start_table
+                  shiny::tags$label(
+                    class = "control-label",
+                    "Start from table"
+                  ),
+                  div(
+                    id = NS(id, "start_table"),
+                    class = "dm-flatten-start-picker"
                   )
                 ),
-                shiny::div(
+                div(
                   class = "block-input-wrapper",
-                  shiny::selectizeInput(
-                    shiny::NS(id, "include_tables"),
-                    label = "Include tables (optional)",
-                    choices = include_tables,
-                    selected = include_tables,
-                    multiple = TRUE,
-                    options = list(
-                      placeholder = "All reachable tables",
-                      plugins = list("remove_button")
-                    )
+                  shiny::tags$label(
+                    class = "control-label",
+                    "Include tables (optional)"
+                  ),
+                  div(
+                    id = NS(id, "include_tables"),
+                    class = "dm-flatten-include-picker"
                   )
                 ),
-                shiny::div(
+                div(
                   class = "block-input-wrapper",
                   shiny::selectInput(
-                    shiny::NS(id, "join_type"),
+                    NS(id, "join_type"),
                     label = "Join type",
                     choices = c(
                       "Left join" = "left",
@@ -248,10 +242,10 @@ new_dm_flatten_block <- function(
                     selected = join_type
                   )
                 ),
-                shiny::div(
+                div(
                   class = "block-input-wrapper",
                   shiny::checkboxInput(
-                    shiny::NS(id, "recursive"),
+                    NS(id, "recursive"),
                     label = "Recursive (follow all relationships)",
                     value = recursive
                   )

@@ -1,17 +1,19 @@
 #' dm Pull Block Constructor
 #'
-#' This block extracts a single table from a dm object as a regular data frame.
-#' Use this after filtering to get a specific table for further analysis
-#' or visualization.
+#' This block extracts a single table from a dm object as a regular data
+#' frame. Use this after filtering to get a specific table for further
+#' analysis or visualization.
 #'
-#' @param table Character, the name of the table to extract. Default "".
+#' @param table Character, the name of the table to extract. Default `""`.
 #' @param ... Forwarded to [blockr.core::new_transform_block()]
 #'
 #' @return A block object for extracting tables from dm objects
 #'
 #' @examples
-#' # Create a dm pull block
 #' new_dm_pull_block(table = "flights")
+#'
+#' @importFrom shiny moduleServer reactive reactiveVal observeEvent NS div
+#'   tagList req isolate
 #'
 #' @export
 new_dm_pull_block <- function(table = "", ...) {
@@ -21,37 +23,41 @@ new_dm_pull_block <- function(table = "", ...) {
       shiny::moduleServer(
         id,
         function(input, output, session) {
-          # Reactive value for table selection
-          r_table <- shiny::reactiveVal(table)
+          ns <- session$ns
+          r_table <- reactiveVal(table)
 
-          # Update reactive from input
-          shiny::observeEvent(input$table, {
-            r_table(input$table)
+          observeEvent(input$table, {
+            val <- input$table
+            if (!is.null(val) && nzchar(val)) r_table(val)
           })
 
-          # Update table choices when dm changes
-          shiny::observeEvent(data(), {
-            dm_obj <- data()
-            if (inherits(dm_obj, "dm")) {
-              tables <- names(dm::dm_get_tables(dm_obj))
-              current <- r_table()
-              # Keep current selection if valid, otherwise use first table
-              selected <- if (current %in% tables) current else tables[1]
-              shiny::updateSelectInput(
-                session, "table",
-                choices = tables,
+          observeEvent(data(), {
+            opts <- build_dm_table_options(data())
+            tbl_names <- vapply(opts, `[[`, character(1), "value")
+            current <- isolate(r_table())
+            selected <- if (current %in% tbl_names) {
+              current
+            } else if (length(tbl_names) > 0L) {
+              tbl_names[[1L]]
+            } else {
+              ""
+            }
+            session$sendCustomMessage(
+              "dm-table-picker",
+              list(
+                id = ns("table"),
+                mode = "single",
+                options = opts,
                 selected = selected
               )
-              r_table(selected)
-            }
+            )
+            r_table(selected)
           })
 
           list(
-            expr = shiny::reactive({
+            expr = reactive({
               tbl <- r_table()
-              shiny::req(tbl, nzchar(tbl))
-
-              # Build pull_tbl call
+              req(tbl, nzchar(tbl))
               bquote(
                 dm::pull_tbl(data, .(tbl_sym)),
                 list(tbl_sym = as.name(tbl))
@@ -65,32 +71,19 @@ new_dm_pull_block <- function(table = "", ...) {
       )
     },
     ui = function(id) {
-      shiny::tagList(
-        shiny::div(
+      tagList(
+        dm_table_picker_deps(),
+        div(
           class = "block-container",
-          shiny::div(
-            class = "block-form-grid",
-            shiny::div(
-              class = "block-section",
-              shiny::tags$h4("Extract Table"),
-              shiny::div(
-                class = "block-section-grid",
-                shiny::div(
-                  class = "block-input-wrapper",
-                  shiny::selectInput(
-                    shiny::NS(id, "table"),
-                    label = "Table to extract",
-                    choices = if (nzchar(table)) table else character(),
-                    selected = table
-                  )
-                )
-              ),
-              shiny::tags$p(
-                class = "text-muted",
-                "Extracts selected table as a data frame",
-                "for further processing."
-              )
-            )
+          div(
+            id = NS(id, "table"),
+            class = "dm-pull-table-picker"
+          ),
+          shiny::tags$p(
+            class = "text-muted",
+            style = "margin-top: 8px;",
+            "Extracts the selected table as a data frame",
+            "for further processing."
           )
         )
       )

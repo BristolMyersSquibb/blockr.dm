@@ -77,25 +77,19 @@ test_that("ser/deser dm_filter_block", {
   expect_s3_class(restored, class(blk))
   expect_state_equal(blk, restored)
 
-  blk2 <- new_dm_filter_block(table = "adae", expr = "AEDECOD == 'Headache'")
+  state_in <- list(
+    conditions = list(list(
+      type = "values", column = "AEDECOD",
+      values = list("Headache"), mode = "include"
+    )),
+    operator = "&"
+  )
+  blk2 <- new_dm_filter_block(table = "adae", state = state_in)
   restored2 <- ser_deser(blk2)
   state <- blockr.core:::initial_block_state(restored2)
   expect_equal(state$table, "adae")
-  expect_equal(state$expr, "AEDECOD == 'Headache'")
-})
-
-test_that("ser/deser dm_filter_value_block", {
-  blk <- new_dm_filter_value_block()
-  restored <- ser_deser(blk)
-  expect_s3_class(restored, class(blk))
-  expect_state_equal(blk, restored)
-
-  blk2 <- new_dm_filter_value_block(table = "adsl", column = "SEX", value = "M")
-  restored2 <- ser_deser(blk2)
-  state <- blockr.core:::initial_block_state(restored2)
-  expect_equal(state$table, "adsl")
-  expect_equal(state$column, "SEX")
-  expect_equal(state$value, "M")
+  expect_equal(state$state$operator, "&")
+  expect_equal(state$state$conditions[[1L]]$column, "AEDECOD")
 })
 
 test_that("ser/deser dm_pull_block", {

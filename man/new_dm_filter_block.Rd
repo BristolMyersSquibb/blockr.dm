@@ -4,35 +4,49 @@
 \alias{new_dm_filter_block}
 \title{dm Filter Block Constructor}
 \usage{
-new_dm_filter_block(table = "", expr = "", ...)
+new_dm_filter_block(
+  table = "",
+  state = list(conditions = list(), operator = "&"),
+  ...
+)
 }
 \arguments{
-\item{table}{Character, the name of the table to filter. Default "".}
+\item{table}{Name of the dm table to filter. Default \code{""} (none selected
+until data arrives).}
 
-\item{expr}{Character, the filter expression
-(e.g., "AVAL > 100"). Default "".}
+\item{state}{Filter state as used by blockr.dplyr's filter block — a list
+with \code{conditions} (list of condition objects) and \code{operator} (\code{"&"} or
+\code{"|"}).}
 
-\item{...}{Forwarded to \code{\link[blockr.core:new_transform_block]{blockr.core::new_transform_block()}}}
+\item{...}{Forwarded to \code{\link[blockr.core:new_transform_block]{blockr.core::new_transform_block()}}.}
 }
 \value{
-A block object for filtering dm objects
+A block object for filtering dm objects.
 }
 \description{
-This block filters a dm object by applying a condition to one of its tables.
-The filter cascades to related tables via semi-joins based on foreign key
-relationships, keeping only rows that match across the data model.
+Filters a \code{dm} object by applying one or more conditions to a selected
+table. The filter cascades to related tables via semi-joins on foreign
+key relationships (handled by \code{dm::dm_filter()}), keeping only rows that
+match across the data model.
 }
 \details{
-The filter expression is evaluated in the context of the selected table.
-Use column names from that table directly (e.g., "Species == 'setosa'").
-
-When the dm has foreign key relationships defined, filtering one table
-automatically filters related tables to only include matching rows.
-This is the key feature for queries like "get adverse events for subjects
-with lab value > X".
+The condition UI is reused from blockr.dplyr's filter block: each
+condition is type-aware (categorical multi-select, numeric operator +
+value, or free R expression) and conditions are combined with \code{&} or \code{|}.
+A single table picker above the conditions selects which table in the dm
+the conditions apply to. Changing the table clears existing conditions.
 }
 \examples{
-# Create a dm filter block
-new_dm_filter_block(table = "flights", expr = "month == 1")
+# Filter the ADAE table for subjects where SEX == "F"
+new_dm_filter_block(
+  table = "ADAE",
+  state = list(
+    conditions = list(list(
+      type = "values", column = "SEX",
+      values = list("F"), mode = "include"
+    )),
+    operator = "&"
+  )
+)
 
 }

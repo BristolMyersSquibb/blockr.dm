@@ -16,6 +16,9 @@
 #'   serve(new_dm_select_block())
 #' }
 #'
+#' @importFrom shiny moduleServer reactive reactiveVal observeEvent NS div
+#'   tagList req isolate
+#'
 #' @export
 new_dm_select_block <- function(tables = character(), ...) {
   blockr.core::new_transform_block(
@@ -23,50 +26,53 @@ new_dm_select_block <- function(tables = character(), ...) {
       shiny::moduleServer(
         id,
         function(input, output, session) {
-          # Reactive value for selected tables
-          r_tables <- shiny::reactiveVal(tables)
+          ns <- session$ns
+          r_tables <- reactiveVal(tables)
 
-          # Get available tables from dm
-          available_tables <- shiny::reactive({
+          available_tables <- reactive({
             dm_obj <- data()
             if (!inherits(dm_obj, "dm")) return(character())
             names(dm::dm_get_tables(dm_obj))
           })
 
-          # Update selectize choices when data changes
-          shiny::observeEvent(available_tables(), {
-            choices <- available_tables()
-            current <- r_tables()
-            # Keep only valid selections
+          observeEvent(data(), {
+            opts <- build_dm_table_options(data())
+            choices <- vapply(opts, `[[`, character(1), "value")
+            current <- isolate(r_tables())
             valid_selection <- intersect(current, choices)
-            shiny::updateSelectizeInput(
-              session, "tables",
-              choices = choices,
-              selected = if (length(valid_selection) > 0) {
-                valid_selection
-              } else {
-                choices
-              }
+            selected <- if (length(valid_selection) > 0) {
+              valid_selection
+            } else {
+              choices
+            }
+            session$sendCustomMessage(
+              "dm-table-picker",
+              list(
+                id = ns("tables"),
+                mode = "multi",
+                options = opts,
+                selected = selected,
+                placeholder = "Select tables\u2026"
+              )
             )
+            r_tables(selected)
           })
 
-          # Update state from input
-          shiny::observeEvent(input$tables, {
-            r_tables(input$tables)
-          }, ignoreNULL = FALSE)
+          observeEvent(input$tables, {
+            val <- input$tables
+            if (is.null(val)) return()
+            r_tables(val)
+          })
 
           list(
-            expr = shiny::reactive({
+            expr = reactive({
               selected <- r_tables()
               all_tables <- available_tables()
 
-              # If no selection, use all tables
               if (length(selected) == 0) {
                 selected <- all_tables
               }
 
-              # Build dm_select_tbl call with table symbols
-              # Always build the call (quote(data) is a symbol, not language)
               table_syms <- lapply(selected, as.name)
               call_args <- c(
                 list(quote(dm::dm_select_tbl)),
@@ -83,25 +89,17 @@ new_dm_select_block <- function(tables = character(), ...) {
       )
     },
     ui = function(id) {
-      ns <- shiny::NS(id)
-      shiny::tagList(
-        block_responsive_css(),
-        shiny::div(
+      tagList(
+        dm_table_picker_deps(),
+        div(
           class = "block-container",
           shiny::tags$p(
             class = "text-muted mb-2",
             "Select which tables to keep in the dm object."
           ),
-          shiny::selectizeInput(
-            ns("tables"),
-            label = "Tables to keep",
-            choices = tables,
-            selected = tables,
-            multiple = TRUE,
-            options = list(
-              placeholder = "Select tables...",
-              plugins = list("remove_button")
-            )
+          div(
+            id = NS(id, "tables"),
+            class = "dm-select-tables-picker"
           )
         )
       )

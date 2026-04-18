@@ -43,10 +43,8 @@ want to flatten only specific relationships (e.g., join ADAE with ADSL
 but not ADLB).
 }
 \examples{
-# Create a dm flatten block
 new_dm_flatten_block(start_table = "flights", recursive = TRUE)
 
-# Flatten with specific tables and inner join
 new_dm_flatten_block(
   start_table = "ADSL",
   include_tables = c("ADAE"),
