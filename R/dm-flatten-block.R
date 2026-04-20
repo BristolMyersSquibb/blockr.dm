@@ -116,7 +116,10 @@ new_dm_flatten_block <- function(
                 id = ns("include_tables"),
                 mode = "multi",
                 options = other_opts,
-                selected = valid_include,
+                # as.list() forces a JSON array encoding; without it a
+                # length-1 character vector auto-unboxes to a JSON scalar
+                # and the JS multi-picker splits the string into chars.
+                selected = as.list(valid_include),
                 placeholder = "All reachable tables"
               )
             )

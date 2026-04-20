@@ -14,6 +14,7 @@ register_dm_blocks <- function() {
       "new_dm_select_block",
       "new_dm_add_keys_block",
       "new_dm_filter_block",
+      "new_dm_semi_filter_block",
       "new_dm_pull_block",
       "new_dm_flatten_block",
       "new_dm_nested_view_block",
@@ -30,6 +31,7 @@ register_dm_blocks <- function() {
       "Select tables",
       "Add keys",
       "Filter dm",
+      "Semi-filter dm",
       "Pull table",
       "Flatten dm",
       "Nested view",
@@ -51,6 +53,10 @@ register_dm_blocks <- function() {
       paste(
         "Filter dm by condition in any table,",
         "cascading to related tables via FKs"
+      ),
+      paste(
+        "Semi-join a dm to ids supplied by a second data frame input,",
+        "cascading via FKs"
       ),
       "Extract a single table from dm as a data frame",
       "Flatten dm into a single data frame by joining",
@@ -83,6 +89,7 @@ register_dm_blocks <- function() {
       "structured",
       "structured",
       "structured",
+      "structured",
       "structured"
     ),
     icon = c(
@@ -93,6 +100,7 @@ register_dm_blocks <- function() {
       "check2-square",
       "key",
       "funnel",
+      "link-45deg",
       "box-arrow-up-right",
       "layers",
       "list-nested",
@@ -109,6 +117,7 @@ register_dm_blocks <- function() {
       dm_select_arguments(),
       dm_add_keys_arguments(),
       dm_filter_arguments(),
+      dm_semi_filter_arguments(),
       dm_pull_arguments(),
       dm_flatten_arguments(),
       dm_nested_view_arguments(),

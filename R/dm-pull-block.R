@@ -78,12 +78,6 @@ new_dm_pull_block <- function(table = "", ...) {
           div(
             id = NS(id, "table"),
             class = "dm-pull-table-picker"
-          ),
-          shiny::tags$p(
-            class = "text-muted",
-            style = "margin-top: 8px;",
-            "Extracts the selected table as a data frame",
-            "for further processing."
           )
         )
       )

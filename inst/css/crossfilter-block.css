@@ -6,8 +6,8 @@
 .js-crossfilter-container {
   font: inherit;
   position: relative;
-  margin: -16px -16px -10px -16px;
-  padding: 6px 10px;
+  margin: 0 -16px -10px -16px;
+  padding: 14px 10px 6px;
 }
 /* Prevent Shiny's recalculating fade during R round-trips */
 .js-crossfilter-container .recalculating,
@@ -225,14 +225,22 @@
 }
 .jscf-popover-select {
   width: 100%;
-  padding: 6px 10px;
+  padding: 6px 28px 6px 10px;
   font-size: var(--blockr-font-size-sm, 0.8125rem);
   border: 1px solid var(--blockr-color-border, #e5e7eb);
   border-radius: 6px;
-  background: var(--blockr-color-bg-input, #f9fafb);
+  background-color: var(--blockr-color-bg-input, #f9fafb);
   color: var(--blockr-color-text-primary, #111827);
   outline: none;
   box-sizing: border-box;
+  /* Match the Blockr.Select chevron (grey-400, same SVG glyph) instead of
+     showing the browser's native dropdown arrow. */
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none' stroke='%239ca3af' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'><polyline points='3 4.5 6 7.5 9 4.5'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  cursor: pointer;
 }
 .jscf-popover-select:focus {
   border-color: var(--blockr-color-primary, #2563eb);
