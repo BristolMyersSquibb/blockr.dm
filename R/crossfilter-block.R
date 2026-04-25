@@ -453,7 +453,11 @@ crossfilter_server <- function(active_dims, filters, range_filters,
             }
             # toJSON returns a "json" class; Shiny embeds it verbatim
             # (json_verbatim = TRUE). JS receives a parsed columnar object.
-            jsonlite::toJSON(df, dataframe = "columns")
+            # `na = "null"`: jsonlite's vector default encodes NA as the
+            # string "NA", which mixes types in numeric columns and breaks
+            # crossfilter's sort/binary-search (filterRange returns wrong
+            # rows). JSON null becomes JS null which sorts predictably as 0.
+            jsonlite::toJSON(df, dataframe = "columns", na = "null")
           })
 
           # Force arrays for length-1 vectors (avoid JSON scalar unboxing)

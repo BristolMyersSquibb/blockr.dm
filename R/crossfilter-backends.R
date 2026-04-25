@@ -212,6 +212,27 @@ build_crossfilter_lookups <- function(
 
   if (length(lookups) == 0) return(NULL)
 
+  # Emit a parent-keyed lookup so parent-dim cards (e.g. ARM, SEX) count over
+  # the full set of parent records rather than getting hosted on a child
+  # instance — which would undercount any parent that lacks rows in that
+  # child (e.g. subjects with no AEs missing from an adae-hosted ARM card).
+  if (length(parent_dims) > 0) {
+    parent_select <- unique(c(parent_key, parent_dims))
+    if (
+      !is.null(measure_tbl) && measure_tbl == parent_table &&
+        !is.null(measure_cn)
+    ) {
+      parent_select <- unique(c(parent_select, measure_cn))
+    }
+    parent_select <- intersect(parent_select, names(parent_df))
+    if (parent_key %in% parent_select && length(parent_select) > 1) {
+      lookups[[parent_table]] <- unique(
+        parent_df[, parent_select, drop = FALSE]
+      )
+      child_fk_col_map[[parent_table]] <- parent_key
+    }
+  }
+
   list(
     lookups = lookups,
     dim_source = dim_source,

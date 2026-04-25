@@ -444,9 +444,18 @@
         }
       }
 
-      // Map dims to child tables
+      // Map dims to crossfilter instances. Prefer the dim's declared source
+      // table when it's an instance — this keeps parent dims (ARM, SEX) on
+      // the parent crossfilter, not a child whose row coverage of parent
+      // keys may be incomplete (e.g. adae lacking subjects with no AEs).
       const childTables = Object.keys(this.instances);
       for (const dim of Object.keys(this.dimSource)) {
+        const sourceTable = this.dimSource[dim];
+        const sourceCf = sourceTable && this.instances[sourceTable];
+        if (sourceCf && sourceCf.size() > 0 && dim in sourceCf.all()[0]) {
+          this.dimChild[dim] = sourceTable;
+          continue;
+        }
         for (const ct of childTables) {
           const cf = this.instances[ct];
           if (cf.size() > 0 && dim in cf.all()[0]) {
@@ -784,6 +793,8 @@
     _createRangeCard(dim, tbl, type) {
       const card = el('div', 'dm-cf-filter-card dm-cf-range-card');
       card.dataset.dim = dim;
+      card._type = type;
+      card._dim = dim;
 
       // Header
       const header = el('div', 'dm-cf-filter-card-header');
@@ -802,36 +813,27 @@
       header.appendChild(actions);
       card.appendChild(header);
 
-      // Get min/max
-      const cfDim = this.dimensions[dim];
-      const bottom = cfDim.bottom(1)[0];
-      const top = cfDim.top(1)[0];
-      if (!bottom || !top) return card;
+      // Initial bounds (excluding this dim's own filter)
+      const bounds = this._getRangeBounds(dim, type);
+      if (!bounds) return card;
+      const { min: min0, max: max0 } = bounds;
 
-      let min = type === 'date' ? new Date(bottom[dim]).getTime() / 86400000
-        : Number(bottom[dim]);
-      let max = type === 'date' ? new Date(top[dim]).getTime() / 86400000
-        : Number(top[dim]);
-
-      if (isNaN(min) || isNaN(max) || min === max) {
-        card.appendChild(el('div', 'dm-cf-range-info', `All values: ${type === 'date' ? fmtDate(min) : fmtNum(min)}`));
+      if (min0 === max0) {
+        card.appendChild(el('div', 'dm-cf-range-info',
+          `All values: ${type === 'date' ? fmtDate(min0) : fmtNum(min0)}`));
+        card._min = min0;
+        card._max = max0;
         return card;
       }
 
-      // Row count info
+      // Row count info (populated by _applyRangeBounds / _updateRangeInfo)
       const infoEl = el('div', 'dm-cf-range-info');
       card.appendChild(infoEl);
       card._infoEl = infoEl;
 
-      const allRows = cfDim.top(Infinity);
-      card._totalRows = allRows.length;
-
-      // KDE density overlay (SVG)
+      // KDE density overlay (SVG) — paths get their `d` attr set in
+      // _applyRangeBounds (gray) and _updateRangeInfo (blue).
       if (type !== 'date') {
-        const allValues = allRows.map(r => +r[dim]).filter(v => isFinite(v));
-        const kdeAll = kde(allValues, min, max);
-        const kdeMaxY = Math.max(...kdeAll.map(p => p.y), 1);
-
         const svgNs = 'http://www.w3.org/2000/svg';
         const svg = document.createElementNS(svgNs, 'svg');
         svg.setAttribute('viewBox', '0 0 300 80');
@@ -839,23 +841,20 @@
         svg.classList.add('dm-cf-density-svg');
 
         const pathAll = document.createElementNS(svgNs, 'path');
-        pathAll.setAttribute('d', kdeToSvgPath(kdeAll, min, max, kdeMaxY, 300, 80));
         pathAll.setAttribute('fill', 'rgba(200, 200, 200, 0.5)');
         pathAll.setAttribute('stroke', 'rgba(160, 160, 160, 0.6)');
         pathAll.setAttribute('stroke-width', '1');
         svg.appendChild(pathAll);
 
         const pathFiltered = document.createElementNS(svgNs, 'path');
-        pathFiltered.setAttribute('d', kdeToSvgPath(kdeAll, min, max, kdeMaxY, 300, 80));
         pathFiltered.setAttribute('fill', 'rgba(37, 99, 235, 0.35)');
         pathFiltered.setAttribute('stroke', 'rgba(37, 99, 235, 0.6)');
         pathFiltered.setAttribute('stroke-width', '1');
         svg.appendChild(pathFiltered);
 
         card.appendChild(svg);
+        card._pathAll = pathAll;
         card._pathFiltered = pathFiltered;
-        card._kdeMaxY = kdeMaxY;
-        card._dim = dim;
       }
 
       // Dual range slider
@@ -864,16 +863,12 @@
       const fillBar = el('div', 'dm-cf-dual-range-fill');
       slider.appendChild(fillBar);
 
-      const step = type === 'date' ? 1 : (max - min) / 200;
-
       const inputLo = document.createElement('input');
       inputLo.type = 'range';
-      inputLo.min = min; inputLo.max = max; inputLo.value = min; inputLo.step = step;
       inputLo.style.cssText = 'z-index:3;pointer-events:none;';
 
       const inputHi = document.createElement('input');
       inputHi.type = 'range';
-      inputHi.min = min; inputHi.max = max; inputHi.value = max; inputHi.step = step;
       inputHi.style.cssText = 'z-index:4;pointer-events:none;';
 
       // Tooltips
@@ -888,42 +883,57 @@
 
       // Min/max labels
       const minMaxRow = el('div', 'dm-cf-range-minmax');
-      const fmtVal = type === 'date' ? fmtDate : fmtNum;
-      minMaxRow.appendChild(el('span', '', fmtVal(min)));
-      minMaxRow.appendChild(el('span', '', fmtVal(max)));
+      const labelMin = el('span', '');
+      const labelMax = el('span', '');
+      minMaxRow.appendChild(labelMin);
+      minMaxRow.appendChild(labelMax);
       card.appendChild(minMaxRow);
 
-      const updateSlider = () => {
+      card._slider = slider;
+      card._fillBar = fillBar;
+      card._inputLo = inputLo;
+      card._inputHi = inputHi;
+      card._bubbleLo = bubbleLo;
+      card._bubbleHi = bubbleHi;
+      card._labelMin = labelMin;
+      card._labelMax = labelMax;
+
+      const fmtVal = type === 'date' ? fmtDate : fmtNum;
+      card._fmtVal = fmtVal;
+
+      // Read card._min / card._max so this picks up bounds updates.
+      card._updateSlider = () => {
         let lo = Number(inputLo.value);
         let hi = Number(inputHi.value);
         if (lo > hi) [lo, hi] = [hi, lo];
 
-        // Fill bar
-        const range = max - min;
-        const loP = ((lo - min) / range) * 100;
-        const hiP = ((hi - min) / range) * 100;
+        const mn = card._min;
+        const mx = card._max;
+        const range = mx - mn;
+        const loP = range > 0 ? ((lo - mn) / range) * 100 : 0;
+        const hiP = range > 0 ? ((hi - mn) / range) * 100 : 100;
         fillBar.style.left = loP + '%';
         fillBar.style.width = (hiP - loP) + '%';
 
-        // Bubbles
         bubbleLo.textContent = fmtVal(lo);
         bubbleLo.style.left = loP + '%';
         bubbleHi.textContent = fmtVal(hi);
         bubbleHi.style.left = hiP + '%';
       };
-      updateSlider();
 
       const onInput = () => {
         let lo = Number(inputLo.value);
         let hi = Number(inputHi.value);
         if (lo > hi) [lo, hi] = [hi, lo];
-        updateSlider();
+        card._updateSlider();
         slider.classList.add('dm-cf-active');
         clearTimeout(card._activeTimer);
         card._activeTimer = setTimeout(() => slider.classList.remove('dm-cf-active'), 1500);
 
-        const range = max - min;
-        if (lo <= min + range * 0.001 && hi >= max - range * 0.001) {
+        const mn = card._min;
+        const mx = card._max;
+        const range = mx - mn;
+        if (lo <= mn + range * 0.001 && hi >= mx - range * 0.001) {
           this._applyFilter(dim, null);
         } else {
           if (type === 'date') {
@@ -937,11 +947,159 @@
       inputLo.addEventListener('input', onInput);
       inputHi.addEventListener('input', onInput);
 
-      card._min = min;
-      card._max = max;
-      card._type = type;
+      // Apply initial bounds (sets attrs, values, KDE, labels, totalRows).
+      this._applyRangeBounds(card, min0, max0);
 
       return card;
+    }
+
+    // -- Range bounds helpers -----------------------------------------------
+
+    // Query a range dim's [min, max] over data filtered by everything except
+    // its own filter, by temporarily clearing it, reading bounds, restoring.
+    _getRangeBounds(dim, type) {
+      const cfDim = this.dimensions[dim];
+      if (!cfDim) return null;
+
+      const savedFilter = this.filters[dim];
+      const hasOwnFilter = savedFilter !== undefined && savedFilter !== null;
+      if (hasOwnFilter) cfDim.filterAll();
+
+      const bottom = cfDim.bottom(1)[0];
+      const top = cfDim.top(1)[0];
+
+      if (hasOwnFilter) this._reapplyFilter(dim, savedFilter);
+
+      if (!bottom || !top) return null;
+      const min = type === 'date'
+        ? new Date(bottom[dim]).getTime() / 86400000
+        : Number(bottom[dim]);
+      const max = type === 'date'
+        ? new Date(top[dim]).getTime() / 86400000
+        : Number(top[dim]);
+      if (isNaN(min) || isNaN(max)) return null;
+      return { min, max };
+    }
+
+    _reapplyFilter(dim, value) {
+      if (value === undefined || value === null) return;
+      const cfDim = this.dimensions[dim];
+      if (Array.isArray(value)) {
+        const set = new Set(value);
+        cfDim.filterFunction(v => set.has(String(v)));
+      } else if (value && value.min !== undefined) {
+        if (value.isDate) {
+          const loD = value.min;
+          const hiD = value.max;
+          cfDim.filterFunction(v => {
+            const t = new Date(v).getTime() / 86400000;
+            return t >= loD && t <= hiD;
+          });
+        } else {
+          // Use filterFunction (inclusive both ends) instead of filterRange
+          // (which is [lo, hi) — half-open) so JS results match R's
+          // `>= lo & <= hi` semantics exactly.
+          const lo = value.min, hi = value.max;
+          cfDim.filterFunction(v => typeof v === 'number' && v >= lo && v <= hi);
+        }
+      }
+    }
+
+    // Apply [min, max] to a range card: input attrs, labels, gray KDE,
+    // totalRows. Slider value attrs are clamped (or set to bounds when no
+    // filter). Caller is responsible for triggering blue-KDE / count refresh.
+    _applyRangeBounds(card, min, max) {
+      const dim = card._dim;
+      card._min = min;
+      card._max = max;
+
+      const step = card._type === 'date' ? 1 : (max - min) / 200;
+      const lo = card._inputLo;
+      const hi = card._inputHi;
+
+      const ownFilter = this.filters[dim];
+      const hasRangeFilter = ownFilter && ownFilter.min !== undefined;
+
+      lo.min = min; lo.max = max; lo.step = step;
+      hi.min = min; hi.max = max; hi.step = step;
+
+      if (hasRangeFilter) {
+        // Clamp filter values into the new bounds (HTML clamps too, but be
+        // explicit). If the filter no longer intersects, snap to endpoints.
+        lo.value = Math.max(min, Math.min(max, ownFilter.min));
+        hi.value = Math.max(min, Math.min(max, ownFilter.max));
+      } else {
+        lo.value = min;
+        hi.value = max;
+      }
+
+      card._labelMin.textContent = card._fmtVal(min);
+      card._labelMax.textContent = card._fmtVal(max);
+      card._updateSlider();
+
+      // Rebuild gray KDE + refresh totalRows from data filtered by all-but-
+      // this-dim. Mirrors _getRangeBounds: temporarily clear own filter.
+      const childTable = this.dimChild[dim];
+      if (childTable) {
+        const cfDim = this.dimensions[dim];
+        const savedFilter = this.filters[dim];
+        const hadOwnFilter = savedFilter !== undefined && savedFilter !== null;
+        if (hadOwnFilter) cfDim.filterAll();
+
+        const allRows = this.instances[childTable].allFiltered();
+        card._totalRows = allRows.length;
+
+        if (card._pathAll) {
+          const allValues = allRows.map(r => +r[dim]).filter(v => isFinite(v));
+          const kdeAll = kde(allValues, min, max);
+          const kdeMaxY = Math.max(...kdeAll.map(p => p.y), 1);
+          card._kdeMaxY = kdeMaxY;
+          card._pathAll.setAttribute('d',
+            kdeToSvgPath(kdeAll, min, max, kdeMaxY, 300, 80));
+        }
+
+        if (hadOwnFilter) this._reapplyFilter(dim, savedFilter);
+      }
+    }
+
+    // Recompute and apply bounds when other filters change. If the slider
+    // had a range filter that no longer intersects the new bounds, clear it
+    // (mutate state directly to avoid re-entering _applyFilter).
+    _updateRangeBounds(dim) {
+      const card = this.panels[dim];
+      if (!card || !card._inputLo) return; // not a fully-built range card
+
+      const bounds = this._getRangeBounds(dim, card._type);
+      if (!bounds) return;
+      const { min, max } = bounds;
+      if (min === max) return;
+      if (Math.abs(card._min - min) < 1e-9 &&
+          Math.abs(card._max - max) < 1e-9) return;
+
+      this._applyRangeBounds(card, min, max);
+
+      // If filter is now outside new bounds, clear/clamp it (direct mutation —
+      // avoids re-entering _applyFilter from inside _updateAllCounts).
+      const filter = this.filters[dim];
+      if (filter && filter.min !== undefined) {
+        const newLo = Math.max(min, filter.min);
+        const newHi = Math.min(max, filter.max);
+        if (newLo >= newHi) {
+          this.dimensions[dim].filterAll();
+          delete this.filters[dim];
+          card._inputLo.value = min;
+          card._inputHi.value = max;
+          card._updateSlider();
+        } else if (newLo !== filter.min || newHi !== filter.max) {
+          this.dimensions[dim].filterFunction(
+            v => typeof v === 'number' && v >= newLo && v <= newHi
+          );
+          this.filters[dim] = { ...filter, min: newLo, max: newHi };
+          card._inputLo.value = newLo;
+          card._inputHi.value = newHi;
+          card._updateSlider();
+        }
+      }
     }
 
     // -- Filter application -------------------------------------------------
@@ -963,13 +1121,18 @@
             return t >= loD && t <= hiD;
           });
         } else {
-          this.dimensions[dim].filterRange([value.min, value.max]);
+          // Inclusive on both ends (matches R's `>= lo & <= hi`); also
+          // robust against non-numeric (null) values that dodge the sort.
+          const lo = value.min, hi = value.max;
+          this.dimensions[dim].filterFunction(
+            v => typeof v === 'number' && v >= lo && v <= hi
+          );
         }
         this.filters[dim] = value;
       }
 
       this._syncSiblingKeys();
-      this._updateAllCounts();
+      this._updateAllCounts(dim);
       this._updateStatus();
       this._scheduleSubmit();
     }
@@ -984,7 +1147,7 @@
       }
       this.filters = {};
       this._syncSiblingKeys();
-      this._updateAllCounts();
+      this._updateAllCounts(null);
       this._updateStatus();
       this._scheduleSubmit();
     }
@@ -999,35 +1162,67 @@
 
     // -- Sibling key synchronization ----------------------------------------
 
-    _syncSiblingKeys() {
-      const childTables = Object.keys(this.instances);
-      if (childTables.length <= 1) return;
+    _tableHasActiveFilter(tbl) {
+      for (const [dim, src] of Object.entries(this.dimSource)) {
+        if (src === tbl && this.filters[dim] != null) return true;
+      }
+      return false;
+    }
 
-      for (const t of childTables) {
+    _syncSiblingKeys() {
+      const tables = Object.keys(this.instances);
+      if (tables.length <= 1) return;
+
+      // Phase 1: clear all keyDim filters so reads reflect pre-sync state.
+      for (const t of tables) {
         if (this.keyDims[t]) this.keyDims[t].filterAll();
       }
 
-      for (const targetChild of childTables) {
+      // Phase 2: snapshot each filtered table's USUBJID set BEFORE mutating
+      // any keyDims. Without this, a subsequent target's read of source N's
+      // allFiltered() would see N's freshly-applied keyDim from a previous
+      // iteration, cascading the intersection too far (190 → 7 in the
+      // safetyData ADaM test). Only consider sources with an active filter —
+      // otherwise a child missing some parent keys (adae has 225/254
+      // USUBJIDs) would prune the parent even with no filters set.
+      const sourceKeys = {};
+      for (const source of tables) {
+        if (!this._tableHasActiveFilter(source)) continue;
+        const fkCol = this.childFkCols[source];
+        if (!fkCol) continue;
+        const filtered = this.instances[source].allFiltered();
+        sourceKeys[source] = new Set(filtered.map(r => r[fkCol]));
+      }
+
+      // Phase 3: apply intersections.
+      for (const target of tables) {
         let allowedKeys = null;
-        for (const sourceChild of childTables) {
-          if (sourceChild === targetChild) continue;
-          const fkCol = this.childFkCols[sourceChild];
-          if (!fkCol) continue;
-          const filtered = this.instances[sourceChild].allFiltered();
-          const keys = new Set(filtered.map(r => r[fkCol]));
+        for (const [source, keys] of Object.entries(sourceKeys)) {
+          if (source === target) continue;
           allowedKeys = allowedKeys
             ? new Set([...allowedKeys].filter(k => keys.has(k)))
             : keys;
         }
-        if (allowedKeys && this.keyDims[targetChild]) {
-          this.keyDims[targetChild].filterFunction(k => allowedKeys.has(k));
+        if (allowedKeys && this.keyDims[target]) {
+          this.keyDims[target].filterFunction(k => allowedKeys.has(k));
         }
       }
     }
 
     // -- Count updates ------------------------------------------------------
 
-    _updateAllCounts() {
+    // changedDim: the dim whose filter just changed (skip its own bounds
+    // update — its filter doesn't affect its own all-but-self bounds).
+    // Pass null to refresh all bounds (e.g., after a global reset).
+    _updateAllCounts(changedDim) {
+      // Update range bounds first so range cards show new min/max before
+      // their blue KDE / count text refresh in _updateRangeInfo.
+      for (const dim of Object.keys(this.groups)) {
+        const type = this._getDimType(dim);
+        if ((type === 'range' || type === 'date') && dim !== changedDim) {
+          this._updateRangeBounds(dim);
+        }
+      }
       for (const dim of Object.keys(this.groups)) {
         const type = this._getDimType(dim);
         if (type === 'range' || type === 'date') {
@@ -1111,10 +1306,9 @@
         }
       }
 
-      const hasFilters = Object.keys(cat_filters).length > 0 ||
-                          Object.keys(rng_filters).length > 0;
-      if (!hasFilters) return null;
-
+      // Always return an object, never null — Shiny's observeEvent on the
+      // R side ignores null by default, which would otherwise drop the
+      // "all filters cleared" state and leave r_filters stale.
       return { cat_filters, rng_filters };
     }
 
@@ -1122,7 +1316,7 @@
       if (this._submitTimer) clearTimeout(this._submitTimer);
       this._submitTimer = setTimeout(() => {
         $(this.el).trigger('change');
-      }, 300);
+      }, 100);
     }
   }
 
