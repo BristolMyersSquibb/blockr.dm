@@ -453,9 +453,10 @@
 }
 .dm-cf-tw-bar-label {
   font-size: var(--blockr-font-size-xs, 0.75rem);
-  width: 38px;
+  width: 60px;
   text-align: right;
   flex-shrink: 0;
+  white-space: nowrap;
   color: var(--blockr-grey-500, #6b7280);
 }
 

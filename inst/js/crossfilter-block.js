@@ -508,11 +508,23 @@
       const hasMeasure = this.measure && this.measure !== '.count';
       const isParentDim = (sourceTable === this.parentTable);
 
-      // Parse measure: "table.column" format
+      // Parse measure: "table.column" format. Match the prefix against known
+      // table names — using `indexOf('.')` fails for table names that start
+      // with a dot (e.g. data.frame inputs wrapped as `dm(.tbl = df)`), where
+      // the first dot is at index 0 and the slice leaves `tbl.column`.
       let measureCol = null;
       if (hasMeasure) {
-        const dot = this.measure.indexOf('.');
-        measureCol = dot >= 0 ? this.measure.slice(dot + 1) : this.measure;
+        for (const tbl of Object.keys(this.allColumns || {})) {
+          const prefix = tbl + '.';
+          if (this.measure.startsWith(prefix)) {
+            measureCol = this.measure.slice(prefix.length);
+            break;
+          }
+        }
+        if (measureCol == null) {
+          const dot = this.measure.indexOf('.');
+          measureCol = dot >= 0 ? this.measure.slice(dot + 1) : this.measure;
+        }
       }
 
       if (!hasMeasure) {
@@ -655,7 +667,7 @@
 
       const valueTh = el('th', 'dm-cf-tw-th');
       const countTh = el('th', 'dm-cf-tw-th');
-      countTh.style.width = '130px';
+      countTh.style.width = '160px';
 
       const updateThLabels = () => {
         valueTh.innerHTML = '';

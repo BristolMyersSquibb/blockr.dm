@@ -667,12 +667,24 @@ build_lookups_flat <- function(dm_obj, active_dims, measure_col = NULL) {
   }
   if (is.null(flat) || nrow(flat) == 0) return(NULL)
 
-  # Select only the columns we need: active dims + key + measure
-  all_dims <- unlist(active_dims, use.names = FALSE)
+  # Select only the columns we need: active dims + key + measure.
+  # Strip the measure's `<table>.` prefix using known table names — a regex
+  # like `^[^.]+\\.` fails when the table name itself starts with a dot
+  # (e.g. data.frame inputs wrapped as `dm(.tbl = df)`).
+  measure_cn <- NULL
+  if (!is.null(measure_col)) {
+    for (tbl in table_names) {
+      prefix <- paste0(tbl, ".")
+      if (startsWith(measure_col, prefix)) {
+        measure_cn <- substr(
+          measure_col, nchar(prefix) + 1, nchar(measure_col)
+        )
+        break
+      }
+    }
+  }
   keep_cols <- intersect(
-    unique(c(all_dims, if (!is.null(measure_col)) {
-      sub("^[^.]+\\.", "", measure_col)
-    })),
+    unique(c(all_dims, measure_cn)),
     names(flat)
   )
   if (length(keep_cols) == 0) return(NULL)
@@ -746,11 +758,17 @@ build_lookups_independent <- function(
     df <- tables[[tbl]]
     if (is.null(df) || !is.data.frame(df)) next
 
-    # Select active dims + measure column
+    # Select active dims + measure column. Match the measure's `<table>.`
+    # prefix against the current table name — a regex like `^[^.]+\\.`
+    # fails when the table name itself starts with a dot (e.g. data.frame
+    # inputs wrapped as `dm(.tbl = df)`).
     keep <- intersect(dims, names(df))
     if (!is.null(measure_col)) {
-      mc <- sub("^[^.]+\\.", "", measure_col)
-      if (mc %in% names(df)) keep <- unique(c(keep, mc))
+      prefix <- paste0(tbl, ".")
+      if (startsWith(measure_col, prefix)) {
+        mc <- substr(measure_col, nchar(prefix) + 1, nchar(measure_col))
+        if (mc %in% names(df)) keep <- unique(c(keep, mc))
+      }
     }
     if (length(keep) == 0) next
 
