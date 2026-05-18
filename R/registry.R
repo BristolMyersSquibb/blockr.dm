@@ -21,7 +21,8 @@ register_dm_blocks <- function() {
       "new_temporal_join_block",
       "new_dm_temporal_join_block",
       "new_crossfilter_block",
-      "new_dm_example_block"
+      "new_dm_example_block",
+      "new_value_filter_block"
     ),
     name = c(
       "Read dm",
@@ -38,7 +39,8 @@ register_dm_blocks <- function() {
       "Temporal join",
       "dm Temporal join",
       "Crossfilter",
-      "DM Example"
+      "DM Example",
+      "Value filter"
     ),
     description = c(
       "Read tables from Excel, ZIP, or directory into dm",
@@ -73,9 +75,15 @@ register_dm_blocks <- function() {
         "Client-side crossfilter for data frames",
         "and dm objects using crossfilter2.js"
       ),
-      "Load a pre-built dm from example datasets"
+      "Load a pre-built dm from example datasets",
+      paste(
+        "Minimal value filter for a data frame or dm.",
+        "Columns hidden behind the gear; per-column single vs multi",
+        "select. dm input cascades via FKs."
+      )
     ),
     category = c(
+      "structured",
       "structured",
       "structured",
       "structured",
@@ -107,7 +115,8 @@ register_dm_blocks <- function() {
       "clock-history",
       "clock-history",
       "lightning",
-      "database"
+      "database",
+      "filter"
     ),
     arguments = list(
       dm_read_arguments(),
@@ -124,7 +133,8 @@ register_dm_blocks <- function() {
       temporal_join_arguments(),
       dm_temporal_join_arguments(),
       crossfilter_arguments(),
-      dm_example_arguments()
+      dm_example_arguments(),
+      NULL
     ),
     package = utils::packageName(),
     overwrite = TRUE

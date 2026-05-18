@@ -205,7 +205,7 @@ new_cdisc_dm_block <- function(set_keys = TRUE, dedup_cols = TRUE, ...) {
                 ts <- as.name(existing_pks$table[i])
                 body_exprs <- c(body_exprs, list(
                   bquote(result <- dm::dm_rm_pk(
-                    result, .(ts), fail_fk = FALSE
+                    result, .(ts)
                   ))
                 ))
               }

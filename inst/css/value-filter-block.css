@@ -1,0 +1,65 @@
+/* blockr.dm value filter block — thin layout on top of blockr.dplyr's shared styles. */
+
+.bi-filter-body {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Per-column row: .blockr-row (from blockr-blocks.css) is the bordered pill.
+   bi-filter-label-wrap is the left half with a border-right separator,
+   matching the mutate/summarize block pattern. */
+.bi-filter-label-wrap {
+  display: flex;
+  align-items: center;
+  flex: 1 1 50%;
+  min-width: 0;
+  border-right: 1px solid var(--blockr-color-border, #e5e7eb);
+  padding-right: 10px;
+  align-self: stretch;
+}
+
+.bi-filter-label-wrap .blockr-label {
+  margin-bottom: 0;
+  font-size: var(--blockr-font-size-base, 0.875rem);
+  font-weight: normal;
+  color: var(--blockr-color-text-primary, #111827);
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.bi-filter-label-sublabel {
+  font-size: 0.75rem;
+  font-weight: normal;
+  color: var(--blockr-grey-500, #6b7280);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.bi-filter-select-wrap {
+  flex: 1 1 50%;
+  min-width: 0;
+}
+
+.bi-filter-empty {
+  padding: 6px 2px;
+  font-size: 0.8125rem;
+  color: var(--blockr-grey-500, #6b7280);
+  font-style: italic;
+}
+
+.bi-filter-mode-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.bi-filter-mode-row .blockr-popover-label {
+  margin-bottom: 0;
+}
