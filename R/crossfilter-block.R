@@ -345,6 +345,17 @@ crossfilter_server <- function(active_dims, filters, range_filters,
       r_measure <- shiny::reactiveVal(measure %||% ".count")
       r_agg_func <- shiny::reactiveVal(agg_func %||% "sum")
 
+      # Self-write guard: when the JS UI submits state to R, the
+      # matching R->JS push observer below would echo it back and the
+      # browser would paint the same state on top of itself (cheap but
+      # can flicker / cause loops on edge values). Flip this TRUE
+      # whenever an R-side observer is the one mutating the
+      # reactiveVals because of a JS submission; the push observer
+      # clears it without sending. External writes (AI assistant,
+      # board restore) skip this path, so they DO get pushed.
+      self_write <- new.env(parent = emptyenv())
+      self_write$active <- FALSE
+
       # --- Add/remove filter dimensions from JS ---
       shiny::observeEvent(input$add_filter, {
         req <- input$add_filter
@@ -354,6 +365,7 @@ crossfilter_server <- function(active_dims, filters, range_filters,
         current <- active[[tbl]] %||% character()
         if (!dim %in% current) {
           active[[tbl]] <- c(current, dim)
+          self_write$active <- TRUE
           r_active_dims(active)
         }
       })
@@ -366,36 +378,48 @@ crossfilter_server <- function(active_dims, filters, range_filters,
         current <- active[[tbl]] %||% character()
         active[[tbl]] <- setdiff(current, dim)
         if (length(active[[tbl]]) == 0) active[[tbl]] <- NULL
+        self_write$active <- TRUE
         r_active_dims(active)
         # Also clear any filter on this dim
         flt <- r_filters()
         if (!is.null(flt[[tbl]])) {
           flt[[tbl]][[dim]] <- NULL
           if (length(flt[[tbl]]) == 0) flt[[tbl]] <- NULL
+          self_write$active <- TRUE
           r_filters(flt)
         }
         rflt <- r_range_filters()
         if (!is.null(rflt[[tbl]])) {
           rflt[[tbl]][[dim]] <- NULL
           if (length(rflt[[tbl]]) == 0) rflt[[tbl]] <- NULL
+          self_write$active <- TRUE
           r_range_filters(rflt)
         }
       })
 
       shiny::observeEvent(input$clear_filters, {
+        self_write$active <- TRUE
         r_active_dims(list())
+        self_write$active <- TRUE
         r_filters(list())
+        self_write$active <- TRUE
         r_range_filters(list())
       })
 
       shiny::observeEvent(input$measure_switch, {
         val <- input$measure_switch
-        if (!is.null(val)) r_measure(val)
+        if (!is.null(val)) {
+          self_write$active <- TRUE
+          r_measure(val)
+        }
       }, ignoreInit = TRUE)
 
       shiny::observeEvent(input$agg_func_switch, {
         val <- input$agg_func_switch
-        if (!is.null(val)) r_agg_func(val)
+        if (!is.null(val)) {
+          self_write$active <- TRUE
+          r_agg_func(val)
+        }
       }, ignoreInit = TRUE)
 
       # --- Build lookups and send to JS ---
@@ -474,6 +498,18 @@ crossfilter_server <- function(active_dims, filters, range_filters,
             )
           ))
 
+          # Ship the current filter state too — block restore /
+          # external-control (MCP apply_configure) populates r_filters
+          # at boot, and JS needs to repaint selected bars / slider
+          # ranges to match. Without this, R sees the filter but the UI
+          # looks unfiltered.
+          safe_cat <- lapply(r_filters(), function(tbl) {
+            lapply(tbl, function(vals) as.list(as.character(vals)))
+          })
+          safe_rng <- lapply(r_range_filters(), function(tbl) {
+            lapply(tbl, function(rng) as.list(as.numeric(unlist(rng))))
+          })
+
           session$sendCustomMessage("js-crossfilter-data", list(
             id = ns("crossfilter_input"),
             lookups = encoded_lookups,
@@ -484,6 +520,8 @@ crossfilter_server <- function(active_dims, filters, range_filters,
             column_info = col_info,
             all_columns = col_info,
             active_dims = safe_active,
+            cat_filters = safe_cat,
+            rng_filters = safe_rng,
             measure = cur_measure,
             agg_func = cur_agg_func
           ))
@@ -505,11 +543,51 @@ crossfilter_server <- function(active_dims, filters, range_filters,
       })
 
       # --- JS -> R: receive filter state ---
+      # `ignoreInit = TRUE`: the JS InputBinding holds back its first
+      # getValue() (returns null until setData has rendered the
+      # constructor state). Belt + suspenders.
       shiny::observeEvent(input$crossfilter_input, {
         state <- input$crossfilter_input
+        self_write$active <- TRUE
         r_filters(state$cat_filters %||% list())
+        self_write$active <- TRUE
         r_range_filters(state$rng_filters %||% list())
-      })
+      }, ignoreInit = TRUE)
+
+      # --- R -> JS: push filter changes when the caller is NOT the JS
+      # UI (e.g. AI assistant writing via vars$filters(...), or board
+      # restore). The user's bug was: AI writes -> r_filters changes
+      # -> expr() recomputes -> downstream filters correctly, but the
+      # bars / sliders never repainted because nothing on the R side
+      # was watching r_filters / r_range_filters to ship the new
+      # state to JS. This observer closes the loop.
+      #
+      # ignoreInit = TRUE: the data observe already ships the
+      # constructor's filter state in its js-crossfilter-data payload
+      # at first flush; this is for subsequent changes only.
+      shiny::observeEvent(
+        list(r_filters(), r_range_filters()),
+        {
+          if (isTRUE(self_write$active)) {
+            self_write$active <- FALSE
+            return()
+          }
+          cat <- r_filters()
+          rng <- r_range_filters()
+          safe_cat <- lapply(cat, function(tbl) {
+            lapply(tbl, function(vals) as.list(as.character(vals)))
+          })
+          safe_rng <- lapply(rng, function(tbl) {
+            lapply(tbl, function(rng) as.list(as.numeric(unlist(rng))))
+          })
+          session$sendCustomMessage("js-crossfilter-filters", list(
+            id = ns("crossfilter_input"),
+            cat_filters = safe_cat,
+            rng_filters = safe_rng
+          ))
+        },
+        ignoreInit = TRUE
+      )
 
       # --- Expression: dm::dm_filter() ---
       list(

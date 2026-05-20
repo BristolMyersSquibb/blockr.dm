@@ -26,6 +26,43 @@ test_that("new_js_crossfilter_block is an alias for new_crossfilter_block", {
   expect_identical(new_js_crossfilter_block, new_crossfilter_block)
 })
 
+test_that("external write to r_filters updates expr and pushes to JS", {
+  # External control contract (per blockr.docs/patterns/js-driven-blocks.md):
+  # when something outside the JS UI mutates a state reactiveVal
+  # (AI assistant, board restore, programmatic), the R-side observer
+  # has to ship the new state to JS so the bars / sliders repaint.
+  # Before the R->JS push observer existed, expr() recomputed and
+  # downstream filtered correctly, but the UI sat stale.
+  blk <- new_crossfilter_block(
+    active_dims = list(.tbl = c("Species"))
+  )
+
+  testServer(
+    blockr.core:::get_s3_method("block_server", blk),
+    args = list(x = blk, data = list(data = function() iris)),
+    {
+      session$flushReact()
+      # baseline: no filter, identity expr
+      expr_initial <- session$returned$expr()
+      expect_match(deparse(expr_initial), "identity", fixed = TRUE)
+
+      # mimic the ai_ctrl_server path: write directly to the
+      # externally-controlled reactiveVal.
+      vars <- session$returned$state
+      vars$filters(list(.tbl = list(Species = "setosa")))
+      session$flushReact()
+
+      # expression now filters — downstream gets the right rows
+      expr_after <- session$returned$expr()
+      txt <- paste(deparse(expr_after), collapse = " ")
+      expect_match(txt, "dplyr::filter")
+      expect_match(txt, "setosa")
+      result <- eval(expr_after, list(data = iris))
+      expect_true(all(as.character(result$Species) == "setosa"))
+    }
+  )
+})
+
 test_that("lookup builders include measure when table name starts with dot", {
   # data.frame inputs are wrapped as `dm(.tbl = df)` — the table name is
   # `.tbl` (leading dot). The measure spec is then `.tbl.<column>`, and a

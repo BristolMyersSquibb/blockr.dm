@@ -477,12 +477,80 @@
       this._updateMeasureUI();
       this._renderActiveDimsInPopover('');
       this._buildPanels();
+      this._applyInitialFilters(msg.cat_filters, msg.rng_filters);
       this._updateAllCounts();
+      // First setData has populated `this.filters` (either from
+      // msg.cat_filters/rng_filters or as empty by default). It's now
+      // safe to publish state to Shiny. See getValue() for why we held
+      // back.
+      this._ready = true;
+      this._scheduleSubmit();
 
       const elapsed = Math.round(performance.now() - t0);
       this._lastSetDataMs = elapsed;
       console.log(`[js-crossfilter] setData: ${elapsed}ms (${childTables.length} tables, ${Object.keys(this.dimSource).length} dims)`);
       this._updateStatus();
+    }
+
+    // Apply filters that arrived with the initial setData payload
+    // (constructor state at first render). After _buildPanels but
+    // before we flip _ready and submit — the populated state is what
+    // the InputBinding will then publish to Shiny.
+    _applyInitialFilters(catFilters, rngFilters) {
+      this._applyFilterStateFromR(catFilters, rngFilters);
+    }
+
+    // Apply filter state pushed from R (initial render, board restore,
+    // AI-assistant write). Suppresses the JS->R round-trip because R
+    // already has this value — we're catching the UI up, not making a
+    // user-initiated change. Without this suppression the change would
+    // race back through input$crossfilter_input and re-fire the same
+    // R-side observers we just heard from.
+    setExternalFilters(catFilters, rngFilters) {
+      // Clear bars currently held by crossfilter so removed filters
+      // actually release rows (just deleting from this.filters isn't
+      // enough — the crossfilter.dimension still holds the predicate).
+      for (const dim of Object.keys(this.filters)) {
+        if (this.dimensions[dim]) {
+          try { this.dimensions[dim].filterAll(); } catch (_) {}
+        }
+      }
+      this.filters = {};
+      this._suppressSubmit = true;
+      try {
+        this._applyFilterStateFromR(catFilters, rngFilters);
+      } finally {
+        this._suppressSubmit = false;
+      }
+      // Repaint counts + slider positions + active-dim chips.
+      this._updateAllCounts();
+      this._updateStatus();
+      this._renderActiveDimsInPopover('');
+    }
+
+    _applyFilterStateFromR(catFilters, rngFilters) {
+      if (catFilters && typeof catFilters === 'object') {
+        for (const tbl of Object.keys(catFilters)) {
+          const tblFilters = catFilters[tbl] || {};
+          for (const dim of Object.keys(tblFilters)) {
+            if (!this.dimensions[dim]) continue;
+            const vals = asArray(tblFilters[dim]);
+            if (vals.length === 0) continue;
+            this._applyFilter(dim, vals);
+          }
+        }
+      }
+      if (rngFilters && typeof rngFilters === 'object') {
+        for (const tbl of Object.keys(rngFilters)) {
+          const tblFilters = rngFilters[tbl] || {};
+          for (const dim of Object.keys(tblFilters)) {
+            if (!this.dimensions[dim]) continue;
+            const rng = asArray(rngFilters[tbl][dim]).map(Number);
+            if (rng.length !== 2) continue;
+            this._applyFilter(dim, { min: rng[0], max: rng[1] });
+          }
+        }
+      }
     }
 
     _teardown() {
@@ -1303,6 +1371,13 @@
     // -- Shiny communication ------------------------------------------------
 
     getValue() {
+      // Until setData() has run at least once, `this.filters` is the
+      // empty default `{}` — not the user's intent, not the R-shipped
+      // initial state. Returning null here keeps Shiny from posting an
+      // empty `input$crossfilter_input` that would clobber any
+      // r_filters loaded at block construction (board restore /
+      // MCP-driven apply_configure).
+      if (!this._ready) return null;
       const cat_filters = {};
       const rng_filters = {};
 
@@ -1325,6 +1400,11 @@
     }
 
     _scheduleSubmit() {
+      // setExternalFilters() flips this true while it mirrors an
+      // R-side state into the UI. Skipping the change event keeps the
+      // round-trip from re-firing input$crossfilter_input with a value
+      // R already owns.
+      if (this._suppressSubmit) return;
       if (this._submitTimer) clearTimeout(this._submitTimer);
       this._submitTimer = setTimeout(() => {
         $(this.el).trigger('change');
@@ -1363,6 +1443,16 @@
         if (el2 && el2._block) { el2._block.setData(msg); clearInterval(t); }
         if (attempts > 50) clearInterval(t);
       }, 100);
+    }
+  });
+
+  // Filter-only update — emitted when R-side state (r_filters /
+  // r_range_filters) changes WITHOUT a lookup rebuild (the common
+  // AI-assistant case: writes to a state reactiveVal directly).
+  Shiny.addCustomMessageHandler('js-crossfilter-filters', (msg) => {
+    const el = document.getElementById(msg.id);
+    if (el && el._block && el._block._ready) {
+      el._block.setExternalFilters(msg.cat_filters, msg.rng_filters);
     }
   });
 
