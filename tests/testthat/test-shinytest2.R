@@ -123,3 +123,80 @@ test_that("external clear releases filters in both UI and downstream", {
   res <- get_block_result(app, "cf_active")
   expect_equal(nrow(res), nrow(iris))
 })
+
+# ---------------------------------------------------------------------------
+# Slider snap-back regression: a user-initiated slider drag must NOT
+# trigger an R->JS echo (no setData / setExternalFilters), otherwise
+# the slider visually resets when R updates r_range_filters. The fix
+# is shiny::isolate() around the filter reads in the data observe so
+# it doesn't gain a dependency on r_filters / r_range_filters.
+# ---------------------------------------------------------------------------
+
+test_that("dragging the range slider does not cause an R->JS echo", {
+  # Reset cf_active to a clean state for this test.
+  click_test_ctrl(app, "cf_active", "clear_all")
+
+  block_id <- "cf_active"
+  input_id <- paste0("board-block_", block_id, "-expr-crossfilter_input")
+
+  # Install JS-side counters on setData / setExternalFilters so we can
+  # detect any R->JS echo that follows the simulated drag.
+  app$run_js(sprintf(
+    "(function () { var el = document.getElementById(\"%s\");
+       if (!el || !el._block) return;
+       var b = el._block;
+       window.__snap_setData = 0;
+       window.__snap_setExt  = 0;
+       var rd = b.setData.bind(b);
+       var re = b.setExternalFilters.bind(b);
+       b.setData          = function (m) { window.__snap_setData++; return rd(m); };
+       b.setExternalFilters = function (c, r) { window.__snap_setExt++; return re(c, r); };
+     })();",
+    input_id
+  ))
+
+  # Simulate a user drag: dispatch several `input` events on the hi
+  # range input, mirroring what the browser does as the thumb moves.
+  app$run_js(sprintf(
+    "(function () { var el = document.getElementById(\"%s\");
+       var card = el.querySelector('.dm-cf-filter-card[data-dim=\"Sepal.Length\"]');
+       var hi = card._inputHi;
+       [7.0, 6.5, 6.0, 5.5].forEach(function (v) {
+         hi.value = String(v);
+         hi.dispatchEvent(new Event('input', { bubbles: true }));
+       });
+     })();",
+    input_id
+  ))
+  app$wait_for_idle(timeout = 5 * 1000)
+
+  # The user's drag should have landed on the JS side with the
+  # browser-stepped value the slider snapped to, NOT been overwritten
+  # by an R-side echo.
+  raw <- app$get_js(sprintf(
+    "JSON.stringify((function () { var el = document.getElementById(\"%s\");
+       var b = el._block;
+       var card = el.querySelector('.dm-cf-filter-card[data-dim=\"Sepal.Length\"]');
+       return {
+         filters: b.filters,
+         hi: card._inputHi.value,
+         lo: card._inputLo.value,
+         setDataCount: window.__snap_setData,
+         setExtCount:  window.__snap_setExt
+       };
+     })())",
+    input_id
+  ))
+  state <- jsonlite::fromJSON(raw, simplifyVector = FALSE)
+
+  # Slider stays at the value the user dragged to (the last dispatched
+  # value rounds to ~5.506 with the iris-derived step).
+  expect_true(state$filters$Sepal.Length$max < 5.7)
+  expect_true(as.numeric(state$hi) < 5.7)
+
+  # And R did NOT push a setData / setExternalFilters back as a
+  # response to the user's own write. This is what kept the slider
+  # snapping to its bounds before the isolate() fix.
+  expect_equal(state$setDataCount, 0)
+  expect_equal(state$setExtCount,  0)
+})
