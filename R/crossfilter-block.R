@@ -498,15 +498,19 @@ crossfilter_server <- function(active_dims, filters, range_filters,
             )
           ))
 
-          # Ship the current filter state too — block restore /
-          # external-control (MCP apply_configure) populates r_filters
-          # at boot, and JS needs to repaint selected bars / slider
-          # ranges to match. Without this, R sees the filter but the UI
-          # looks unfiltered.
-          safe_cat <- lapply(r_filters(), function(tbl) {
+          # Ship the current filter state too — block restore loads
+          # r_filters at boot and JS needs to repaint selected bars /
+          # slider ranges to match. shiny::isolate() is critical here:
+          # without it this observe would gain a dependency on
+          # r_filters / r_range_filters and re-fire on every filter
+          # change, calling setData -> _teardown on the JS side and
+          # snapping the slider back to its bounds. The dedicated
+          # observeEvent on filter state (below) is responsible for
+          # propagating subsequent changes.
+          safe_cat <- lapply(shiny::isolate(r_filters()), function(tbl) {
             lapply(tbl, function(vals) as.list(as.character(vals)))
           })
-          safe_rng <- lapply(r_range_filters(), function(tbl) {
+          safe_rng <- lapply(shiny::isolate(r_range_filters()), function(tbl) {
             lapply(tbl, function(rng) as.list(as.numeric(unlist(rng))))
           })
 
