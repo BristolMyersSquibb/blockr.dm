@@ -1,45 +1,45 @@
-#' dm Semi-Filter Block Constructor
+#' dm Filter-by-Data Block Constructor
 #'
-#' Restricts a `dm` to rows whose `key_col` values appear in a second
-#' `data.frame` input (`ids`). Equivalent to a semi-join on one chosen
-#' table of the dm; because `dm::dm_filter()` cascades through foreign
-#' keys, the restriction propagates to every related table.
+#' Filters a `dm` by matching rows in a second data frame input (`by`).
+#' Equivalent to a one-column semi-join on a chosen table of the dm;
+#' because `dm::dm_filter()` cascades through foreign keys, the
+#' restriction propagates to every related table.
 #'
 #' Useful for bridging drill-down outputs (which produce data frames)
-#' back into a dm: click a patient on a trajectory chart, feed the
-#' resulting data frame in via `ids`, and downstream dm consumers
-#' (patient profile, flatten, summaries) all see the restricted dm.
+#' back into a dm: click a patient on a chart, feed the resulting data
+#' frame in via `by`, and downstream dm consumers (patient profile,
+#' flatten, summaries) all see the restricted dm.
 #'
 #' @param table Character. Name of the dm table to filter. Default
 #'   `"adsl"`.
-#' @param key_col Character. Column name used for the semi-join. Must
-#'   exist in both `ids` and in `table`. Default `"USUBJID"`.
+#' @param key_col Character. Column name used for the match. Must
+#'   exist in both `by` and `table`. Default `"USUBJID"`.
 #' @param distinct_only Logical. `TRUE` (default) uses `unique()` of
-#'   `ids[[key_col]]` before matching. Set `FALSE` to pass the raw
+#'   `by[[key_col]]` before matching. Set `FALSE` to pass the raw
 #'   column through.
 #' @param ... Forwarded to [blockr.core::new_transform_block()].
 #'
-#' @return A block object for semi-filtering a dm by ids from a
-#'   secondary data frame.
+#' @return A block object for filtering a dm by a secondary data
+#'   frame.
 #'
 #' @examples
 #' # Typical wiring: a drill-down chart selects a USUBJID, which
 #' # restricts the whole dm to that patient for a patient-profile view.
-#' new_dm_semi_filter_block(table = "adsl", key_col = "USUBJID")
+#' new_dm_filter_by_data_block(table = "adsl", key_col = "USUBJID")
 #'
 #' @importFrom shiny moduleServer reactive reactiveVal observeEvent
 #'   updateSelectInput selectInput checkboxInput NS div tagList req
 #'   isolate
 #'
 #' @export
-new_dm_semi_filter_block <- function(
+new_dm_filter_by_data_block <- function(
   table = "adsl",
   key_col = "USUBJID",
   distinct_only = TRUE,
   ...
 ) {
   blockr.core::new_transform_block(
-    server = function(id, data, ids) {
+    server = function(id, data, by) {
       moduleServer(id, function(input, output, session) {
         ns <- session$ns
         r_table <- reactiveVal(table)
@@ -63,13 +63,13 @@ new_dm_semi_filter_block <- function(
         })
 
         # Populate key_col picker from intersection of the selected
-        # dm table's columns and the ids data frame's columns.
-        observeEvent(list(data(), ids(), r_table()), {
+        # dm table's columns and the `by` data frame's columns.
+        observeEvent(list(data(), by(), r_table()), {
           tbl <- r_table()
-          req(inherits(data(), "dm"), is.data.frame(ids()), nzchar(tbl))
+          req(inherits(data(), "dm"), is.data.frame(by()), nzchar(tbl))
           tbls <- dm::dm_get_tables(data())
           if (!tbl %in% names(tbls)) return()
-          candidates <- intersect(colnames(tbls[[tbl]]), colnames(ids()))
+          candidates <- intersect(colnames(tbls[[tbl]]), colnames(by()))
           current <- isolate(r_key())
           selected <- if (current %in% candidates) current
             else if (length(candidates)) candidates[[1L]]
@@ -110,9 +110,9 @@ new_dm_semi_filter_block <- function(
             }
             key_sym <- as.name(key)
             inner <- if (isTRUE(r_distinct())) {
-              bquote(.(key_sym) %in% unique(ids[[.(key)]]))
+              bquote(.(key_sym) %in% unique(by[[.(key)]]))
             } else {
-              bquote(.(key_sym) %in% ids[[.(key)]])
+              bquote(.(key_sym) %in% by[[.(key)]])
             }
             call <- call("dm_filter", quote(data))
             call[[tbl]] <- inner
@@ -151,24 +151,24 @@ new_dm_semi_filter_block <- function(
         )
       )
     },
-    dat_valid = function(data, ids) {
-      stopifnot(inherits(data, "dm"), is.data.frame(ids))
+    dat_valid = function(data, by) {
+      stopifnot(inherits(data, "dm"), is.data.frame(by))
     },
     expr_type = "bquoted",
-    class = "dm_semi_filter_block",
+    class = "dm_filter_by_data_block",
     allow_empty_state = c("table", "key_col"),
     ...
   )
 }
 
-#' @method block_output dm_semi_filter_block
+#' @method block_output dm_filter_by_data_block
 #' @export
-block_output.dm_semi_filter_block <- function(x, result, session) {
+block_output.dm_filter_by_data_block <- function(x, result, session) {
   block_output.dm_block(x, result, session)
 }
 
-#' @method block_ui dm_semi_filter_block
+#' @method block_ui dm_filter_by_data_block
 #' @export
-block_ui.dm_semi_filter_block <- function(id, x, ...) {
+block_ui.dm_filter_by_data_block <- function(id, x, ...) {
   block_ui.dm_block(id, x, ...)
 }

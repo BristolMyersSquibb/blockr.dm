@@ -193,21 +193,21 @@ dm_filter_arguments <- function() {
 }
 
 #' @noRd
-dm_semi_filter_arguments <- function() {
+dm_filter_by_data_arguments <- function() {
   structure(
     c(
       table = paste0(
         "Character. Name of the dm table to filter. Rows whose `key_col` ",
-        "value is absent from `ids[[key_col]]` are dropped; matching rows ",
+        "value is absent from `by[[key_col]]` are dropped; matching rows ",
         "cascade to related tables via FKs. Default \"adsl\"."
       ),
       key_col = paste0(
-        "Character. Column used for the semi-join. Must exist in both ",
-        "`ids` (the second input data frame) and `table` (the selected dm ",
+        "Character. Column used for the match. Must exist in both ",
+        "`by` (the second input data frame) and `table` (the selected dm ",
         "table). Default \"USUBJID\"."
       ),
       distinct_only = paste0(
-        "Logical. TRUE (default) deduplicates `ids[[key_col]]` before ",
+        "Logical. TRUE (default) deduplicates `by[[key_col]]` before ",
         "matching. FALSE passes the raw column through."
       )
     ),
@@ -217,14 +217,16 @@ dm_semi_filter_arguments <- function() {
       distinct_only = TRUE
     ),
     prompt = paste(
-      "Semi-joins a dm to values in a secondary data frame input (`ids`).",
+      "Filters a dm by matching rows in a secondary data frame input (`by`).",
       "Use to bridge drill-down / table outputs (data frames) back into a",
       "dm: e.g. click a patient on a trajectory chart, feed the resulting",
-      "data frame in via `ids`, and all downstream dm consumers (patient",
+      "data frame in via `by`, and all downstream dm consumers (patient",
       "profile, flatten, summaries) see the restricted dm.",
-      "\n\ndm::dm_filter cascades via FKs, so setting `table = \"adsl\"`",
-      "with `key_col = \"USUBJID\"` restricts every related table in one",
-      "step. Any table/column combination that exists in both inputs works."
+      "\n\nThe block has TWO inputs: \"data\" (the dm) and \"by\" (the",
+      "filtering data frame). dm::dm_filter cascades via FKs, so setting",
+      "`table = \"adsl\"` with `key_col = \"USUBJID\"` restricts every",
+      "related table in one step. Any table/column combination that exists",
+      "in both inputs works."
     )
   )
 }
