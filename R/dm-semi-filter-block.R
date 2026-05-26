@@ -39,7 +39,7 @@ new_dm_semi_filter_block <- function(
   ...
 ) {
   blockr.core::new_transform_block(
-    server = function(id, dm, ids) {
+    server = function(id, data, ids) {
       moduleServer(id, function(input, output, session) {
         ns <- session$ns
         r_table <- reactiveVal(table)
@@ -47,8 +47,8 @@ new_dm_semi_filter_block <- function(
         r_distinct <- reactiveVal(isTRUE(distinct_only))
 
         # Populate table picker from incoming dm.
-        observeEvent(dm(), {
-          opts <- build_dm_table_options(dm())
+        observeEvent(data(), {
+          opts <- build_dm_table_options(data())
           tbl_names <- vapply(opts, `[[`, character(1), "value")
           current <- isolate(r_table())
           selected <- if (current %in% tbl_names) current
@@ -64,10 +64,10 @@ new_dm_semi_filter_block <- function(
 
         # Populate key_col picker from intersection of the selected
         # dm table's columns and the ids data frame's columns.
-        observeEvent(list(dm(), ids(), r_table()), {
+        observeEvent(list(data(), ids(), r_table()), {
           tbl <- r_table()
-          req(inherits(dm(), "dm"), is.data.frame(ids()), nzchar(tbl))
-          tbls <- dm::dm_get_tables(dm())
+          req(inherits(data(), "dm"), is.data.frame(ids()), nzchar(tbl))
+          tbls <- dm::dm_get_tables(data())
           if (!tbl %in% names(tbls)) return()
           candidates <- intersect(colnames(tbls[[tbl]]), colnames(ids()))
           current <- isolate(r_key())
@@ -106,7 +106,7 @@ new_dm_semi_filter_block <- function(
             key <- r_key()
             # Empty state: pass dm through unchanged.
             if (!nzchar(tbl) || !nzchar(key)) {
-              return(bquote(dm::dm_filter(dm)))
+              return(bquote(dm::dm_filter(data)))
             }
             key_sym <- as.name(key)
             inner <- if (isTRUE(r_distinct())) {
@@ -114,7 +114,7 @@ new_dm_semi_filter_block <- function(
             } else {
               bquote(.(key_sym) %in% ids[[.(key)]])
             }
-            call <- call("dm_filter", quote(dm))
+            call <- call("dm_filter", quote(data))
             call[[tbl]] <- inner
             call[[1L]] <- quote(dm::dm_filter)
             call
@@ -151,8 +151,8 @@ new_dm_semi_filter_block <- function(
         )
       )
     },
-    dat_valid = function(dm, ids) {
-      stopifnot(inherits(dm, "dm"), is.data.frame(ids))
+    dat_valid = function(data, ids) {
+      stopifnot(inherits(data, "dm"), is.data.frame(ids))
     },
     expr_type = "bquoted",
     class = "dm_semi_filter_block",
