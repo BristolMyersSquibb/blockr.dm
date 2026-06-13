@@ -1,3 +1,27 @@
+# --- Missing / empty handling ----------------------------------------------
+#
+# NA (and the empty string "") are surfaced as selectable options in the value
+# picker, the same way Excel shows a "(Blanks)" entry. This lets a user pick,
+# for a flag like TRTEMFL: "Y" only, missing only, or both (multi-select).
+#
+# DESIGN NOTE — why tokens, not a data sentinel.
+# The values are carried as the literal UI tokens "<NA>" / "<empty>" (mirroring
+# blockr.dplyr's filter block) and translated, when building the filter
+# expression, into real `is.na(col)` / `col == ""` tests. The data is never
+# touched. We deliberately do NOT follow the crossfilter approach of rewriting
+# missings to a sentinel string in the column (`col[is.na(col)] <- "__NA__"`):
+#   * that collides with genuine text "NA" (North America, Not Applicable, Na),
+#   * it forces the column to character and loses the original type, and
+#   * it produces dishonest filter code (`col %in% "NA"` instead of is.na()).
+# The crossfilter sentinel exists only because that block is chart-driven and
+# needs NA to be a concrete, clickable category that round-trips through JS;
+# a plain value filter has no such constraint, so `is.na()` is the right tool.
+# Tokens are appended AFTER the real values so single-select still defaults to
+# a real value (e.g. "Y", not missing); "" is represented solely via the
+# "<empty>" token, not as a blank-looking real option.
+VALUE_FILTER_NA <- "<NA>"        # nolint: object_name_linter.
+VALUE_FILTER_EMPTY <- "<empty>"  # nolint: object_name_linter.
+
 #' Value filter block
 #'
 #' Minimal value filter for data frames or `dm` objects. The columns to filter
@@ -259,21 +283,30 @@ build_column_options_dm <- function(dm_obj) {
 #' Distinct, stably-ordered value options for one column.
 #'
 #' Honors haven-style `labels` attributes by emitting `{value, label}` pairs.
-#' Otherwise returns a plain list of stringified unique values.
+#' Otherwise returns a plain list of stringified unique values. When the column
+#' contains missings (or, for text columns, empty strings) the corresponding
+#' `<NA>` / `<empty>` token is appended after the real values so they can be
+#' selected; see the design note at the top of this file.
 #' @noRd
 unique_value_options <- function(col) {
   labs <- attr(col, "labels", exact = TRUE)
+  is_text <- is.character(col) || is.factor(col)
+  has_na <- anyNA(col)
   uv <- unique(col)
   uv <- uv[!is.na(uv)]
-  if (length(uv) == 0L) return(list())
-  if (is.factor(col)) {
-    uv <- uv[order(match(as.character(uv), levels(col)))]
-  } else if (is.numeric(uv) || is.logical(uv)) {
-    uv <- sort(uv)
-  } else {
-    uv <- sort(as.character(uv))
+  # "" is represented via the <empty> token, not as a blank-looking option.
+  has_empty <- is_text && any(as.character(uv) == "")
+  if (is_text) uv <- uv[as.character(uv) != ""]
+  if (length(uv) > 0L) {
+    if (is.factor(col)) {
+      uv <- uv[order(match(as.character(uv), levels(col)))]
+    } else if (is.numeric(uv) || is.logical(uv)) {
+      uv <- sort(uv)
+    } else {
+      uv <- sort(as.character(uv))
+    }
   }
-  if (!is.null(labs) && is.vector(labs) && !is.null(names(labs))) {
+  opts <- if (!is.null(labs) && is.vector(labs) && !is.null(names(labs))) {
     lab_names <- names(labs)
     lapply(uv, function(v) {
       idx <- match(v, labs)
@@ -285,6 +318,9 @@ unique_value_options <- function(col) {
   } else {
     as.list(as.character(uv))
   }
+  if (has_empty) opts <- c(opts, list(VALUE_FILTER_EMPTY))
+  if (has_na) opts <- c(opts, list(VALUE_FILTER_NA))
+  opts
 }
 
 #' Look up the source vector for a column-object entry.
@@ -416,9 +452,13 @@ make_dm_filter_expr <- function(columns, dm_obj) {
   result
 }
 
-#' Build one `<col> %in% <values>` condition for a single column-object entry.
-#' Coerces string values to the source column's type when safe (numeric,
-#' logical, integer).
+#' Build the condition for a single column-object entry.
+#'
+#' Real values become `<col> %in% <values>` (coerced to the source column's
+#' type when safe — numeric, logical, integer). The `<NA>` / `<empty>` tokens
+#' become `is.na(col)` / `col == ""` and are OR'd in (see the design note at
+#' the top of this file). Returns the bare `%in%` call when no tokens are
+#' selected, so the common case is unchanged.
 #' @noRd
 column_condition_expr <- function(entry, src_df) {
   v <- entry$values
@@ -426,22 +466,38 @@ column_condition_expr <- function(entry, src_df) {
   v <- as.character(v)
   col <- entry$name
   if (is.null(col) || !nzchar(col)) return(NULL)
-  casted <- v
-  if (is.data.frame(src_df) && col %in% names(src_df)) {
-    src <- src_df[[col]]
-    if (is.integer(src)) {
-      intv <- suppressWarnings(as.integer(v))
-      if (!any(is.na(intv))) casted <- intv
-    } else if (is.numeric(src)) {
-      num <- suppressWarnings(as.numeric(v))
-      if (!any(is.na(num))) casted <- num
-    } else if (is.logical(src)) {
-      bool <- as.logical(v)
-      if (!any(is.na(bool))) casted <- bool
-    }
-  }
+
+  has_na <- VALUE_FILTER_NA %in% v
+  has_empty <- VALUE_FILTER_EMPTY %in% v
+  real <- v[!v %in% c(VALUE_FILTER_NA, VALUE_FILTER_EMPTY)]
+
   sym <- as.name(col)
-  bquote(.(sym) %in% .(casted))
+  parts <- list()
+
+  if (length(real) > 0L) {
+    casted <- real
+    if (is.data.frame(src_df) && col %in% names(src_df)) {
+      src <- src_df[[col]]
+      if (is.integer(src)) {
+        intv <- suppressWarnings(as.integer(real))
+        if (!any(is.na(intv))) casted <- intv
+      } else if (is.numeric(src)) {
+        num <- suppressWarnings(as.numeric(real))
+        if (!any(is.na(num))) casted <- num
+      } else if (is.logical(src)) {
+        bool <- as.logical(real)
+        if (!any(is.na(bool))) casted <- bool
+      }
+    }
+    parts <- c(parts, list(bquote(.(sym) %in% .(casted))))
+  }
+  if (has_na) parts <- c(parts, list(bquote(is.na(.(sym)))))
+  if (has_empty) parts <- c(parts, list(bquote(.(sym) == "")))
+
+  if (length(parts) == 0L) return(NULL)
+  # Build the OR tree explicitly; a single part stays the bare expression so
+  # the no-token path is byte-identical to before.
+  Reduce(function(a, b) bquote(.(a) | .(b)), parts)
 }
 
 #' Combine N condition expressions with `&`.

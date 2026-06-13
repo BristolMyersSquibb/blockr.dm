@@ -130,6 +130,69 @@ test_that("integer-column multi filter coerces to integer", {
   expect_identical(expr, expected)
 })
 
+# Missing / empty handling ----------------------------------------------------
+
+test_that("NA is offered as a <NA> token after real values", {
+  opts <- unique_value_options(c("Y", "Y", NA, "Y"))
+  expect_identical(opts, list("Y", "<NA>"))
+})
+
+test_that("empty string is offered as <empty>, not a blank option", {
+  opts <- unique_value_options(c("A", "", "A", NA))
+  expect_identical(opts, list("A", "<empty>", "<NA>"))
+})
+
+test_that("a column without gaps offers no tokens", {
+  expect_identical(unique_value_options(c("Y", "Y", "Y")), list("Y"))
+})
+
+test_that("an all-NA column still offers the <NA> token", {
+  expect_identical(unique_value_options(c(NA, NA)), list("<NA>"))
+})
+
+test_that("<NA> token filters via is.na(), not %in%", {
+  df <- data.frame(flag = c("Y", NA, "Y"), stringsAsFactors = FALSE)
+  cols <- list(list(name = "flag", mode = "single", values = "<NA>"))
+  expr <- make_filter_block_expr(cols, df)
+  expect_identical(expr, as.call(list(
+    quote(dplyr::filter), quote(data), bquote(is.na(flag))
+  )))
+})
+
+test_that("real value + <NA> token OR together", {
+  df <- data.frame(flag = c("Y", NA, "Y"), stringsAsFactors = FALSE)
+  cols <- list(list(name = "flag", mode = "multi", values = c("Y", "<NA>")))
+  expr <- make_filter_block_expr(cols, df)
+  expect_identical(expr, as.call(list(
+    quote(dplyr::filter), quote(data),
+    bquote(flag %in% "Y" | is.na(flag))
+  )))
+})
+
+test_that("<empty> token filters via == \"\"", {
+  df <- data.frame(arm = c("A", "", "A"), stringsAsFactors = FALSE)
+  cols <- list(list(name = "arm", mode = "single", values = "<empty>"))
+  expr <- make_filter_block_expr(cols, df)
+  expect_identical(expr, as.call(list(
+    quote(dplyr::filter), quote(data), bquote(arm == "")
+  )))
+})
+
+test_that("OR-of-tokens nests correctly inside a cross-column AND", {
+  df <- data.frame(
+    flag = c("Y", NA, "Y"), sex = c("M", "F", "M"),
+    stringsAsFactors = FALSE
+  )
+  cols <- list(
+    list(name = "flag", mode = "multi",  values = c("Y", "<NA>")),
+    list(name = "sex",  mode = "single", values = "M")
+  )
+  expr <- make_filter_block_expr(cols, df)
+  # The OR sub-tree groups as a node (no literal `(`); `&` sits above it.
+  inner <- call("&", bquote(flag %in% "Y" | is.na(flag)), bquote(sex %in% "M"))
+  expect_identical(expr, as.call(list(quote(dplyr::filter), quote(data), inner)))
+})
+
 # make_filter_block_expr: dm path ---------------------------------------------
 
 skip_if_no_dm <- function() {
