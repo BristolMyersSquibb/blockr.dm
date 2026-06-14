@@ -71,9 +71,9 @@ JS payload; the seam between them is dm's exported relationship API.
 
 Executed. `new_value_filter_block` now lives in `blockr.dm`
 (`R/value-filter-block.R`, JS/CSS as `inst/{js,css}/value-filter-block.*`,
-registered, roxygen exported). `blockr.bi` keeps non-forwarding
+registered, roxygen exported). `blockr.viz` keeps non-forwarding
 `.Defunct` stubs for `new_bi_filter_block` / `migrate_bi_filter_state`
-pointing to the new names; `dm` dropped from `blockr.bi` Suggests; test
+pointing to the new names; `dm` dropped from `blockr.viz` Suggests; test
 and `filter-demo` examples moved to `blockr.dm`; the ~6 referencing
 demos/examples updated. Moved test suite passes. The crossfilter
 delegation items above remain open.
@@ -82,10 +82,10 @@ Original decision record follows.
 
 ## Related: move and rename `bi_filter` (decided)
 
-`blockr.bi/R/filter-block.R` (`new_bi_filter_block`) is a value-selection
+`blockr.viz/R/filter-block.R` (`new_bi_filter_block`) is a value-selection
 filter (pick columns behind the gear, pick values, single/multi). It has
 a real, implemented `dm` path: `dm::dm_get_tables`, `dm::dm_filter()`, FK
-cascade, an `is_dm` branch shipped to JS. So `blockr.bi` genuinely
+cascade, an `is_dm` branch shipped to JS. So `blockr.viz` genuinely
 depends on `dm` today.
 
 Key facts that shaped the decision:
@@ -145,12 +145,12 @@ Decision:
   the df and dm paths share most of their implementation (see the
   shared-complexity principle above); a twin would mostly be copy with
   two drift surfaces.
-- After the move, `blockr.bi` no longer needs `dm` (it was a Suggest;
+- After the move, `blockr.viz` no longer needs `dm` (it was a Suggest;
   now dropped). That, plus the crossfilter audit above, makes
   `blockr.dm` the sole `dm`-importing package, satisfying the
   containment rule.
 
-Note: the `blockr.bi` -> `blockr.dashboard` rename is NOT decided. It is
+Note: the `blockr.viz` -> `blockr.dashboard` rename is NOT decided. It is
 parked for team discussion (ecosystem-wide: DESCRIPTION, NAMESPACE, every
 `library`/`load_all`, demos, docs site, repo/CRAN identity). The filter
 move above is independent of it and does not presuppose the outcome.
@@ -158,11 +158,11 @@ move above is independent of it and does not presuppose the outcome.
 Migration mechanics (same regardless of options, for when picked up):
 
 - [ ] Define `new_value_filter_block` in `blockr.dm`; register it there;
-      remove the block from `blockr.bi` and drop `dm` from
-      `blockr.bi` DESCRIPTION.
-- [ ] `new_bi_filter_block` deprecating alias in `blockr.bi` forwarding
+      remove the block from `blockr.viz` and drop `dm` from
+      `blockr.viz` DESCRIPTION.
+- [ ] `new_bi_filter_block` deprecating alias in `blockr.viz` forwarding
       to `blockr.dm::new_value_filter_block` (or relocate the alias too,
-      decide at implementation time to avoid a `blockr.bi -> blockr.dm`
+      decide at implementation time to avoid a `blockr.viz -> blockr.dm`
       dependency; an alias that just errors with a pointer is acceptable
       if the back-dependency is unwanted).
 - [ ] Update the ~14 referencing files (tests, `inst/examples`,
