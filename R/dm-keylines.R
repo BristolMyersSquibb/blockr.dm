@@ -158,7 +158,7 @@ dm_keylines_html <- function(meta, root_id) {
   row_h <- 40L
   n_keys <- length(keys)
   gutter <- if (n_keys > 0) left_pad + (n_keys - 1L) * col_w + right_pad else left_pad
-  header_h <- if (n_keys > 0) n_keys * 30L + 20L else 0L
+  header_h <- if (n_keys > 0) n_keys * 40L + 20L else 0L
   n_h <- length(order_ids) * row_h
 
   row_idx <- stats::setNames(seq_along(order_ids) - 1L, order_ids)
@@ -178,7 +178,7 @@ dm_keylines_html <- function(meta, root_id) {
     caps_inner <- vapply(seq_along(keys), function(i) {
       k <- keys[[i]]
       cx <- key_x[[k$name]]
-      cy <- 15L + (i - 1L) * 30L
+      cy <- 15L + (i - 1L) * 40L
       sprintf(
         paste0(
           '<button class="r2key" type="button" data-key="%s" ',
@@ -201,7 +201,7 @@ dm_keylines_html <- function(meta, root_id) {
     wires <- paste(vapply(seq_along(keys), function(i) {
       k <- keys[[i]]
       x <- key_x[[k$name]]
-      cap_y <- 15L + (i - 1L) * 30L
+      cap_y <- 15L + (i - 1L) * 40L
       idxs <- sort(unname(row_idx[k$tables]))
       y_last <- header_h + idxs[length(idxs)] * row_h + row_h / 2
       nodes <- paste(vapply(k$tables, function(id) {
@@ -280,7 +280,6 @@ dm_keylines_css <- function() {
       --dmv-surface-1:#ffffff; --dmv-surface-2:#f1f3f6; --dmv-surface-2-soft:#f6f8fa;
       --dmv-hair:#e8ebef; --dmv-hair-strong:#dde1e7;
       --dmv-accent:#2563eb; --dmv-accent-soft:rgba(37,99,235,.09);
-      --dmv-mono:'Geist Mono',ui-monospace,'SF Mono',Menlo,Consolas,monospace;
     }
     .dmv__schemahead {
       display:flex; align-items:center; gap:8px; padding:15px 4px 9px;
@@ -293,17 +292,17 @@ dm_keylines_css <- function() {
       pointer-events:none; }
     .r2key { position:absolute; pointer-events:auto; white-space:nowrap;
       display:inline-flex; align-items:center; gap:7px; padding:4px 8px 4px 9px;
-      border:1px solid var(--dmv-hair-strong); border-radius:999px;
+      border:1px solid var(--dmv-hair-strong); border-radius:7px;
       background:var(--dmv-surface-1); cursor:pointer; font:inherit;
       color:var(--dmv-ink-2); box-shadow:0 1px 2px rgba(16,24,40,.05);
       transition:border-color .14s,color .14s,background .14s; }
     .r2key:hover { border-color:var(--line); color:var(--dmv-ink-1);
       background:color-mix(in srgb,var(--line) 7%,var(--dmv-surface-1)); }
-    .r2key__sw { width:10px; height:10px; border-radius:50%; background:var(--line);
+    .r2key__sw { width:9px; height:9px; border-radius:2px; background:var(--line);
       flex:none; }
-    .r2key__name { font-family:var(--dmv-mono); font-size:12px; color:inherit; }
+    .r2key__name { font-size:12px; color:inherit; }
     .r2key__n { font-size:10.5px; color:var(--dmv-ink-3);
-      background:var(--dmv-surface-2); border-radius:999px; padding:0 6px;
+      background:var(--dmv-surface-2); border-radius:4px; padding:0 6px;
       line-height:1.7; }
     .rails2__wire { position:absolute; left:0; top:0; overflow:visible;
       pointer-events:none; }
@@ -333,7 +332,7 @@ dm_keylines_css <- function() {
     .r2row__id { display:flex; align-items:center; gap:10px; min-width:150px;
       flex:none; }
     .r2row__idtxt { display:flex; flex-direction:column; min-width:0; }
-    .r2row__name { font-family:var(--dmv-mono); font-size:13px; font-weight:500;
+    .r2row__name { font-size:13px; font-weight:500;
       color:var(--dmv-ink-1); }
     .r2row__desc { flex:1; min-width:0; font-size:12.5px; color:var(--dmv-ink-2);
       overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -341,12 +340,13 @@ dm_keylines_css <- function() {
       white-space:nowrap; }
     .r2row__rows:not(:empty)::after { content:' rows'; }
     .dmv-rails2 .num { font-variant-numeric:tabular-nums; }
-    /* preview chrome: connect to the diagram with an accent top border */
-    .dm-table-preview { margin-top:8px; border-top:2px solid var(--dmv-accent);
+    /* preview chrome: connect to the diagram with a neutral hairline + notch */
+    .dm-table-preview { margin-top:8px; border-top:1px solid var(--dmv-hair-strong);
       position:relative; padding-top:10px; }
-    .dm-table-preview::before { content:''; position:absolute; top:-7px; left:34px;
-      width:12px; height:12px; background:var(--dmv-surface-1);
-      border-left:2px solid var(--dmv-accent); border-top:2px solid var(--dmv-accent);
+    .dm-table-preview::before { content:''; position:absolute; top:-6px; left:34px;
+      width:11px; height:11px; background:var(--dmv-surface-1);
+      border-left:1px solid var(--dmv-hair-strong);
+      border-top:1px solid var(--dmv-hair-strong);
       transform:rotate(45deg); }
     @media (prefers-reduced-motion:reduce) {
       .dmv-rails2 *, .dm-table-preview * { transition:none !important; }
