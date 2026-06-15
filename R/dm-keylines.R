@@ -71,7 +71,14 @@ dm_keylines_meta <- function(dm_obj) {
     raw <- tbls[[tn]]
     label <- attr(raw, "label")
     if (is.null(label) || is.na(label)) label <- ""
-    rows <- tryCatch(as.integer(nrow(raw)), error = function(e) NA_integer_)
+    # Only count rows for in-memory frames (nrow is O(1)). For lazy /
+    # remote tables (tbl_lazy / tbl_sql) nrow() would force a COUNT(*)
+    # query per table on every render, so leave it blank instead.
+    rows <- if (is.data.frame(raw)) {
+      tryCatch(as.integer(nrow(raw)), error = function(e) NA_integer_)
+    } else {
+      NA_integer_
+    }
     carries <- list() # col name -> "pk" | "fk"
     for (cc in pk_cols[[tn]]) carries[[cc]] <- "pk"
     for (cc in fk_cols[[tn]]) if (is.null(carries[[cc]])) carries[[cc]] <- "fk"
