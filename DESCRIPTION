@@ -23,6 +23,7 @@ Imports:
     blockr.core,
     blockr.dplyr,
     blockr.io,
+    blockr.ui,
     DiagrammeR,
     dm,
     dplyr,
@@ -58,6 +59,7 @@ Remotes:
     BristolMyersSquibb/blockr.core,
     BristolMyersSquibb/blockr.dplyr,
     BristolMyersSquibb/blockr.io,
+    BristolMyersSquibb/blockr.ui,
     BristolMyersSquibb/blockr,
     BristolMyersSquibb/blockr.dag,
     BristolMyersSquibb/blockr.dock

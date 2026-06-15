@@ -443,7 +443,7 @@ block_output.dm_block <- function(x, result, session) {
     max_page <- max(1L, ceiling(total_rows / page_size))
     page <- min(max(1L, page), max_page)
 
-    sorted_tbl <- apply_table_sort(
+    sorted_tbl <- blockr.ui::apply_table_sort(
       tbl, current_sort$col, current_sort$dir
     )
 
@@ -457,7 +457,7 @@ block_output.dm_block <- function(x, result, session) {
 
     shiny::tags$div(
       class = "dm-table-preview",
-      build_html_table(
+      blockr.ui::build_html_table(
         dat = dat,
         total_rows = total_rows,
         sort_state = current_sort,
