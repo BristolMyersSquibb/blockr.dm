@@ -14,10 +14,10 @@
 #   or: Rscript inst/examples/dm-viewer-demo/app.R
 # ============================================================
 
-library(blockr.core)
-library(blockr.dag)
-library(blockr.dock)
-library(blockr.dm)
+pkgload::load_all("blockr.core")
+pkgload::load_all("blockr.dag")
+pkgload::load_all("blockr.dock")
+pkgload::load_all("blockr.dm")
 
 # Use the restyled HTML table preview for the row view.
 options(blockr.html_table_preview = TRUE)
