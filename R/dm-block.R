@@ -403,13 +403,13 @@ block_output.dm_block <- function(x, result, session) {
 
     shiny::observeEvent(session$input$dm_diagram_click, {
       click_data <- session$input$dm_diagram_click
-      if (!is.null(click_data) && !is.null(click_data$id)) {
-        current <- selected_table()
-        if (!is.null(current) && current == click_data$id) {
-          selected_table(NULL)
-        } else {
-          selected_table(click_data$id)
-        }
+      # The Key-lines client owns the selection toggle and sends the
+      # resolved selection (table id, or "" to clear).
+      id <- click_data$id
+      if (is.null(id) || identical(id, "")) {
+        selected_table(NULL)
+      } else {
+        selected_table(id)
       }
     })
   }
@@ -420,11 +420,15 @@ block_output.dm_block <- function(x, result, session) {
     table_name <- selected_table()
     shiny::req(table_name)
 
+    # Keep the table in its native form: for a remote dm (DuckDB / dbplyr)
+    # the tables are lazy `tbl_lazy` objects, and `table_page()` pages them
+    # in the database (LIMIT / window query) instead of collecting the whole
+    # table -- the same engine the shared HTML preview uses everywhere else.
     raw_tbl <- tryCatch(result[[table_name]], error = function(e) NULL)
-    tbl <- tryCatch(as.data.frame(raw_tbl), error = function(e) NULL)
-    if (is.null(tbl)) return(NULL)
+    if (is.null(raw_tbl)) return(NULL)
 
-    # Preserve table-level label attribute (stripped by as.data.frame)
+    # Table-level label (shown in the footer). Read off the raw object so it
+    # survives whether the table is an in-memory frame or a lazy table.
     tbl_label <- attr(raw_tbl, "label")
 
     page_size <- 5L
@@ -439,32 +443,38 @@ block_output.dm_block <- function(x, result, session) {
     page <- session$input$blockr_table_page
     page <- if (is.null(page)) 1L else as.integer(page)
 
-    total_rows <- nrow(tbl)
-    max_page <- max(1L, ceiling(total_rows / page_size))
-    page <- min(max(1L, page), max_page)
-
-    sorted_tbl <- blockr.ui::apply_table_sort(
-      tbl, current_sort$col, current_sort$dir
-    )
-
-    start_row <- (page - 1L) * page_size + 1L
-    end_row <- min(page * page_size, total_rows)
-    dat <- if (total_rows > 0 && end_row >= start_row) {
-      as.data.frame(dplyr::slice(sorted_tbl, start_row:end_row))
-    } else {
-      as.data.frame(sorted_tbl)
+    # One paging cache per selected table so the lazy engine memoizes within a
+    # table but resets cleanly when the user clicks a different one.
+    cache_key <- paste0(key, "::page::", table_name)
+    cache <- session$userData[[cache_key]]
+    if (is.null(cache)) {
+      cache <- new.env(parent = emptyenv())
+      session$userData[[cache_key]] <- cache
     }
+
+    paged <- tryCatch(
+      blockr.ui::table_page(
+        raw_tbl,
+        sort_state = current_sort,
+        page = page,
+        page_size = page_size,
+        cache = cache
+      ),
+      error = function(e) NULL
+    )
+    if (is.null(paged)) return(NULL)
 
     shiny::tags$div(
       class = "dm-table-preview",
       blockr.ui::build_html_table(
-        dat = dat,
-        total_rows = total_rows,
+        dat = paged$dat,
+        total_rows = paged$total_rows,
         sort_state = current_sort,
         ns = ns,
-        page = page,
+        page = paged$page,
         page_size = page_size,
-        table_label = tbl_label
+        table_label = tbl_label,
+        has_more = paged$has_more
       )
     )
   })
@@ -472,73 +482,19 @@ block_output.dm_block <- function(x, result, session) {
   shiny::renderUI({
     if (!inherits(result, "dm")) return(NULL)
 
-    diagram <- dm::dm_draw(result, view_type = "keys_only")
-    diagram$elementId <- ns("dm_diagram")
+    meta <- dm_keylines_meta(result)
+    root_id <- ns("dm_diagram")
 
     shiny::tagList(
       shiny::tags$div(
         class = "dm-output-container",
-        shiny::tags$div(class = "dm-diagram-container", diagram),
+        dm_keylines_html(meta, root_id),
         shiny::uiOutput(ns("dm_table_preview"))
       ),
-      dm_preview_css(),
-      dm_highlight_js(ns("dm_diagram"))
+      dm_keylines_css(),
+      dm_keylines_js(root_id, ns("dm_diagram_click"))
     )
   })
-}
-
-#' CSS for dm diagram and table preview
-#' @keywords internal
-dm_preview_css <- function() {
-  shiny::tags$style(shiny::HTML("
-    .dm-diagram-container {
-      overflow: auto;
-      max-height: 400px;
-    }
-    .dm-diagram-container .grViz {
-      width: 100% !important;
-      height: 380px !important;
-    }
-    .dm-diagram-container .grViz svg {
-      width: 100%;
-      height: 100%;
-    }
-    .dm-diagram-container .node {
-      cursor: pointer;
-    }
-    .dm-diagram-container .node:hover {
-      filter: brightness(0.92);
-    }
-    .dm-diagram-container .node.dm-selected {
-      outline: 1.5px dashed var(--blockr-blue-500, #3b82f6);
-      outline-offset: 0px;
-      border-radius: 1px;
-    }
-    .dm-table-preview {
-      margin-top: 8px;
-    }
-  "))
-}
-
-#' JS for dm diagram node highlight on click
-#' @param diagram_id DOM id of the grViz widget
-#' @keywords internal
-dm_highlight_js <- function(diagram_id) {
-  shiny::tags$script(shiny::HTML(sprintf("
-    (function() {
-      var el = document.getElementById('%s');
-      if (!el) return;
-      el.addEventListener('click', function(e) {
-        var node = e.target.closest('.node');
-        if (!node) return;
-        var was = node.classList.contains('dm-selected');
-        el.querySelectorAll('.node.dm-selected').forEach(function(n) {
-          n.classList.remove('dm-selected');
-        });
-        if (!was) node.classList.add('dm-selected');
-      });
-    })();
-  ", diagram_id)))
 }
 
 #' Custom UI for dm blocks
