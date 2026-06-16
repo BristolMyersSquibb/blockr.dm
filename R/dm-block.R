@@ -420,11 +420,15 @@ block_output.dm_block <- function(x, result, session) {
     table_name <- selected_table()
     shiny::req(table_name)
 
+    # Keep the table in its native form: for a remote dm (DuckDB / dbplyr)
+    # the tables are lazy `tbl_lazy` objects, and `table_page()` pages them
+    # in the database (LIMIT / window query) instead of collecting the whole
+    # table -- the same engine the shared HTML preview uses everywhere else.
     raw_tbl <- tryCatch(result[[table_name]], error = function(e) NULL)
-    tbl <- tryCatch(as.data.frame(raw_tbl), error = function(e) NULL)
-    if (is.null(tbl)) return(NULL)
+    if (is.null(raw_tbl)) return(NULL)
 
-    # Preserve table-level label attribute (stripped by as.data.frame)
+    # Table-level label (shown in the footer). Read off the raw object so it
+    # survives whether the table is an in-memory frame or a lazy table.
     tbl_label <- attr(raw_tbl, "label")
 
     page_size <- 5L
@@ -439,32 +443,38 @@ block_output.dm_block <- function(x, result, session) {
     page <- session$input$blockr_table_page
     page <- if (is.null(page)) 1L else as.integer(page)
 
-    total_rows <- nrow(tbl)
-    max_page <- max(1L, ceiling(total_rows / page_size))
-    page <- min(max(1L, page), max_page)
-
-    sorted_tbl <- blockr.ui::apply_table_sort(
-      tbl, current_sort$col, current_sort$dir
-    )
-
-    start_row <- (page - 1L) * page_size + 1L
-    end_row <- min(page * page_size, total_rows)
-    dat <- if (total_rows > 0 && end_row >= start_row) {
-      as.data.frame(dplyr::slice(sorted_tbl, start_row:end_row))
-    } else {
-      as.data.frame(sorted_tbl)
+    # One paging cache per selected table so the lazy engine memoizes within a
+    # table but resets cleanly when the user clicks a different one.
+    cache_key <- paste0(key, "::page::", table_name)
+    cache <- session$userData[[cache_key]]
+    if (is.null(cache)) {
+      cache <- new.env(parent = emptyenv())
+      session$userData[[cache_key]] <- cache
     }
+
+    paged <- tryCatch(
+      blockr.ui::table_page(
+        raw_tbl,
+        sort_state = current_sort,
+        page = page,
+        page_size = page_size,
+        cache = cache
+      ),
+      error = function(e) NULL
+    )
+    if (is.null(paged)) return(NULL)
 
     shiny::tags$div(
       class = "dm-table-preview",
       blockr.ui::build_html_table(
-        dat = dat,
-        total_rows = total_rows,
+        dat = paged$dat,
+        total_rows = paged$total_rows,
         sort_state = current_sort,
         ns = ns,
-        page = page,
+        page = paged$page,
         page_size = page_size,
-        table_label = tbl_label
+        table_label = tbl_label,
+        has_more = paged$has_more
       )
     )
   })
