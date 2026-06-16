@@ -160,12 +160,79 @@ dm_keylines_childcount <- function(L, table_id) {
   }, logical(1)))
 }
 
+#' Lane order for the routed layout
+#'
+#' Seed order is FK-hierarchy depth, then member count, then name. On top of
+#' that we walk the FK chain in pre-order: a key's lane is placed immediately
+#' after the parent lane its owner table references at the junction. That keeps
+#' the column-switch jog between two **adjacent** columns, so it no longer has
+#' to overpass an unrelated lane parked between them. Falls back to seed order
+#' for roots and siblings (and for any lane caught in an FK cycle).
+#' @keywords internal
+dm_keylines_lane_order <- function(lines, depth) {
+  n <- length(lines)
+  if (n < 2L) return(lines)
+
+  # seed order: depth asc, member count desc, name asc
+  d_owner <- vapply(lines, function(L) depth[[L$parent]], integer(1))
+  n_memb <- vapply(lines, function(L) length(L$members), integer(1))
+  nm <- vapply(lines, function(L) L$name, character(1))
+  lines <- lines[order(d_owner, -n_memb, nm)]
+
+  owner <- vapply(lines, function(L) L$parent, character(1))
+  d_owner <- vapply(lines, function(L) depth[[L$parent]], integer(1))
+
+  # one pass over the FK entries: child table -> the lane indices it references
+  # (as a non-owner). Turns parent detection into O(F) map lookups, not O(L^2).
+  child_parents <- list()
+  for (i in seq_len(n)) {
+    for (e in lines[[i]]$entries) {
+      if (!identical(e$child, owner[[i]])) {
+        child_parents[[e$child]] <- c(child_parents[[e$child]], i)
+      }
+    }
+  }
+
+  # tree-parent of each lane = the deepest parent lane its OWNER references at
+  # its junction (tie-break: earliest seed index). 0 marks a root lane.
+  parent <- integer(n)
+  for (i in seq_len(n)) {
+    cands <- child_parents[[owner[[i]]]]
+    if (length(cands)) parent[[i]] <- cands[order(-d_owner[cands], cands)][[1L]]
+  }
+
+  children <- vector("list", n)
+  for (i in seq_len(n)) {
+    p <- parent[[i]]
+    if (p != 0L) children[[p]] <- c(children[[p]], i)
+  }
+
+  # iterative pre-order DFS over the chain forest (roots in seed order); a lane
+  # lands right after the parent lane it bridges, so jogs stay short.
+  out_idx <- integer(n)
+  k <- 0L
+  visited <- logical(n)
+  stack <- rev(which(parent == 0L)) # LIFO: first root on top
+  while (length(stack)) {
+    i <- stack[[length(stack)]]
+    stack <- stack[-length(stack)]
+    if (visited[[i]]) next
+    visited[[i]] <- TRUE
+    k <- k + 1L
+    out_idx[[k]] <- i
+    ch <- children[[i]]
+    if (length(ch)) stack <- c(stack, rev(ch)) # push so first child pops first
+  }
+  if (k < n) out_idx[(k + 1L):n] <- which(!visited) # cycle safety
+  lines[out_idx]
+}
+
 #' Extract Key-lines metadata from a dm object
 #'
 #' Derives, purely from `dm` metadata (no graph engine): the table rows,
 #' the FK-edge-driven key lines, self-referential keys, per-table FK depth,
 #' and the table + lane order for the routed layout (parents above children,
-#' widest key leftmost).
+#' lanes ordered along the FK chain).
 #'
 #' @param dm_obj A dm object
 #' @return A list with `tables`, `lines`, `self_refs`, `order` and
@@ -198,13 +265,10 @@ dm_keylines_meta <- function(dm_obj) {
 
   if (length(lines)) {
     oi <- stats::setNames(seq_along(table_names) - 1L, table_names)
-    # rows + lanes ordered by FK-hierarchy depth (root key leftmost / topmost)
+    # rows ordered by FK-hierarchy depth (root key topmost); lanes walked along
+    # the FK chain so column-switch jogs bridge adjacent columns
     order_ids <- table_names[order(depth[table_names], oi[table_names])]
-    lane_order <- lines[order(
-      vapply(lines, function(L) depth[[L$parent]], integer(1)),
-      -vapply(lines, function(L) length(L$members), integer(1)),
-      vapply(lines, function(L) L$name, character(1))
-    )]
+    lane_order <- dm_keylines_lane_order(lines, depth)
   } else {
     order_ids <- table_names
     lane_order <- lines

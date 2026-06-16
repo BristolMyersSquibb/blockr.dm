@@ -55,6 +55,26 @@ kl_dm_nolines <- function() {
   dm(a = data.frame(x = 1:2), b = data.frame(y = 1:2))
 }
 
+# star/chain like the bundled bi_star_schema: products is a junction (child on
+# category_id, owner of product_id); customer_id is an unrelated lane that the
+# naive depth/name order parks *between* the two lanes the junction bridges.
+kl_dm_star <- function() {
+  categories <- data.frame(category_id = 1:2, category_name = c("a", "b"))
+  customers  <- data.frame(customer_id = 1:3, cname = letters[1:3])
+  products   <- data.frame(product_id = 1:2, category_id = c(1, 2))
+  orders     <- data.frame(order_id = 1:4, customer_id = c(1, 1, 2, 3),
+                           product_id = c(1, 2, 1, 2))
+  d <- dm(categories = categories, customers = customers,
+          products = products, orders = orders)
+  d <- dm_add_pk(d, categories, category_id)
+  d <- dm_add_pk(d, customers, customer_id)
+  d <- dm_add_pk(d, products, product_id)
+  d <- dm_add_fk(d, products, category_id, categories)
+  d <- dm_add_fk(d, orders, customer_id, customers)
+  d <- dm_add_fk(d, orders, product_id, products)
+  d
+}
+
 # parse helper
 kl_doc <- function(meta, root = "ROOT") {
   rvest::read_html(as.character(dm_keylines_html(meta, root)))
@@ -142,6 +162,16 @@ test_that("dm_keylines_meta orders rows + lanes by depth, widest key leftmost", 
   # lane order: depth of owner asc, then member count desc
   expect_identical(unname(vapply(meta$lane_order, function(L) L$name, character(1))),
                    c("did", "eid"))
+})
+
+test_that("dm_keylines_meta orders lanes so a junction's bridged lanes are adjacent", {
+  meta <- dm_keylines_meta(kl_dm_star())
+  ord <- unname(vapply(meta$lane_order, function(L) L$name, character(1)))
+  # products bridges category_id (its FK parent) and product_id (its own key):
+  # those lanes must sit adjacent so the jog doesn't overpass customer_id.
+  expect_equal(abs(match("category_id", ord) - match("product_id", ord)), 1)
+  # deterministic pre-order walk of the chain
+  expect_identical(ord, c("category_id", "product_id", "customer_id"))
 })
 
 test_that("dm_keylines_meta handles a model with no foreign keys", {
