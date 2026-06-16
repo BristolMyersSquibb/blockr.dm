@@ -11,21 +11,15 @@
 # metadata. Lines are built from the FK edges (parent table + parent
 # key columns), NOT column-name coincidence, so renamed FKs
 # (`origin -> faa`) and composite keys (`origin + time_hour`) render.
-# Baked-in defaults: Linked layout + fill selection + Smart row detail.
+# The schematic is the routed "Linked" layout (parents above children,
+# lines jogging columns at the row that owns them) with Smart row
+# detail (a tag for only the mappings the gutter can't show). Markup is
+# built with htmltools tag builders, which escape interpolated values.
 # ============================================================
 
 # per-key line palette, assigned by descending member count
 dm_keylines_palette <- function() {
   c("#2563eb", "#0d9488", "#7c3aed", "#b45309", "#be185d", "#4338ca")
-}
-
-#' HTML-escape a scalar for inline diagram markup
-#' @keywords internal
-dm_esc <- function(x) {
-  x <- as.character(x)
-  x <- gsub("&", "&amp;", x, fixed = TRUE)
-  x <- gsub("<", "&lt;", x, fixed = TRUE)
-  gsub(">", "&gt;", x, fixed = TRUE)
 }
 
 #' Read the FK edges of a dm as a plain list
@@ -166,44 +160,18 @@ dm_keylines_childcount <- function(L, table_id) {
   }, logical(1)))
 }
 
-#' Table order for the non-routed layouts (DFS keeping line members adjacent)
-#' @keywords internal
-dm_keylines_dfs_order <- function(table_names, lines, edges) {
-  owner_of <- list()
-  for (L in lines) owner_of[[L$parent]] <- L
-  fk_targets <- stats::setNames(vector("list", length(table_names)), table_names)
-  for (e in edges) {
-    fk_targets[[e$child]] <- c(fk_targets[[e$child]], e$parent)
-  }
-  seen <- character(0)
-  out <- character(0)
-  visit <- function(id) {
-    if (id %in% seen || !id %in% table_names) return(invisible())
-    seen[[length(seen) + 1L]] <<- id
-    out[[length(out) + 1L]] <<- id
-    for (tgt in fk_targets[[id]]) visit(tgt)
-    L <- owner_of[[id]]
-    if (!is.null(L)) for (m in L$members) visit(m)
-  }
-  for (L in lines) visit(L$parent)
-  for (L in lines) for (m in L$members) visit(m)
-  for (tn in table_names) visit(tn)
-  out
-}
-
 #' Extract Key-lines metadata from a dm object
 #'
 #' Derives, purely from `dm` metadata (no graph engine): the table rows,
 #' the FK-edge-driven key lines, self-referential keys, per-table FK depth,
-#' and the table + lane order for the chosen layout variant.
+#' and the table + lane order for the routed layout (parents above children,
+#' widest key leftmost).
 #'
 #' @param dm_obj A dm object
-#' @param variant Layout variant: `linked` (default, routed interchange),
-#'   `minimal`, `rails` or `cards`.
-#' @return A list with `tables`, `lines`, `self_refs`, `order`,
-#'   `lane_order` and `variant`.
+#' @return A list with `tables`, `lines`, `self_refs`, `order` and
+#'   `lane_order`.
 #' @keywords internal
-dm_keylines_meta <- function(dm_obj, variant = "linked") {
+dm_keylines_meta <- function(dm_obj) {
   tbls <- dm::dm_get_tables(dm_obj)
   table_names <- names(tbls)
 
@@ -228,7 +196,7 @@ dm_keylines_meta <- function(dm_obj, variant = "linked") {
   self_refs <- dm_keylines_selfrefs(edges)
   depth <- dm_keylines_depths(table_names, edges)
 
-  if (identical(variant, "linked") && length(lines)) {
+  if (length(lines)) {
     oi <- stats::setNames(seq_along(table_names) - 1L, table_names)
     # rows + lanes ordered by FK-hierarchy depth (root key leftmost / topmost)
     order_ids <- table_names[order(depth[table_names], oi[table_names])]
@@ -238,12 +206,12 @@ dm_keylines_meta <- function(dm_obj, variant = "linked") {
       vapply(lines, function(L) L$name, character(1))
     )]
   } else {
-    order_ids <- dm_keylines_dfs_order(table_names, lines, edges)
+    order_ids <- table_names
     lane_order <- lines
   }
 
   list(tables = tables, lines = lines, self_refs = self_refs,
-       order = order_ids, lane_order = lane_order, variant = variant)
+       order = order_ids, lane_order = lane_order)
 }
 
 #' Render the Key-lines schematic for a dm object
@@ -257,8 +225,6 @@ dm_keylines_html <- function(meta, root_id) {
   order_ids <- meta$order
   tables <- meta$tables
   self_refs <- meta$self_refs
-  variant <- meta$variant %||% "linked"
-  linked <- identical(variant, "linked")
   no_lines <- length(lines) == 0L
 
   n_lines <- length(lines)
@@ -281,36 +247,35 @@ dm_keylines_html <- function(meta, root_id) {
     if (is.na(n)) "" else format(n, big.mark = ",", trim = TRUE,
                                  scientific = FALSE)
   }
+  # build an SVG element (htmltools has no svg/circle/line/... helpers); it
+  # preserves attribute names verbatim, so camelCase attrs like viewBox survive
+  svg_tag <- function(name, ...) htmltools::tag(name, list(...))
 
   # --- line caps: each key button sits at the head of its own line -----------
-  caps <- ""
+  caps <- NULL
   if (!no_lines) {
-    caps_inner <- vapply(seq_along(lane_order), function(i) {
+    caps_inner <- lapply(seq_along(lane_order), function(i) {
       L <- lane_order[[i]]
       cx <- key_x[[L$lid]]
       cy <- 16L + (i - 1L) * 40L
-      sprintf(
-        paste0(
-          '<button class="r2key%s" type="button" data-key="%s" ',
-          'data-owner="%s" style="--line:%s;left:%spx;top:%spx" title="%s">',
-          '<span class="r2key__sw"></span>',
-          '<span class="r2key__name">%s</span>',
-          '<span class="r2key__n num">%d</span></button>'
-        ),
-        if (L$composite) " r2key--comp" else "",
-        dm_esc(L$lid), dm_esc(L$parent), L$color,
-        cx - 14L, cy - 11L, dm_esc(L$name), dm_esc(L$name),
-        length(L$members)
+      shiny::tags$button(
+        class = paste0("r2key", if (L$composite) " r2key--comp" else ""),
+        type = "button", `data-key` = L$lid, `data-owner` = L$parent,
+        style = sprintf("--line:%s;left:%spx;top:%spx", L$color, cx - 14L, cy - 11L),
+        title = L$name,
+        shiny::tags$span(class = "r2key__sw"),
+        shiny::tags$span(class = "r2key__name", L$name),
+        shiny::tags$span(class = "r2key__n num", length(L$members))
       )
-    }, character(1))
-    caps <- sprintf('<div class="rails2__caps" style="height:%spx">%s</div>',
-                    header_h, paste(caps_inner, collapse = ""))
+    })
+    caps <- shiny::tags$div(class = "rails2__caps",
+                            style = sprintf("height:%spx", header_h), caps_inner)
   }
 
-  # --- svg wires: one colored line per key, jogs (linked), nodes per member --
-  wires <- ""
+  # --- svg wires: one colored line per key, routed jogs, nodes per member ----
+  wires <- NULL
   if (!no_lines) {
-    wires <- paste(vapply(seq_along(lane_order), function(i) {
+    wires <- lapply(seq_along(lane_order), function(i) {
       L <- lane_order[[i]]
       x <- key_x[[L$lid]]
       cap_y <- 16L + (i - 1L) * 40L
@@ -319,20 +284,17 @@ dm_keylines_html <- function(meta, root_id) {
 
       # routed interchange: at this key's OWNER row, jog in from each parent
       # lane whose child IS this owner — the line switches columns there.
-      jogs <- ""
-      if (linked) {
-        y_o <- header_h + row_idx[[L$parent]] * row_h + row_h / 2
-        jogs <- paste(vapply(lane_order, function(P) {
-          if (identical(P$lid, L$lid)) return("")
-          feeds <- any(vapply(P$entries,
-            function(e) identical(e$child, L$parent), logical(1)))
-          if (!feeds) return("")
-          sprintf('<path class="r2jog" d="M%s %s L%s %s"/>',
-                  key_x[[P$lid]], y_o, x, y_o)
-        }, character(1)), collapse = "")
-      }
+      y_o <- header_h + row_idx[[L$parent]] * row_h + row_h / 2
+      jogs <- lapply(lane_order, function(P) {
+        if (identical(P$lid, L$lid)) return(NULL)
+        feeds <- any(vapply(P$entries,
+          function(e) identical(e$child, L$parent), logical(1)))
+        if (!feeds) return(NULL)
+        svg_tag("path", class = "r2jog",
+                d = sprintf("M%s %s L%s %s", key_x[[P$lid]], y_o, x, y_o))
+      })
 
-      nodes <- paste(vapply(L$members, function(id) {
+      nodes <- lapply(L$members, function(id) {
         cyn <- header_h + row_idx[[id]] * row_h + row_h / 2
         owner <- identical(id, L$parent)
         mult <- dm_keylines_childcount(L, id)
@@ -351,62 +313,50 @@ dm_keylines_html <- function(meta, root_id) {
           )
           paste0("foreign key · ", paste(unique(maps), collapse = ", "))
         }
-        node <- sprintf(
-          paste0('<circle class="r2node%s%s" data-table="%s" cx="%s" cy="%s" ',
-                 'r="%s"><title>%s</title></circle>'),
-          if (owner) " r2node--src" else "",
-          if (mult > 1L) " r2node--multi" else "",
-          dm_esc(id), x, cyn, if (owner) 5 else 4, dm_esc(tip)
-        )
+        node <- svg_tag("circle",
+          class = paste0("r2node", if (owner) " r2node--src" else "",
+                         if (mult > 1L) " r2node--multi" else ""),
+          `data-table` = id, cx = x, cy = cyn, r = if (owner) 5 else 4,
+          svg_tag("title", tip))
         if (mult > 1L) {
-          node <- paste0(node, sprintf(
-            '<text class="r2nodect" x="%s" y="%s">%d</text>',
-            x + 7, cyn + 3, mult))
-        }
-        node
-      }, character(1)), collapse = "")
+          list(node, svg_tag("text", class = "r2nodect",
+                             x = x + 7, y = cyn + 3, mult))
+        } else node
+      })
 
-      sprintf(
-        paste0(
-          '<g class="r2wire" data-key="%s" style="--line:%s">',
-          '<line class="r2line" x1="%s" y1="%s" x2="%s" y2="%s"/>%s%s</g>'
-        ),
-        dm_esc(L$lid), L$color, x, cap_y, x, y_last, jogs, nodes
-      )
-    }, character(1)), collapse = "")
+      svg_tag("g", class = "r2wire", `data-key` = L$lid,
+              style = sprintf("--line:%s", L$color),
+              svg_tag("line", class = "r2line",
+                      x1 = x, y1 = cap_y, x2 = x, y2 = y_last),
+              jogs, nodes)
+    })
   }
 
-  svg <- sprintf(
-    paste0(
-      '<svg class="rails2__wire" width="%s" height="%s" ',
-      'viewBox="0 0 %s %s">%s</svg>'
-    ),
-    gutter, header_h + n_h, gutter, header_h + n_h, wires
-  )
+  svg <- svg_tag("svg", class = "rails2__wire",
+                 width = gutter, height = header_h + n_h,
+                 viewBox = sprintf("0 0 %s %s", gutter, header_h + n_h),
+                 wires)
 
   # --- rows: one full-width row per table ------------------------------------
   # Smart row detail (default): the description plus a tag for ONLY the mappings
   # the gutter can't show — renamed FKs, self-references. Same-name FKs and the
   # owner PK stay implicit (cap label + filled/open nodes convey them).
-  rows_inner <- vapply(order_ids, function(id) {
+  rows_inner <- lapply(order_ids, function(id) {
     t <- tables[[id]]
     lids <- dm_keylines_lids(lines, id)
     mem <- dm_keylines_memberships(lines, id)
     selfs <- self_refs[[id]] %||% list()
 
-    tag_html <- ""
+    key_tags <- list()
     # self-referential keys first (always shown — no lane represents them)
     for (s in selfs) {
-      tag_html <- paste0(tag_html, sprintf(
-        paste0(
-          '<span class="r2tag r2tag--self"><span class="r2tag__loop">&#8634;</span>',
-          '<span class="r2tag__t">%s</span>',
-          '<span class="r2tag__arrow">&#8594;</span>',
-          '<span class="r2tag__to">%s</span></span>'
-        ),
-        dm_esc(paste(s$child_cols, collapse = " + ")),
-        dm_esc(paste(s$parent_cols, collapse = " + "))
-      ))
+      key_tags <- c(key_tags, list(shiny::tags$span(
+        class = "r2tag r2tag--self",
+        shiny::tags$span(class = "r2tag__loop", "↺"),
+        shiny::tags$span(class = "r2tag__t", paste(s$child_cols, collapse = " + ")),
+        shiny::tags$span(class = "r2tag__arrow", "→"),
+        shiny::tags$span(class = "r2tag__to", paste(s$parent_cols, collapse = " + "))
+      )))
     }
     for (m in mem) {
       if (isTRUE(m$self)) next # shown by the dedicated self tag
@@ -414,63 +364,56 @@ dm_keylines_html <- function(meta, root_id) {
       if (identical(m$role, "parent")) {
         next # smart: PK conveyed by the filled gutter node
       } else if (isTRUE(m$differs)) {
-        tag_html <- paste0(tag_html, sprintf(
-          paste0(
-            '<span class="r2tag r2tag--fk r2tag--map" style="--line:%s">',
-            '<span class="r2tag__dot r2tag__dot--fk"></span>',
-            '<span class="r2tag__t">%s</span>',
-            '<span class="r2tag__arrow">&#8594;</span>',
-            '<span class="r2tag__to">%s</span></span>'
-          ),
-          m$color, dm_esc(local), dm_esc(m$name)
-        ))
+        key_tags <- c(key_tags, list(shiny::tags$span(
+          class = "r2tag r2tag--fk r2tag--map",
+          style = sprintf("--line:%s", m$color),
+          shiny::tags$span(class = "r2tag__dot r2tag__dot--fk"),
+          shiny::tags$span(class = "r2tag__t", local),
+          shiny::tags$span(class = "r2tag__arrow", "→"),
+          shiny::tags$span(class = "r2tag__to", m$name)
+        )))
       }
       # same-name simple FK: implicit in smart mode (cap + open node convey it)
     }
-    tags <- if (nzchar(tag_html)) {
-      sprintf('<span class="r2row__keys">%s</span>', tag_html)
-    } else ""
+    keys <- if (length(key_tags)) {
+      shiny::tags$span(class = "r2row__keys", key_tags)
+    } else NULL
 
-    sprintf(
-      paste0(
-        '<button class="r2row" type="button" data-table="%s" ',
-        'data-keys="%s" aria-pressed="false" style="height:%spx">',
-        '<span class="r2row__id"><span class="r2row__idtxt">',
-        '<span class="r2row__name">%s</span></span></span>',
-        '<span class="r2row__desc">%s</span>%s',
-        '<span class="r2row__rows num">%s</span></button>'
-      ),
-      dm_esc(id), dm_esc(paste(lids, collapse = " ")), row_h,
-      dm_esc(t$name), dm_esc(t$label), tags, fmt_rows(t$rows)
+    shiny::tags$button(
+      class = "r2row", type = "button",
+      `data-table` = id, `data-keys` = paste(lids, collapse = " "),
+      `aria-pressed` = "false", style = sprintf("height:%spx", row_h),
+      shiny::tags$span(class = "r2row__id",
+        shiny::tags$span(class = "r2row__idtxt",
+          shiny::tags$span(class = "r2row__name", t$name))),
+      shiny::tags$span(class = "r2row__desc", t$label),
+      keys,
+      shiny::tags$span(class = "r2row__rows num", fmt_rows(t$rows))
     )
-  }, character(1))
-  rows <- sprintf(
-    '<div class="rails2__rows" style="padding-left:%spx;padding-top:%spx">%s</div>',
-    gutter, header_h, paste(rows_inner, collapse = "")
-  )
+  })
+  rows <- shiny::tags$div(class = "rails2__rows",
+    style = sprintf("padding-left:%spx;padding-top:%spx", gutter, header_h),
+    rows_inner)
 
   # --- zero-FK banner -------------------------------------------------------
   # No standing legend: the filled/hollow node convention is conveyed on hover
   # (SVG <title> tooltips on the nodes), keeping the surface uncluttered.
-  banner <- if (no_lines) sprintf(
-    paste0('<div class="rails2__banner">No foreign keys in this model ',
-           '&#8212; %d independent tables. Select one to preview its rows.</div>'),
-    length(tables)
-  ) else ""
-
-  body <- sprintf(
-    paste0(
-      '<div class="dmv-rails2%s" id="%s" data-variant="%s" data-sel="fill" ',
-      'style="--gutter:%spx;--r2w:2px">%s',
-      '<div class="rails2__body" style="height:%spx">%s%s%s</div></div>'
-    ),
-    if (no_lines) " dmv-rails2--nolines" else "",
-    root_id, variant, gutter, banner, header_h + n_h, caps, svg, rows
-  )
+  banner <- if (no_lines) {
+    shiny::tags$div(class = "rails2__banner", sprintf(
+      paste0("No foreign keys in this model — %d independent tables. ",
+             "Select one to preview its rows."), length(tables)))
+  } else NULL
 
   shiny::tags$div(
     class = "dmv__schemawrap",
-    shiny::HTML(body)
+    shiny::tags$div(
+      class = paste0("dmv-rails2", if (no_lines) " dmv-rails2--nolines" else ""),
+      id = root_id, style = sprintf("--gutter:%spx;--r2w:2px", gutter),
+      banner,
+      shiny::tags$div(class = "rails2__body",
+                      style = sprintf("height:%spx", header_h + n_h),
+                      caps, svg, rows)
+    )
   )
 }
 

@@ -10,12 +10,13 @@ dm_keylines_meta(dm_obj)
 \item{dm_obj}{A dm object}
 }
 \value{
-A list with \code{tables}, \code{keys} and \code{order}
+A list with \code{tables}, \code{lines}, \code{self_refs}, \code{order} and
+\code{lane_order}.
 }
 \description{
-Derives, purely from \code{dm} metadata (no graph engine): the table
-rows, the set of join keys (column names that are a PK/FK in >= 2
-tables), each key's colour and member tables, and a depth-first
-table order that keeps each key's members vertically adjacent.
+Derives, purely from \code{dm} metadata (no graph engine): the table rows,
+the FK-edge-driven key lines, self-referential keys, per-table FK depth,
+and the table + lane order for the routed layout (parents above children,
+widest key leftmost).
 }
 \keyword{internal}
