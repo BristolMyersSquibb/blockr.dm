@@ -395,9 +395,25 @@ dm_keylines_html <- function(meta, root_id) {
     style = sprintf("padding-left:%spx;padding-top:%spx", gutter, header_h),
     rows_inner)
 
+  # --- legend ----------------------------------------------------------------
+  # Minimal key for the node convention (per the design): a filled dot is the
+  # key's source (primary key), a hollow ring is a table that references it
+  # (foreign key). Per-key detail still rides on the node hover tooltips. Hidden
+  # for a zero-FK model, where there are no nodes to explain.
+  legend <- if (no_lines) NULL else shiny::tags$div(
+    class = "dmv__legend",
+    shiny::tags$span(class = "r2lg",
+      svg_tag("svg", class = "r2lgdot", viewBox = "0 0 12 12",
+              svg_tag("circle", cx = 6, cy = 6, r = 4, fill = "var(--dmv-ink-2)")),
+      "primary key"),
+    shiny::tags$span(class = "r2lg",
+      svg_tag("svg", class = "r2lgdot", viewBox = "0 0 12 12",
+              svg_tag("circle", cx = 6, cy = 6, r = 3.4, fill = "none",
+                      stroke = "var(--dmv-ink-2)", `stroke-width` = 2)),
+      "foreign key")
+  )
+
   # --- zero-FK banner -------------------------------------------------------
-  # No standing legend: the filled/hollow node convention is conveyed on hover
-  # (SVG <title> tooltips on the nodes), keeping the surface uncluttered.
   banner <- if (no_lines) {
     shiny::tags$div(class = "rails2__banner", sprintf(
       paste0("No foreign keys in this model — %d independent tables. ",
@@ -406,6 +422,7 @@ dm_keylines_html <- function(meta, root_id) {
 
   shiny::tags$div(
     class = "dmv__schemawrap",
+    legend,
     shiny::tags$div(
       class = paste0("dmv-rails2", if (no_lines) " dmv-rails2--nolines" else ""),
       id = root_id, style = sprintf("--gutter:%spx;--r2w:2px", gutter),
@@ -428,6 +445,12 @@ dm_keylines_css <- function() {
       --dmv-accent:#2563eb; --dmv-accent-soft:rgba(37,99,235,.09);
     }
     .dmv-rails2 { padding:10px 4px 12px; position:relative; }
+    /* minimal node-convention legend (filled = PK source, hollow = FK) */
+    .dmv__legend { display:flex; align-items:center; gap:16px; padding:13px 4px 0;
+      font-size:12px; color:var(--dmv-ink-3); }
+    .dmv__legend .r2lg { display:inline-flex; align-items:center; gap:6px;
+      white-space:nowrap; }
+    .dmv__legend .r2lgdot { width:12px; height:12px; flex:none; }
     .rails2__banner { margin:0 0 2px; padding:2px 2px 10px; font-size:12px;
       color:var(--dmv-ink-3); text-wrap:pretty; }
     .rails2__body { position:relative; }

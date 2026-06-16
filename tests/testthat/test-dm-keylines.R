@@ -182,6 +182,25 @@ test_that("dm_keylines_html draws a node per line membership, owner nodes filled
   expect_length(rvest::html_elements(doc, ".r2line"), 2)
 })
 
+test_that("dm_keylines_html shows the minimal primary/foreign-key legend", {
+  meta <- dm_keylines_meta(kl_dm_rich())
+  doc <- kl_doc(meta)
+  legend <- rvest::html_element(doc, ".dmv__legend")
+  expect_false(is.na(legend))
+  items <- rvest::html_text(rvest::html_elements(legend, ".r2lg"))
+  expect_setequal(trimws(items), c("primary key", "foreign key"))
+  # one filled dot (PK) and one hollow ring (FK)
+  dots <- rvest::html_elements(legend, ".r2lgdot circle")
+  expect_length(dots, 2)
+  fills <- rvest::html_attr(dots, "fill")
+  expect_true(any(fills != "none") && any(fills == "none"))
+})
+
+test_that("dm_keylines_html omits the legend for a zero-FK model", {
+  doc <- kl_doc(dm_keylines_meta(kl_dm_nolines()))
+  expect_true(is.na(rvest::html_element(doc, ".dmv__legend")))
+})
+
 test_that("dm_keylines_html node tooltips carry PK/FK meaning", {
   meta <- dm_keylines_meta(kl_dm_rich())
   doc <- kl_doc(meta)
