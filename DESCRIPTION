@@ -24,7 +24,6 @@ Imports:
     blockr.dplyr,
     blockr.io,
     blockr.ui,
-    DiagrammeR,
     dm,
     dplyr,
     htmltools,

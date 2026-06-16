@@ -336,11 +336,27 @@ dm_keylines_html <- function(meta, root_id) {
         cyn <- header_h + row_idx[[id]] * row_h + row_h / 2
         owner <- identical(id, L$parent)
         mult <- dm_keylines_childcount(L, id)
+        # hover tooltip carries the PK/FK meaning (replaces the legend): the
+        # filled node owns the key, hollow nodes reference it (showing the
+        # renamed mapping where the child columns differ).
+        tip <- if (owner) {
+          paste0("primary key · ", L$name)
+        } else {
+          maps <- vapply(
+            Filter(function(e) identical(e$child, id), L$entries),
+            function(e) {
+              lc <- paste(e$child_cols, collapse = " + ")
+              if (isTRUE(e$differs)) paste0(lc, " → ", L$name) else lc
+            }, character(1)
+          )
+          paste0("foreign key · ", paste(unique(maps), collapse = ", "))
+        }
         node <- sprintf(
-          '<circle class="r2node%s%s" data-table="%s" cx="%s" cy="%s" r="%s"/>',
+          paste0('<circle class="r2node%s%s" data-table="%s" cx="%s" cy="%s" ',
+                 'r="%s"><title>%s</title></circle>'),
           if (owner) " r2node--src" else "",
           if (mult > 1L) " r2node--multi" else "",
-          dm_esc(id), x, cyn, if (owner) 5 else 4
+          dm_esc(id), x, cyn, if (owner) 5 else 4, dm_esc(tip)
         )
         if (mult > 1L) {
           node <- paste0(node, sprintf(
@@ -433,20 +449,9 @@ dm_keylines_html <- function(meta, root_id) {
     gutter, header_h, paste(rows_inner, collapse = "")
   )
 
-  # --- legend + zero-FK banner ----------------------------------------------
-  legend <- if (no_lines) "" else paste0(
-    '<div class="rails2__legend2">',
-    '<span class="r2lg"><svg class="r2lgdot" viewBox="0 0 12 12">',
-    '<circle cx="6" cy="6" r="4" fill="var(--dmv-ink-2)"/></svg>primary key</span>',
-    '<span class="r2lg"><svg class="r2lgdot" viewBox="0 0 12 12">',
-    '<circle cx="6" cy="6" r="3.4" fill="#fff" stroke="var(--dmv-ink-2)" ',
-    'stroke-width="2"/></svg>foreign key &#8594; references it</span>',
-    if (linked) paste0(
-      '<span class="r2lg"><span class="r2lgconn"></span>',
-      'line switches columns at the table that links two keys</span>'
-    ) else "",
-    '</div>'
-  )
+  # --- zero-FK banner -------------------------------------------------------
+  # No standing legend: the filled/hollow node convention is conveyed on hover
+  # (SVG <title> tooltips on the nodes), keeping the surface uncluttered.
   banner <- if (no_lines) sprintf(
     paste0('<div class="rails2__banner">No foreign keys in this model ',
            '&#8212; %d independent tables. Select one to preview its rows.</div>'),
@@ -457,15 +462,14 @@ dm_keylines_html <- function(meta, root_id) {
     paste0(
       '<div class="dmv-rails2%s" id="%s" data-variant="%s" data-sel="fill" ',
       'style="--gutter:%spx;--r2w:2px">%s',
-      '<div class="rails2__body" style="height:%spx">%s%s%s</div>%s</div>'
+      '<div class="rails2__body" style="height:%spx">%s%s%s</div></div>'
     ),
     if (no_lines) " dmv-rails2--nolines" else "",
-    root_id, variant, gutter, banner, header_h + n_h, caps, svg, rows, legend
+    root_id, variant, gutter, banner, header_h + n_h, caps, svg, rows
   )
 
   shiny::tags$div(
     class = "dmv__schemawrap",
-    shiny::tags$div(class = "dmv__schemahead", "Join keys as lines"),
     shiny::HTML(body)
   )
 }
@@ -480,12 +484,7 @@ dm_keylines_css <- function() {
       --dmv-hair:#e8ebef; --dmv-hair-strong:#dde1e7;
       --dmv-accent:#2563eb; --dmv-accent-soft:rgba(37,99,235,.09);
     }
-    .dmv__schemahead {
-      display:flex; align-items:center; gap:8px; padding:15px 4px 9px;
-      font-size:10.5px; font-weight:600; letter-spacing:.07em;
-      text-transform:uppercase; color:var(--dmv-ink-3);
-    }
-    .dmv-rails2 { padding:4px 4px 12px; position:relative; }
+    .dmv-rails2 { padding:10px 4px 12px; position:relative; }
     .rails2__banner { margin:0 0 2px; padding:2px 2px 10px; font-size:12px;
       color:var(--dmv-ink-3); text-wrap:pretty; }
     .rails2__body { position:relative; }
@@ -580,17 +579,8 @@ dm_keylines_css <- function() {
       white-space:nowrap; }
     .r2row__rows:not(:empty)::after { content:' rows'; }
     .dmv-rails2 .num { font-variant-numeric:tabular-nums; }
-    /* legend under the diagram */
-    .rails2__legend2 { display:flex; flex-wrap:wrap; gap:18px;
-      padding:14px 2px 2px; margin-top:6px;
-      border-top:1px solid var(--dmv-hair); }
-    .r2lg { display:inline-flex; align-items:center; gap:7px; font-size:11.5px;
-      color:var(--dmv-ink-3); }
-    .r2lgdot { width:12px; height:12px; flex:none; }
-    .r2lgconn { width:16px; height:8px; flex:none;
-      border-left:1.75px solid var(--dmv-ink-3);
-      border-bottom:1.75px solid var(--dmv-ink-3);
-      border-bottom-left-radius:4px; }
+    /* nodes carry their PK/FK meaning on hover (SVG <title>), so no legend */
+    .r2node { cursor:default; }
     /* preview chrome: connect to the diagram with a neutral hairline + notch */
     .dm-table-preview { margin-top:8px; border-top:1px solid var(--dmv-hair-strong);
       position:relative; padding-top:10px; }
