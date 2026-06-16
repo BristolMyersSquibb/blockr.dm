@@ -441,8 +441,14 @@ dm_example_arguments <- function() {
   structure(
     c(
       dataset = paste0(
-        "Character. ID of the dm example dataset to load. Call ",
-        "dm_example_choices() to see available options."
+        "Character. ID of the dm example dataset to load. One of: ",
+        "\"bi_star_schema\" (retail star schema), ",
+        "\"safetydata_adam\" / \"pharmaverseadam\" / \"bms_adam\" ",
+        "(CDISC ADaM clinical dm with adsl, adae, ...), ",
+        "\"nycflights13\", \"insurancedata\". For a CDISC ADaM / clinical ",
+        "safety dm use \"safetydata_adam\" (NOT \"cdisc_adam\"). Availability ",
+        "depends on installed data packages; call dm_example_choices() for ",
+        "the live list."
       )
     ),
     examples = list(dataset = "bi_star_schema"),
