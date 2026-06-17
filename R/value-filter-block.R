@@ -617,14 +617,12 @@ normalize_state_for_json <- function(s) {
   list(columns = cols_norm)
 }
 
-#' Render the block output preview.
-#'
-#' The block accepts a data frame or a `dm`, so the output renderer dispatches
-#' on the result type — the same pattern as [block_output.crossfilter_block()]:
-#'   * `dm` -> [block_output.dm_block()] (interactive diagram + click-to-preview)
-#'   * data frame -> blockr.extra's dynamic renderer (paginated HTML table) when
-#'     available, otherwise a plain HTML table fallback.
-#'
+# Render the block output preview. The block accepts a data frame or a `dm`, so
+# the output renderer dispatches on the result type (same pattern as
+# block_output.crossfilter_block): a `dm` routes to block_output.dm_block (the
+# interactive diagram + click-to-preview); a data frame uses blockr.extra's
+# dynamic renderer (paginated HTML table) when available, otherwise a plain HTML
+# table fallback. Internal S3 method -- registered, not separately documented.
 #' @method block_output value_filter_block
 #' @export
 block_output.value_filter_block <- function(x, result, session) {
@@ -663,16 +661,12 @@ block_output.value_filter_block <- function(x, result, session) {
   }
 }
 
-#' Custom render trigger for the value filter block.
-#'
-#' Mirrors [block_render_trigger.crossfilter_block()] / the `dm_block` override:
-#' the default transform-block trigger reaches for pagination board options that
-#' aren't set for this block, which leaves the dm diagram / table preview
-#' unrendered. The block manages its own output, so no extra trigger is needed.
-#'
-#' @param x The block object.
-#' @param session Shiny session.
-#'
+# Custom render trigger for the value filter block. Mirrors
+# block_render_trigger.crossfilter_block / the dm_block override: the default
+# transform-block trigger reaches for pagination board options that aren't set
+# for this block, which leaves the dm diagram / table preview unrendered. The
+# block manages its own output, so no extra trigger is needed. Internal S3
+# method -- registered, not separately documented.
 #' @method block_render_trigger value_filter_block
 #' @export
 block_render_trigger.value_filter_block <- function(
