@@ -331,6 +331,23 @@ test_that("enforce_single_rule on dm fills empty single-select", {
   expect_equal(out$columns[[1]]$values, "P001")
 })
 
+test_that("a single-select added with no value is changed by the server (echo contract)", {
+  # Regression for the lazy-value desync: the JS widget can no longer prefill a
+  # single-select default (values load on demand), so it sends an empty
+  # selection. enforce_single_rule fills it server-side, which means the
+  # corrected state DIFFERS from what JS sent — the input observer keys its
+  # R->JS echo on exactly this difference, so the widget shows the applied
+  # value instead of an empty dropdown. If this stops differing, the echo is
+  # suppressed and the desync returns.
+  incoming <- migrate_value_filter_state(
+    list(columns = list(list(name = "Species", mode = "single",
+                             values = list())))
+  )
+  corrected <- enforce_single_rule(incoming, iris)
+  expect_equal(corrected$columns[[1]]$values, "setosa")    # filled
+  expect_false(identical(corrected$columns, incoming$columns))  # => must echo
+})
+
 # build_column_meta (cheap, no values) ----------------------------------------
 
 test_that("build_column_meta on df returns flat metadata", {
