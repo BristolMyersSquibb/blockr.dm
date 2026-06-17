@@ -1,0 +1,9 @@
+linters: linters_with_defaults(
+    object_name_linter = NULL,        # SCREAMING_SNAKE sentinels (CROSSFILTER_NA) + S3 dotted names
+    object_usage_linter = NULL,       # NSE column names in dm fixtures / dplyr verbs
+    object_length_linter = NULL,      # long-but-descriptive helper names
+    line_length_linter = NULL,        # matches blockr.dplyr / blockr.ai
+    commented_code_linter = NULL,     # matches blockr.dplyr / blockr.ai
+    indentation_linter = NULL,        # matches blockr.dplyr / blockr.ai
+    brace_linter = NULL               # matches blockr.ggplot
+  )
