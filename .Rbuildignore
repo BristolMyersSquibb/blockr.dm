@@ -1,0 +1,12 @@
+^\.github$
+^\.claude$
+^dev$
+^Dockerfile$
+^CLAUDE\.md$
+^README\.(Rmd|html)$
+^LICENSE\.md$
+^\.lintr$
+^docs$
+^pkgdown$
+^_pkgdown\.yml$
+^cran-comments\.md$

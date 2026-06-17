@@ -331,35 +331,46 @@ test_that("enforce_single_rule on dm fills empty single-select", {
   expect_equal(out$columns[[1]]$values, "P001")
 })
 
-# build_column_options --------------------------------------------------------
+test_that("a single-select added with no value is changed by the server (echo contract)", {
+  # Regression for the lazy-value desync: the JS widget can no longer prefill a
+  # single-select default (values load on demand), so it sends an empty
+  # selection. enforce_single_rule fills it server-side, which means the
+  # corrected state DIFFERS from what JS sent — the input observer keys its
+  # R->JS echo on exactly this difference, so the widget shows the applied
+  # value instead of an empty dropdown. If this stops differing, the echo is
+  # suppressed and the desync returns.
+  incoming <- migrate_value_filter_state(
+    list(columns = list(list(name = "Species", mode = "single",
+                             values = list())))
+  )
+  corrected <- enforce_single_rule(incoming, iris)
+  expect_equal(corrected$columns[[1]]$values, "setosa")    # filled
+  expect_false(identical(corrected$columns, incoming$columns))  # => must echo
+})
 
-test_that("build_column_options on df returns flat metadata", {
+# build_column_meta (cheap, no values) ----------------------------------------
+
+test_that("build_column_meta on df returns flat metadata", {
   df <- data.frame(x = 1:3, y = c("a", "b", "c"))
   attr(df$x, "label") <- "X axis"
-  meta <- build_column_options(df)
+  meta <- build_column_meta(df)
   expect_false(meta$is_dm)
   expect_equal(meta$columns[[1]], list(value = "x", label = "X axis"))
   expect_equal(meta$columns[[2]], list(value = "y", label = ""))
 })
 
-test_that("build_column_options on df returns plain values for unlabelled columns", {
+test_that("build_column_meta does NOT ship per-column value lists", {
+  # The whole point of the lazy fix: startup metadata carries no value lists.
   df <- data.frame(g = c("b", "a", "b", "c"), stringsAsFactors = FALSE)
-  meta <- build_column_options(df)
-  expect_equal(meta$values$g, list("a", "b", "c"))
+  meta <- build_column_meta(df)
+  expect_null(meta$values)
 })
 
-test_that("build_column_options on df honors haven-style value labels", {
-  df <- data.frame(sex = c(1L, 2L, 1L))
-  attr(df$sex, "labels") <- c(Male = 1L, Female = 2L)
-  meta <- build_column_options(df)
-  expect_equal(meta$values$sex[[1]], list(value = "1", label = "Male"))
-  expect_equal(meta$values$sex[[2]], list(value = "2", label = "Female"))
-})
-
-test_that("build_column_options on dm carries table/column fields", {
+test_that("build_column_meta on dm carries table/column fields, no values", {
   skip_if_no_dm()
-  meta <- build_column_options(mk_demo_dm())
+  meta <- build_column_meta(mk_demo_dm())
   expect_true(meta$is_dm)
+  expect_null(meta$values)
   # Each entry has table + column fields and a qualified value key.
   expect_true(all(vapply(meta$columns, function(c) !is.null(c$table),
                          logical(1))))
@@ -368,9 +379,66 @@ test_that("build_column_options on dm carries table/column fields", {
     meta$columns
   )[[1]]
   expect_equal(pol_entry$value, "policies.policy_id")
-  expect_true("policies.policy_id" %in% names(meta$values))
-  expect_equal(meta$values$`policies.policy_id`,
+})
+
+# column_values (lazy, per-column on demand) -----------------------------------
+
+test_that("column_values returns plain values for an unlabelled df column", {
+  df <- data.frame(g = c("b", "a", "b", "c"), stringsAsFactors = FALSE)
+  expect_equal(column_values(df, "g"), list("a", "b", "c"))
+})
+
+test_that("column_values honors haven-style value labels", {
+  df <- data.frame(sex = c(1L, 2L, 1L))
+  attr(df$sex, "labels") <- c(Male = 1L, Female = 2L)
+  opts <- column_values(df, "sex")
+  expect_equal(opts[[1]], list(value = "1", label = "Male"))
+  expect_equal(opts[[2]], list(value = "2", label = "Female"))
+})
+
+test_that("column_values returns NULL for an unknown df column", {
+  expect_null(column_values(data.frame(x = 1:3), "nope"))
+})
+
+test_that("column_values resolves a dm qualified key", {
+  skip_if_no_dm()
+  dm_obj <- mk_demo_dm()
+  expect_equal(column_values(dm_obj, "policies.policy_id"),
                list("P001", "P002", "P003"))
+  expect_equal(column_values(dm_obj, "claims.claim_year"),
+               list("2023", "2024", "2025"))
+})
+
+test_that("column_values returns NULL for a missing dm table or column", {
+  skip_if_no_dm()
+  dm_obj <- mk_demo_dm()
+  expect_null(column_values(dm_obj, "ghost.col"))
+  expect_null(column_values(dm_obj, "policies.ghost"))
+  expect_null(column_values(dm_obj, "no_dot_key"))
+})
+
+test_that("column_values pulls one column from a lazy (remote) dm table", {
+  skip_if_no_dm()
+  skip_if_not_installed("dplyr")
+  skip_if_not_installed("RSQLite")
+  skip_if_not_installed("dbplyr")  # dplyr::tbl() on a DBI backend needs dbplyr
+  # A lazy table must NOT be collected wholesale: build_column_meta enumerates
+  # columns via a 0-row template and column_values pushes DISTINCT down.
+  con <- DBI::dbConnect(RSQLite::SQLite(), ":memory:")
+  on.exit(DBI::dbDisconnect(con), add = TRUE)
+  DBI::dbWriteTable(con, "policies", data.frame(
+    policy_id = c("P001", "P002", "P002", "P003"),
+    status = c("active", "active", "lapsed", "lapsed"),
+    stringsAsFactors = FALSE
+  ))
+  lazy_pol <- dplyr::tbl(con, "policies")
+  expect_s3_class(lazy_pol, "tbl_lazy")
+  dm_obj <- dm::as_dm(list(policies = lazy_pol))
+  meta <- build_column_meta(dm_obj)
+  expect_null(meta$values)
+  expect_true("policies.status" %in% vapply(meta$columns, `[[`, "", "value"))
+  expect_setequal(unlist(column_values(dm_obj, "policies.status")),
+                  c("active", "lapsed"))
 })
 
 # normalize_state_for_json ----------------------------------------------------

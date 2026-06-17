@@ -137,9 +137,12 @@ test_that("Column deduplication removes shared columns from children", {
       expect_false("AGE" %in% names(adae_result))
       expect_false("SEX" %in% names(adae_result))
 
-      # ADAE should still have USUBJID, STUDYID, and its own columns
+      # USUBJID (the foreign key) and ADAE's own columns are kept. STUDYID is a
+      # single constant value here (one study) so it is treated as a duplicated
+      # subject-level column and removed too -- multi-study is not a case we
+      # support, so STUDYID carries no information beyond the parent.
       expect_true("USUBJID" %in% names(adae_result))
-      expect_true("STUDYID" %in% names(adae_result))
+      expect_false("STUDYID" %in% names(adae_result))
       expect_true("AEDECOD" %in% names(adae_result))
     },
     args = list(

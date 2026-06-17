@@ -17,6 +17,6 @@ A list with \code{tables}, \code{lines}, \code{self_refs}, \code{order} and
 Derives, purely from \code{dm} metadata (no graph engine): the table rows,
 the FK-edge-driven key lines, self-referential keys, per-table FK depth,
 and the table + lane order for the routed layout (parents above children,
-widest key leftmost).
+lanes ordered along the FK chain).
 }
 \keyword{internal}

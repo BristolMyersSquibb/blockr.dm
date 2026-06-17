@@ -31,7 +31,9 @@
       this.isDm = false;
       this.columns = [];     // [{value, label, table?, column?}] all columns
       this.colLabels = {};   // qualKey -> label
-      this.colValues = {};   // qualKey -> options array
+      this.colValues = {};   // qualKey -> options array (loaded lazily on open)
+      this._loadedKeys = new Set();        // qualKeys whose values have arrived
+      this._pendingValueRequests = new Set(); // qualKeys with a request in flight
       this.tables = [];      // [string] only for dm — ordered table names
       this.currentTable = ''; // dm: which table the Fields picker is scoped to
       this.entries = [];     // [{name, table?, mode, values}] active filters
@@ -50,9 +52,16 @@
       this._renderBody();
     }
 
-    _autoSubmit() {
+    // A value pick is a final, discrete choice — submit it right away so the
+    // preview updates without a debounce delay. Rapid edits (e.g. toggling
+    // several multi-select values) still coalesce via a short debounce.
+    _autoSubmit(delay = 200) {
       clearTimeout(this._debounceTimer);
-      this._debounceTimer = setTimeout(() => this._submit(), 300);
+      if (delay <= 0) {
+        this._submit();
+      } else {
+        this._debounceTimer = setTimeout(() => this._submit(), delay);
+      }
     }
 
     _buildDOM() {
@@ -276,6 +285,33 @@
       return optValueOf(opts[0]);
     }
 
+    // Lazy value loading: ask R for one column's values on first dropdown-open.
+    // No-op once loaded or while a request is already in flight.
+    _requestColumnValues(key) {
+      if (this._loadedKeys.has(key)) return;
+      if (this._pendingValueRequests.has(key)) return;
+      this._pendingValueRequests.add(key);
+      Shiny.setInputValue(
+        this.el.id + '_request_values',
+        key,
+        { priority: 'event' }
+      );
+    }
+
+    // R -> JS: a column's value options arrived. Store them and swap the
+    // option list into the matching body select IN PLACE (a re-render would
+    // destroy the just-opened dropdown), clearing its loading state.
+    receiveColumnValues(key, opts) {
+      this._pendingValueRequests.delete(key);
+      this.colValues[key] = opts || [];
+      this._loadedKeys.add(key);
+      const sel = this._bodySelects[key];
+      if (sel) {
+        if (sel.updateOptions) sel.updateOptions(this.colValues[key]);
+        if (sel.setLoading) sel.setLoading(false);
+      }
+    }
+
     _renderBody() {
       Object.values(this._bodySelects).forEach((s) => s && s.destroy && s.destroy());
       this._bodySelects = {};
@@ -320,11 +356,17 @@
         const sel = Array.isArray(entry.values) ? entry.values : [];
 
         const key = qualKey(entry.name, entry.table);
+        // Values load lazily on first dropdown-open. Saved selections still
+        // render (single-select falls back to the value text; multi-select
+        // renders chips from `selected`) so chips show before the list lands.
+        const loading = !this._loadedKeys.has(key);
         if (mode === 'single') {
           this._bodySelects[key] = Blockr.Select.single(wrap, {
             options: opts,
             selected: sel[0] != null ? sel[0] : null,
             placeholder: 'Select value…',
+            loading: loading,
+            onOpen: () => this._requestColumnValues(key),
             onChange: (v) => {
               const cur = this.entries[idx];
               if (v == null || v === '') {
@@ -333,7 +375,8 @@
               } else {
                 cur.values = [String(v)];
               }
-              this._autoSubmit();
+              // Single-select picks are final — submit immediately, no debounce.
+              this._autoSubmit(0);
             }
           });
         } else {
@@ -342,6 +385,8 @@
             selected: sel.slice(),
             placeholder: 'Select values…',
             reorderable: false,
+            loading: loading,
+            onOpen: () => this._requestColumnValues(key),
             onChange: (vals) => {
               this.entries[idx].values = vals.map(String);
               this._autoSubmit();
@@ -415,8 +460,14 @@
 
     updateColumns(payload) {
       this.columns = (payload && payload.columns) || [];
-      this.colValues = (payload && payload.values) || {};
       this.isDm = !!(payload && payload.is_dm);
+
+      // A data change invalidates any cached values — they reload lazily on
+      // the next dropdown-open. The startup payload carries column metadata
+      // only (no value lists); that is what keeps startup cheap on a dm.
+      this.colValues = {};
+      this._loadedKeys.clear();
+      this._pendingValueRequests.clear();
 
       this.colLabels = {};
       const tableSet = new Set();
@@ -439,16 +490,11 @@
       this.entries = this.entries.filter((e) =>
         validKeys.has(qualKey(e.name, e.table)));
 
-      // Drop stale values not present in column's options.
-      this.entries.forEach((entry) => {
-        const opts = this.colValues[qualKey(entry.name, entry.table)] || [];
-        const validVals = new Set(opts.map(optValueOf).map(String));
-        entry.values = (entry.values || []).filter((v) => validVals.has(String(v)));
-        if ((entry.mode || 'single') === 'single' && entry.values.length === 0) {
-          const first = this._firstValueOf(entry);
-          if (first != null) entry.values = [String(first)];
-        }
-      });
+      // Saved entry values are kept as-is: their column options are not yet
+      // loaded, so there is nothing to prune against here. The R side's
+      // `enforce_single_rule` fills empty single-selects and drops
+      // schema-missing entries, pushing the corrected state back via
+      // `bi-filter-update`.
 
       // For dm mode, pick a default current table if not already set.
       if (this.isDm) {
@@ -523,6 +569,13 @@
       values: msg.values,
       is_dm: msg.is_dm
     });
+  });
+
+  Shiny.addCustomMessageHandler('bi-filter-column-values', (msg) => {
+    const el = document.getElementById(msg.id);
+    if (el && el._block) {
+      el._block.receiveColumnValues(msg.key, msg.values);
+    }
   });
 
   Shiny.addCustomMessageHandler('bi-filter-update', (msg) => {

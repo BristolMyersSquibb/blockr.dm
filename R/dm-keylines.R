@@ -366,16 +366,16 @@ dm_keylines_html <- function(meta, root_id) {
         # filled node owns the key, hollow nodes reference it (showing the
         # renamed mapping where the child columns differ).
         tip <- if (owner) {
-          paste0("primary key · ", L$name)
+          paste0("primary key \u00b7 ", L$name)
         } else {
           maps <- vapply(
             Filter(function(e) identical(e$child, id), L$entries),
             function(e) {
               lc <- paste(e$child_cols, collapse = " + ")
-              if (isTRUE(e$differs)) paste0(lc, " → ", L$name) else lc
+              if (isTRUE(e$differs)) paste0(lc, " \u2192 ", L$name) else lc
             }, character(1)
           )
-          paste0("foreign key · ", paste(unique(maps), collapse = ", "))
+          paste0("foreign key \u00b7 ", paste(unique(maps), collapse = ", "))
         }
         node <- svg_tag("circle",
           class = paste0("r2node", if (owner) " r2node--src" else "",
@@ -416,9 +416,9 @@ dm_keylines_html <- function(meta, root_id) {
     for (s in selfs) {
       key_tags <- c(key_tags, list(shiny::tags$span(
         class = "r2tag r2tag--self",
-        shiny::tags$span(class = "r2tag__loop", "↺"),
+        shiny::tags$span(class = "r2tag__loop", "\u21ba"),
         shiny::tags$span(class = "r2tag__t", paste(s$child_cols, collapse = " + ")),
-        shiny::tags$span(class = "r2tag__arrow", "→"),
+        shiny::tags$span(class = "r2tag__arrow", "\u2192"),
         shiny::tags$span(class = "r2tag__to", paste(s$parent_cols, collapse = " + "))
       )))
     }
@@ -433,7 +433,7 @@ dm_keylines_html <- function(meta, root_id) {
           style = sprintf("--line:%s", m$color),
           shiny::tags$span(class = "r2tag__dot r2tag__dot--fk"),
           shiny::tags$span(class = "r2tag__t", local),
-          shiny::tags$span(class = "r2tag__arrow", "→"),
+          shiny::tags$span(class = "r2tag__arrow", "\u2192"),
           shiny::tags$span(class = "r2tag__to", m$name)
         )))
       }
@@ -464,7 +464,7 @@ dm_keylines_html <- function(meta, root_id) {
   # (SVG <title> tooltips on the nodes), keeping the surface uncluttered.
   banner <- if (no_lines) {
     shiny::tags$div(class = "rails2__banner", sprintf(
-      paste0("No foreign keys in this model — %d independent tables. ",
+      paste0("No foreign keys in this model \u2014 %d independent tables. ",
              "Select one to preview its rows."), length(tables)))
   } else NULL
 

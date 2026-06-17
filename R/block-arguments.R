@@ -74,8 +74,8 @@ dm_block_arguments <- function() {
     examples = list(infer_keys = TRUE),
     prompt = paste(
       "Wraps a set of data frames into a dm (data model) object. Use when",
-      "the upstream already provides multiple data frames — typically via",
-      "bind_cols or multiple file loads — and you want to treat them as a",
+      "the upstream already provides multiple data frames \u2014 typically via",
+      "bind_cols or multiple file loads \u2014 and you want to treat them as a",
       "related table collection. For CDISC/ADaM data prefer cdisc_dm_block",
       "which knows the USUBJID convention."
     )
@@ -252,7 +252,7 @@ dm_flatten_arguments <- function() {
   structure(
     c(
       start_table = paste0(
-        "Character. Table to flatten from — becomes the left side of every ",
+        "Character. Table to flatten from \u2014 becomes the left side of every ",
         "join. Output row count equals this table's row count (for left joins)."
       ),
       include_tables = paste0(
@@ -294,7 +294,7 @@ dm_nested_view_arguments <- function() {
     examples = list(root_table = list("adsl")),
     prompt = paste(
       "Renders a dm as a nested expandable table. Use for interactive",
-      "exploration of relationship structure. Purely a display block — it",
+      "exploration of relationship structure. Purely a display block \u2014 it",
       "doesn't transform data."
     )
   )
@@ -430,7 +430,7 @@ crossfilter_arguments <- function() {
       "clicking a bar filters all downstream views. Categorical filters",
       "live in `filters`, numeric/date ranges in `range_filters`.",
       "\n\nUse whenever the user wants linked filtering across multiple",
-      "views. Don't reimplement by chaining filter + join — this single",
+      "views. Don't reimplement by chaining filter + join \u2014 this single",
       "block delivers the full brush/linked-filter UX."
     )
   )
@@ -454,7 +454,7 @@ dm_example_arguments <- function() {
     examples = list(dataset = "bi_star_schema"),
     prompt = paste(
       "Loads a pre-built dm from the blockr.dm example catalog. Use for",
-      "demos and testing — no file paths needed."
+      "demos and testing \u2014 no file paths needed."
     )
   )
 }

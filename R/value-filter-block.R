@@ -89,17 +89,20 @@ new_value_filter_block <- function(
         self_write <- new.env(parent = emptyenv())
         self_write$active <- FALSE
 
-        # Send column metadata + per-column unique values on data change.
+        # Send column metadata (names/labels/table) on data change. The
+        # per-column unique-value lists are NOT shipped here — they load
+        # lazily on first dropdown-open (see the request handler below). In
+        # dm mode this is what avoids paying N-tables x uniques at startup,
+        # and never collects a remote (e.g. DuckDB-backed) table.
         shiny::observeEvent(data(), {
           d <- data()
-          meta <- build_column_options(d)
+          meta <- build_column_meta(d)
           if (is.null(meta)) return()
           session$sendCustomMessage(
             "bi-filter-columns",
             list(
               id      = ns("filter_input"),
               columns = meta$columns,
-              values  = meta$values,
               is_dm   = meta$is_dm
             )
           )
@@ -111,11 +114,30 @@ new_value_filter_block <- function(
           }
         })
 
+        # JS -> R: lazy value request for one column (fires on dropdown-open).
+        # `key` is the qualified key ("table.column" for a dm, bare column
+        # name otherwise); only that single column's values are computed.
+        shiny::observeEvent(input$filter_input_request_values, {
+          key <- input$filter_input_request_values
+          opts <- column_values(shiny::isolate(data()), key)
+          if (is.null(opts)) return()
+          session$sendCustomMessage(
+            "bi-filter-column-values",
+            list(id = ns("filter_input"), key = key, values = opts)
+          )
+        })
+
         # JS -> R: user changed state.
         shiny::observeEvent(input$filter_input, {
-          self_write$active <- TRUE
           incoming <- migrate_value_filter_state(input$filter_input)
           s <- enforce_single_rule(incoming, shiny::isolate(data()))
+          # Suppress the R->JS echo only when the server left the JS-sent state
+          # untouched. When enforce_single_rule fills a single-select default
+          # (the lazy widget can no longer prefill it client-side) or drops a
+          # stale entry, JS still holds the un-corrected state — so we MUST
+          # echo the correction back, or the widget shows an empty selection
+          # while the filter is silently applied.
+          self_write$active <- identical(s$columns, incoming$columns)
           r_state(s)
         })
 
@@ -221,63 +243,125 @@ migrate_value_filter_state <- function(state) {
   list(columns = entries)
 }
 
-#' Build column metadata + per-column value options for the JS side.
+#' Build cheap column metadata (names/labels/table) for the JS side.
 #'
-#' Returns a list with `columns` (metadata entries) and `values` (per-column
-#' option lists), plus `is_dm` so the JS side can render the dm variant.
+#' Returns a list with `columns` (metadata entries) plus `is_dm` so the JS
+#' side can render the dm variant. Per-column unique values are deliberately
+#' NOT computed here — they load lazily on dropdown-open via [column_values()].
 #' For a `dm` input, column metadata entries include `table` and `column`
-#' fields and the `values` dict is keyed by `"table.column"`.
+#' fields and the `value` key is `"table.column"`.
 #'
 #' @noRd
-build_column_options <- function(data) {
+build_column_meta <- function(data) {
   if (inherits(data, "dm")) {
-    build_column_options_dm(data)
+    build_column_meta_dm(data)
   } else if (is.data.frame(data) && ncol(data) > 0L) {
-    build_column_options_df(data)
+    build_column_meta_df(data)
   } else {
     NULL
   }
 }
 
 #' @noRd
-build_column_options_df <- function(df) {
+build_column_meta_df <- function(df) {
   cols <- lapply(names(df), function(cn) {
-    lbl <- attr(df[[cn]], "label", exact = TRUE)
-    list(
-      value = cn,
-      label = if (is.null(lbl)) "" else as.character(lbl)[1L]
-    )
+    list(value = cn, label = column_label(df[[cn]]))
   })
-  vals <- lapply(names(df), function(cn) unique_value_options(df[[cn]]))
-  names(vals) <- names(df)
-  list(columns = cols, values = vals, is_dm = FALSE)
+  list(columns = cols, is_dm = FALSE)
 }
 
 #' @noRd
-build_column_options_dm <- function(dm_obj) {
+build_column_meta_dm <- function(dm_obj) {
   if (!requireNamespace("dm", quietly = TRUE)) {
     stop("Package 'dm' is required for dm input. ",
          "Install with install.packages('dm').")
   }
   tbls <- dm::dm_get_tables(dm_obj)
   cols <- list()
-  vals <- list()
   for (tbl_nm in names(tbls)) {
-    tbl <- as.data.frame(tbls[[tbl_nm]])
-    if (ncol(tbl) == 0L) next
-    for (cn in names(tbl)) {
-      lbl <- attr(tbl[[cn]], "label", exact = TRUE)
-      key <- paste0(tbl_nm, ".", cn)
+    # A 0-row template carries column names + labels via one cheap LIMIT 0
+    # query, so a remote (lazy) table is never collected just to enumerate
+    # its columns.
+    head0 <- table_head0(tbls[[tbl_nm]])
+    if (ncol(head0) == 0L) next
+    for (cn in names(head0)) {
       cols[[length(cols) + 1L]] <- list(
-        value  = key,
-        label  = if (is.null(lbl)) "" else as.character(lbl)[1L],
+        value  = paste0(tbl_nm, ".", cn),
+        label  = column_label(head0[[cn]]),
         table  = tbl_nm,
         column = cn
       )
-      vals[[key]] <- unique_value_options(tbl[[cn]])
     }
   }
-  list(columns = cols, values = vals, is_dm = TRUE)
+  list(columns = cols, is_dm = TRUE)
+}
+
+#' A 0-row, in-memory template of a (possibly lazy) table.
+#'
+#' For a remote `tbl_lazy` this issues a single `LIMIT 0` query and collects
+#' the result, so column names/types/labels are obtained without pulling row
+#' data. In-memory tables are sliced to 0 rows directly.
+#' @noRd
+table_head0 <- function(tbl) {
+  if (inherits(tbl, "tbl_lazy")) {
+    return(as.data.frame(dplyr::collect(utils::head(tbl, 0L))))
+  }
+  as.data.frame(tbl)[0L, , drop = FALSE]
+}
+
+#' One column's label attribute as a length-1 character ("" if none).
+#' @noRd
+column_label <- function(col) {
+  lbl <- attr(col, "label", exact = TRUE)
+  if (is.null(lbl)) "" else as.character(lbl)[1L]
+}
+
+#' Lazily compute the value options for one column, by qualified key.
+#'
+#' `key` is the qualified key the JS side sends on dropdown-open: `"table.col"`
+#' for a `dm`, the bare column name for a data frame. Returns the option list
+#' for that single column (see [unique_value_options()]), or `NULL` if the key
+#' no longer resolves. For a remote (lazy) dm table only that one column's
+#' distinct values are pulled (push-down), never the whole table.
+#' @noRd
+column_values <- function(data, key) {
+  if (is.null(key) || !nzchar(key)) return(NULL)
+  if (inherits(data, "dm")) {
+    if (!requireNamespace("dm", quietly = TRUE)) return(NULL)
+    parts <- strsplit(key, ".", fixed = TRUE)[[1L]]
+    if (length(parts) < 2L) return(NULL)
+    tbl_nm <- parts[[1L]]
+    cn <- paste(parts[-1L], collapse = ".")
+    tbls <- dm::dm_get_tables(data)
+    if (!tbl_nm %in% names(tbls)) return(NULL)
+    src <- lazy_column_vector(tbls[[tbl_nm]], cn)
+  } else if (is.data.frame(data)) {
+    if (!key %in% names(data)) return(NULL)
+    src <- data[[key]]
+  } else {
+    return(NULL)
+  }
+  if (is.null(src)) return(NULL)
+  unique_value_options(src)
+}
+
+#' Pull one column as an in-memory vector from a (possibly lazy) table.
+#'
+#' For a `tbl_lazy` the distinct values of just that column are collected
+#' (the DISTINCT is pushed to the backend); in-memory tables index directly.
+#' Returns `NULL` if the column is absent.
+#' @noRd
+lazy_column_vector <- function(tbl, cn) {
+  if (inherits(tbl, "tbl_lazy")) {
+    if (!cn %in% colnames(tbl)) return(NULL)
+    out <- dplyr::collect(
+      dplyr::distinct(dplyr::select(tbl, dplyr::all_of(cn)))
+    )
+    return(out[[cn]])
+  }
+  df <- as.data.frame(tbl)
+  if (!cn %in% names(df)) return(NULL)
+  df[[cn]]
 }
 
 #' Distinct, stably-ordered value options for one column.
@@ -335,9 +419,10 @@ column_source <- function(data, entry) {
     if (!nzchar(tbl_nm)) return(NULL)
     tbls <- dm::dm_get_tables(data)
     if (!tbl_nm %in% names(tbls)) return(NULL)
-    tbl <- as.data.frame(tbls[[tbl_nm]])
-    if (!entry$name %in% names(tbl)) return(NULL)
-    tbl[[entry$name]]
+    # Lazy-safe: pulls only this column's distinct values for a remote table,
+    # never the whole table (single-select default-fill touches active
+    # entries only, but on a remote dm even one full collect is wasteful).
+    lazy_column_vector(tbls[[tbl_nm]], entry$name)
   } else if (is.data.frame(data)) {
     if (!entry$name %in% names(data)) return(NULL)
     data[[entry$name]]
@@ -532,26 +617,63 @@ normalize_state_for_json <- function(s) {
   list(columns = cols_norm)
 }
 
-#' Render the block output preview.
-#'
-#' Mirrors the crossfilter block's pattern: delegate to
-#' `block_output.dm_block` when the result is a dm (gives the interactive
-#' diagram + click-to-preview-table UX), otherwise fall through to the
-#' default transform-block renderer (which blockr.extra overrides into a
-#' paginated HTML table when `blockr.html_table_preview = TRUE`).
-#'
+# Render the block output preview. The block accepts a data frame or a `dm`, so
+# the output renderer dispatches on the result type (same pattern as
+# block_output.crossfilter_block): a `dm` routes to block_output.dm_block (the
+# interactive diagram + click-to-preview); a data frame uses blockr.extra's
+# dynamic renderer (paginated HTML table) when available, otherwise a plain HTML
+# table fallback. Internal S3 method -- registered, not separately documented.
 #' @method block_output value_filter_block
 #' @export
 block_output.value_filter_block <- function(x, result, session) {
   if (inherits(result, "dm")) {
-    dm_method <- utils::getS3method(
-      "block_output", "dm_block", optional = TRUE
-    )
-    if (!is.null(dm_method)) {
-      return(dm_method(x, result, session))
-    }
+    return(block_output.dm_block(x, result, session))
   }
-  NextMethod()
+  # Data frame or other: use blockr.extra's dynamic renderer if available,
+  # otherwise a simple HTML table preview.
+  render_fn <- tryCatch(
+    get("render_dynamic_output", asNamespace("blockr.extra")),
+    error = function(e) NULL
+  )
+  if (!is.null(render_fn)) {
+    render_fn(result, x, session)
+  } else {
+    shiny::renderUI({
+      if (!is.data.frame(result)) return(NULL)
+      dat <- utils::head(result, 100)
+      shiny::tags$div(
+        style = "max-height: 400px; overflow: auto;",
+        shiny::tags$table(
+          class = "table table-sm table-striped",
+          shiny::tags$thead(shiny::tags$tr(
+            lapply(names(dat), function(n) shiny::tags$th(n))
+          )),
+          shiny::tags$tbody(
+            lapply(seq_len(nrow(dat)), function(i) {
+              shiny::tags$tr(lapply(dat[i, ], function(v) {
+                shiny::tags$td(as.character(v))
+              }))
+            })
+          )
+        )
+      )
+    })
+  }
+}
+
+# Custom render trigger for the value filter block. Mirrors
+# block_render_trigger.crossfilter_block / the dm_block override: the default
+# transform-block trigger reaches for pagination board options that aren't set
+# for this block, which leaves the dm diagram / table preview unrendered. The
+# block manages its own output, so no extra trigger is needed. Internal S3
+# method -- registered, not separately documented.
+#' @method block_render_trigger value_filter_block
+#' @export
+block_render_trigger.value_filter_block <- function(
+  x,
+  session = blockr.core::get_session()
+) {
+  NULL
 }
 
 #' HTML dependency for the value filter block JS + CSS
