@@ -90,6 +90,17 @@
     return new Date(days * 86400000).toISOString().slice(0, 10);
   }
 
+  // Coerce a raw date value (ISO string, or null/"" for a missing value) to
+  // epoch-days. Missing/unparseable values become NaN — crossfilter excludes
+  // NaN from a dimension's sorted index, so they neither poison the
+  // bottom(1)/top(1) bounds nor match any range predicate (mirroring R, where
+  // `col >= lo & col <= hi` drops NA rows).
+  function toEpochDay(v) {
+    if (v == null || v === '') return NaN;
+    const t = new Date(v).getTime();
+    return Number.isNaN(t) ? NaN : t / 86400000;
+  }
+
   function el(tag, cls, html) {
     const e = document.createElement(tag);
     if (cls) e.className = cls;
@@ -470,7 +481,15 @@
         const childTable = this.dimChild[dim];
         if (!childTable) continue;
         const cf = this.instances[childTable];
-        this.dimensions[dim] = cf.dimension(d => d[dim]);
+        // Date dims use a numeric (epoch-day) accessor. With the raw
+        // string/null accessor an NA date (shipped as JSON null) lands at one
+        // end of crossfilter's sort, so bottom(1)/top(1) return the null
+        // record and `new Date(null)` collapses the bound to 1970-01-01 —
+        // an inverted range and an unusable slider. As epoch-days, missing
+        // values become NaN, which crossfilter drops from the sorted index.
+        this.dimensions[dim] = this._getDimType(dim) === 'date'
+          ? cf.dimension(d => toEpochDay(d[dim]))
+          : cf.dimension(d => d[dim]);
         this.groups[dim] = this._createGroup(dim, sourceTable);
       }
 
@@ -912,8 +931,10 @@
       card._infoEl = infoEl;
 
       // KDE density overlay (SVG) — paths get their `d` attr set in
-      // _applyRangeBounds (gray) and _updateRangeInfo (blue).
-      if (type !== 'date') {
+      // _applyRangeBounds (gray) and _updateRangeInfo (blue). Built for both
+      // numeric and date range cards; the value extractors below read date
+      // columns as epoch-days.
+      {
         const svgNs = 'http://www.w3.org/2000/svg';
         const svg = document.createElementNS(svgNs, 'svg');
         svg.setAttribute('viewBox', '0 0 300 80');
@@ -1051,12 +1072,8 @@
       if (hasOwnFilter) this._reapplyFilter(dim, savedFilter);
 
       if (!bottom || !top) return null;
-      const min = type === 'date'
-        ? new Date(bottom[dim]).getTime() / 86400000
-        : Number(bottom[dim]);
-      const max = type === 'date'
-        ? new Date(top[dim]).getTime() / 86400000
-        : Number(top[dim]);
+      const min = type === 'date' ? toEpochDay(bottom[dim]) : Number(bottom[dim]);
+      const max = type === 'date' ? toEpochDay(top[dim]) : Number(top[dim]);
       if (isNaN(min) || isNaN(max)) return null;
       return { min, max };
     }
@@ -1069,12 +1086,10 @@
         cfDim.filterFunction(v => set.has(String(v)));
       } else if (value && value.min !== undefined) {
         if (value.isDate) {
-          const loD = value.min;
-          const hiD = value.max;
-          cfDim.filterFunction(v => {
-            const t = new Date(v).getTime() / 86400000;
-            return t >= loD && t <= hiD;
-          });
+          // Date dim values are epoch-days (see the dimension accessor); NaN
+          // (missing) fails the comparison and is excluded, matching R.
+          const loD = value.min, hiD = value.max;
+          cfDim.filterFunction(v => typeof v === 'number' && v >= loD && v <= hiD);
         } else {
           // Use filterFunction (inclusive both ends) instead of filterRange
           // (which is [lo, hi) — half-open) so JS results match R's
@@ -1130,7 +1145,9 @@
         card._totalRows = allRows.length;
 
         if (card._pathAll) {
-          const allValues = allRows.map(r => +r[dim]).filter(v => isFinite(v));
+          const toNum = card._type === 'date'
+            ? r => toEpochDay(r[dim]) : r => +r[dim];
+          const allValues = allRows.map(toNum).filter(v => isFinite(v));
           const kdeAll = kde(allValues, min, max);
           const kdeMaxY = Math.max(...kdeAll.map(p => p.y), 1);
           card._kdeMaxY = kdeMaxY;
@@ -1194,12 +1211,12 @@
         this.filters[dim] = value;
       } else if (value.min !== undefined) {
         if (value.isDate) {
-          const loD = value.min;
-          const hiD = value.max;
-          this.dimensions[dim].filterFunction(v => {
-            const t = new Date(v).getTime() / 86400000;
-            return t >= loD && t <= hiD;
-          });
+          // Date dim values are epoch-days (see the dimension accessor); NaN
+          // (missing) fails the comparison and is excluded, matching R.
+          const loD = value.min, hiD = value.max;
+          this.dimensions[dim].filterFunction(
+            v => typeof v === 'number' && v >= loD && v <= hiD
+          );
         } else {
           // Inclusive on both ends (matches R's `>= lo & <= hi`); also
           // robust against non-numeric (null) values that dodge the sort.
@@ -1325,7 +1342,9 @@
 
       // Update KDE filtered overlay
       if (card._pathFiltered && card._dim && card._kdeMaxY) {
-        const filteredValues = filteredRows.map(r => +r[card._dim]).filter(v => isFinite(v));
+        const toNum = card._type === 'date'
+          ? r => toEpochDay(r[card._dim]) : r => +r[card._dim];
+        const filteredValues = filteredRows.map(toNum).filter(v => isFinite(v));
         const kdeFiltered = kde(filteredValues, card._min, card._max);
         card._pathFiltered.setAttribute('d',
           kdeToSvgPath(kdeFiltered, card._min, card._max, card._kdeMaxY, 300, 80));
