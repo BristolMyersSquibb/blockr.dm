@@ -1,23 +1,28 @@
-# Value-filter tour — the value_filter_block over a real dm.
+# dm filtering tour — value_filter_block and crossfilter_block side by side.
 #
-# `new_value_filter_block()` filters a data frame or a dm by picking concrete
-# values per column. Open the gear (top right of the block) to choose which
-# columns to filter on; each column toggles between single-select (always
-# constrains, auto-picks the first value) and multi-select (empty = passes
-# through). For a dm the gear also gains a table selector, and the emitted
-# filter goes through `dm::dm_filter()`, so a restriction cascades through
-# foreign keys to related tables.
+# Both blocks filter a `dm` and cascade the restriction through foreign keys
+# (`dm::dm_filter()`), but offer different UX:
 #
-# Column values load lazily — the value list for a column is fetched only when
-# you open its dropdown (so a 10-table ADaM dm doesn't ship every column's
-# uniques at startup). High-cardinality dropdowns render a capped list with a
-# "+N more — type to narrow" hint; typing searches the full list.
+#   new_value_filter_block()  — pick concrete values per column behind the gear
+#     (top right). Single-select always constrains (auto-picks the first value);
+#     multi-select passes through when empty. For a dm the gear gains a table
+#     selector. Column values load lazily (only when a dropdown is opened), so a
+#     10-table ADaM dm doesn't ship every column's uniques at startup; high-
+#     cardinality dropdowns cap the rendered list with a "+N more" hint.
 #
-# The data is the Safety ADaM example dm (`new_dm_example_block`), so the gear
-# search covers every ADaM column. Good things to add:
-#   adsl: ARM, SEX, AGEGR1        single/multi value pickers
+#   new_crossfilter_block()   — ship the dm to the browser and filter it
+#     client-side (crossfilter2): categorical columns become clickable bar
+#     lists, numeric/date columns become range sliders with a density curve.
+#
+# Both accept a data frame or a dm, and their output preview dispatches on the
+# result type: a dm renders the interactive Key-lines diagram with click-to-
+# preview tables; a data frame renders a paginated table.
+#
+# The source is the Safety ADaM example dm (`new_dm_example_block`). Good things
+# to try in either block:
+#   adsl: ARM, SEX, AGEGR1        categorical pickers / bar lists
+#   adsl: AGE, BMIBL              numeric (crossfilter shows a density slider)
 #   adae: AEBODSYS, AESEV         filter AEs; watch adsl narrow via the FK
-#   adsl: STUDYID                 single-select, auto-picks the one study
 #
 # Run from the workspace root (inside or outside the dev container):
 #   Rscript blockr.dm/dev/example-value-filter.R
@@ -39,9 +44,13 @@ stopifnot(requireNamespace("safetyData", quietly = TRUE))
 board <- new_dock_board(
   blocks = c(
     data = new_dm_example_block(dataset = "safetydata_adam"),
-    flt  = new_value_filter_block()
+    flt  = new_value_filter_block(),
+    cf   = new_crossfilter_block()
   ),
-  links = new_link(from = "data", to = "flt", input = "data"),
+  links = c(
+    new_link(from = "data", to = "flt", input = "data"),
+    new_link(from = "data", to = "cf",  input = "data")
+  ),
   extensions = list(blockr.dag::new_dag_extension())
 )
 
