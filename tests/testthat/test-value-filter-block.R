@@ -421,6 +421,7 @@ test_that("column_values pulls one column from a lazy (remote) dm table", {
   skip_if_no_dm()
   skip_if_not_installed("dplyr")
   skip_if_not_installed("RSQLite")
+  skip_if_not_installed("dbplyr")  # dplyr::tbl() on a DBI backend needs dbplyr
   # A lazy table must NOT be collected wholesale: build_column_meta enumerates
   # columns via a 0-row template and column_values pushes DISTINCT down.
   con <- DBI::dbConnect(RSQLite::SQLite(), ":memory:")

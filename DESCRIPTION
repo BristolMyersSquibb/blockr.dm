@@ -44,6 +44,7 @@ Suggests:
     blockr.dock,
     bslib,
     DBI,
+    dbplyr,
     insuranceData,
     jsonlite,
     nycflights13,
