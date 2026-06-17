@@ -27,8 +27,6 @@ Imports:
     dm,
     dplyr,
     htmltools,
-    pillar,
-    htmlwidgets,
     reactable,
     readr,
     readxl,
@@ -45,13 +43,18 @@ Suggests:
     blockr.dag,
     blockr.dock,
     bslib,
+    DBI,
+    insuranceData,
     jsonlite,
-    rio,
-    testthat (>= 3.0.0),
     nycflights13,
     pharmaverseadam,
+    rio,
+    RSQLite,
+    rvest,
     safetyData,
-    shinytest2
+    shinytest2,
+    testthat (>= 3.0.0),
+    withr
 Config/testthat/edition: 3
 Remotes:
     BristolMyersSquibb/blockr.ai,
