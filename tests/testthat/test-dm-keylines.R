@@ -75,8 +75,10 @@ kl_dm_star <- function() {
   d
 }
 
-# parse helper
+# parse helper. rvest is Suggests-only; every HTML-shape test funnels through
+# here, so guarding once skips them all when rvest is unavailable.
 kl_doc <- function(meta, root = "ROOT") {
+  testthat::skip_if_not_installed("rvest")
   rvest::read_html(as.character(dm_keylines_html(meta, root)))
 }
 

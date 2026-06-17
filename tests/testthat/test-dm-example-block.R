@@ -77,7 +77,10 @@ test_that("pharmaverseadam_expr produces valid dm", {
 
   expect_s3_class(result, "dm")
   tables <- sort(names(dm::dm_get_tables(result)))
-  expect_equal(tables, c("adae", "adcm", "adlb", "adsl", "advs"))
+  expect_equal(
+    tables,
+    c("adae", "adcm", "adeg", "adex", "adlb", "adsl", "advs")
+  )
 
   pks <- dm::dm_get_all_pks(result)
   expect_true("adsl" %in% pks$table)
