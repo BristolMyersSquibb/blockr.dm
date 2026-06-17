@@ -1031,22 +1031,28 @@
         clearTimeout(card._activeTimer);
         card._activeTimer = setTimeout(() => slider.classList.remove('dm-cf-active'), 1500);
 
+        // Apply silently: the in-block bars / counts / status update live while
+        // dragging, but the R round-trip (and downstream re-eval) is deferred
+        // to the `change` handler below, which fires once on drag-end.
         const mn = card._min;
         const mx = card._max;
         const range = mx - mn;
         if (lo <= mn + range * 0.001 && hi >= mx - range * 0.001) {
-          this._applyFilter(dim, null);
+          this._applyFilter(dim, null, { silent: true });
+        } else if (type === 'date') {
+          this._applyFilter(dim, { min: lo, max: hi, isDate: true }, { silent: true });
         } else {
-          if (type === 'date') {
-            this._applyFilter(dim, { min: lo, max: hi, isDate: true });
-          } else {
-            this._applyFilter(dim, { min: lo, max: hi });
-          }
+          this._applyFilter(dim, { min: lo, max: hi }, { silent: true });
         }
       };
 
+      // Drag-end (mouse-up / key commit): push the resting value to R once.
+      const onChange = () => this._scheduleSubmit();
+
       inputLo.addEventListener('input', onInput);
       inputHi.addEventListener('input', onInput);
+      inputLo.addEventListener('change', onChange);
+      inputHi.addEventListener('change', onChange);
 
       // Apply initial bounds (sets attrs, values, KDE, labels, totalRows).
       this._applyRangeBounds(card, min0, max0);
@@ -1201,7 +1207,12 @@
 
     // -- Filter application -------------------------------------------------
 
-    _applyFilter(dim, value) {
+    // `silent: true` applies the filter in the browser (re-filters crossfilter,
+    // repaints bars / counts / status) but does NOT push to R. Used while a
+    // range/date slider is being dragged so the in-block preview stays live
+    // without re-evaluating downstream blocks on every intermediate value; the
+    // slider's `change` (drag-end) handler submits the resting value.
+    _applyFilter(dim, value, { silent = false } = {}) {
       if (value === null) {
         this.dimensions[dim].filterAll();
         delete this.filters[dim];
@@ -1231,7 +1242,7 @@
       this._syncSiblingKeys();
       this._updateAllCounts(dim);
       this._updateStatus();
-      this._scheduleSubmit();
+      if (!silent) this._scheduleSubmit();
     }
 
     _clearFilter(dim) {
