@@ -52,9 +52,16 @@
       this._renderBody();
     }
 
-    _autoSubmit() {
+    // A value pick is a final, discrete choice — submit it right away so the
+    // preview updates without a debounce delay. Rapid edits (e.g. toggling
+    // several multi-select values) still coalesce via a short debounce.
+    _autoSubmit(delay = 200) {
       clearTimeout(this._debounceTimer);
-      this._debounceTimer = setTimeout(() => this._submit(), 300);
+      if (delay <= 0) {
+        this._submit();
+      } else {
+        this._debounceTimer = setTimeout(() => this._submit(), delay);
+      }
     }
 
     _buildDOM() {
@@ -368,7 +375,8 @@
               } else {
                 cur.values = [String(v)];
               }
-              this._autoSubmit();
+              // Single-select picks are final — submit immediately, no debounce.
+              this._autoSubmit(0);
             }
           });
         } else {
