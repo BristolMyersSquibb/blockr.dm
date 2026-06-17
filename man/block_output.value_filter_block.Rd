@@ -7,9 +7,11 @@
 \method{block_output}{value_filter_block}(x, result, session)
 }
 \description{
-Mirrors the crossfilter block's pattern: delegate to
-\code{block_output.dm_block} when the result is a dm (gives the interactive
-diagram + click-to-preview-table UX), otherwise fall through to the
-default transform-block renderer (which blockr.extra overrides into a
-paginated HTML table when \code{blockr.html_table_preview = TRUE}).
+The block accepts a data frame or a \code{dm}, so the output renderer dispatches
+on the result type — the same pattern as \code{\link[=block_output.crossfilter_block]{block_output.crossfilter_block()}}:
+\itemize{
+\item \code{dm} -> \code{\link[=block_output.dm_block]{block_output.dm_block()}} (interactive diagram + click-to-preview)
+\item data frame -> blockr.extra's dynamic renderer (paginated HTML table) when
+available, otherwise a plain HTML table fallback.
+}
 }

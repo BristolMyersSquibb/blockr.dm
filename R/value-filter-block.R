@@ -619,24 +619,67 @@ normalize_state_for_json <- function(s) {
 
 #' Render the block output preview.
 #'
-#' Mirrors the crossfilter block's pattern: delegate to
-#' `block_output.dm_block` when the result is a dm (gives the interactive
-#' diagram + click-to-preview-table UX), otherwise fall through to the
-#' default transform-block renderer (which blockr.extra overrides into a
-#' paginated HTML table when `blockr.html_table_preview = TRUE`).
+#' The block accepts a data frame or a `dm`, so the output renderer dispatches
+#' on the result type — the same pattern as [block_output.crossfilter_block()]:
+#'   * `dm` -> [block_output.dm_block()] (interactive diagram + click-to-preview)
+#'   * data frame -> blockr.extra's dynamic renderer (paginated HTML table) when
+#'     available, otherwise a plain HTML table fallback.
 #'
 #' @method block_output value_filter_block
 #' @export
 block_output.value_filter_block <- function(x, result, session) {
   if (inherits(result, "dm")) {
-    dm_method <- utils::getS3method(
-      "block_output", "dm_block", optional = TRUE
-    )
-    if (!is.null(dm_method)) {
-      return(dm_method(x, result, session))
-    }
+    return(block_output.dm_block(x, result, session))
   }
-  NextMethod()
+  # Data frame or other: use blockr.extra's dynamic renderer if available,
+  # otherwise a simple HTML table preview.
+  render_fn <- tryCatch(
+    get("render_dynamic_output", asNamespace("blockr.extra")),
+    error = function(e) NULL
+  )
+  if (!is.null(render_fn)) {
+    render_fn(result, x, session)
+  } else {
+    shiny::renderUI({
+      if (!is.data.frame(result)) return(NULL)
+      dat <- utils::head(result, 100)
+      shiny::tags$div(
+        style = "max-height: 400px; overflow: auto;",
+        shiny::tags$table(
+          class = "table table-sm table-striped",
+          shiny::tags$thead(shiny::tags$tr(
+            lapply(names(dat), function(n) shiny::tags$th(n))
+          )),
+          shiny::tags$tbody(
+            lapply(seq_len(nrow(dat)), function(i) {
+              shiny::tags$tr(lapply(dat[i, ], function(v) {
+                shiny::tags$td(as.character(v))
+              }))
+            })
+          )
+        )
+      )
+    })
+  }
+}
+
+#' Custom render trigger for the value filter block.
+#'
+#' Mirrors [block_render_trigger.crossfilter_block()] / the `dm_block` override:
+#' the default transform-block trigger reaches for pagination board options that
+#' aren't set for this block, which leaves the dm diagram / table preview
+#' unrendered. The block manages its own output, so no extra trigger is needed.
+#'
+#' @param x The block object.
+#' @param session Shiny session.
+#'
+#' @method block_render_trigger value_filter_block
+#' @export
+block_render_trigger.value_filter_block <- function(
+  x,
+  session = blockr.core::get_session()
+) {
+  NULL
 }
 
 #' HTML dependency for the value filter block JS + CSS
