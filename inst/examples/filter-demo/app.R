@@ -19,7 +19,7 @@ pkgload::load_all("blockr.extra")
 pkgload::load_all("blockr.sandbox")
 
 
-register_bi_blocks()
+# register_dm_blocks()
 
 # Demo data with column labels and haven-style value labels so the filter
 # select shows both.

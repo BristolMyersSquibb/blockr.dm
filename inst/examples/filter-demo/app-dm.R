@@ -18,8 +18,6 @@ pkgload::load_all("blockr.dm")
 pkgload::load_all("blockr.dplyr")
 pkgload::load_all("blockr.extra")
 
-register_bi_blocks()
-
 # Small demo dm: policies + claims sharing policy_id.
 demo_dm <- dm::as_dm(list(
   policies = data.frame(
