@@ -129,9 +129,15 @@ new_value_filter_block <- function(
 
         # JS -> R: user changed state.
         shiny::observeEvent(input$filter_input, {
-          self_write$active <- TRUE
           incoming <- migrate_value_filter_state(input$filter_input)
           s <- enforce_single_rule(incoming, shiny::isolate(data()))
+          # Suppress the R->JS echo only when the server left the JS-sent state
+          # untouched. When enforce_single_rule fills a single-select default
+          # (the lazy widget can no longer prefill it client-side) or drops a
+          # stale entry, JS still holds the un-corrected state — so we MUST
+          # echo the correction back, or the widget shows an empty selection
+          # while the filter is silently applied.
+          self_write$active <- identical(s$columns, incoming$columns)
           r_state(s)
         })
 
