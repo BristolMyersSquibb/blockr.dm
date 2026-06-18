@@ -84,6 +84,7 @@ new_dm_write_block <- function(
           r_format <- shiny::reactiveVal(format)
           r_auto_write <- shiny::reactiveVal(auto_write)
           r_write_status <- shiny::reactiveVal("")
+          r_dir_ok <- shiny::reactiveVal(TRUE) # File-access policy gate
 
           # Data directory from board options
           data_dir_reactive <- shiny::reactive({
@@ -155,9 +156,40 @@ new_dm_write_block <- function(
             nzchar(directory) && dir.exists(path.expand(directory))
           )
 
+          # Deployment file-access policy: reject write targets outside the
+          # allowed roots. Drives r_dir_ok (gating the write-expression paths)
+          # and surfaces the rejection on the status line.
+          shiny::observeEvent(r_directory(), {
+            dir_val <- r_directory()
+            if (!nzchar(dir_val)) {
+              r_dir_ok(TRUE)
+              return()
+            }
+            tryCatch(
+              {
+                blockr.io::resolve_and_check(dir_val, "write")
+                r_dir_ok(TRUE)
+              },
+              error = function(e) {
+                r_dir_ok(FALSE)
+                r_write_status(sprintf("✗ %s", conditionMessage(e)))
+              }
+            )
+          }, ignoreNULL = FALSE)
+
           # Directory creation
           shiny::observeEvent(r_directory(), {
             shiny::req(r_directory())
+            # Policy check inline (not via r_dir_ok) so a rejected path can
+            # never create a directory due to observer ordering.
+            blocked <- tryCatch(
+              {
+                blockr.io::resolve_and_check(r_directory(), "write")
+                FALSE
+              },
+              error = function(e) TRUE
+            )
+            shiny::req(!blocked)
             existed <- dir.exists(r_directory())
             r_dir_existed(existed)
             if (!existed) {
@@ -184,6 +216,7 @@ new_dm_write_block <- function(
             shiny::req(data)
             shiny::req(nzchar(r_directory()))
             shiny::req(!r_auto_write())
+            shiny::req(r_dir_ok()) # Deployment file-access policy
 
             expr <- dm_write_expr(
               directory = r_directory(),
@@ -215,6 +248,7 @@ new_dm_write_block <- function(
             if (nzchar(r_directory())) {
               if (r_auto_write()) {
                 shiny::req(data)
+                shiny::req(r_dir_ok()) # Deployment file-access policy
 
                 expr <- dm_write_expr(
                   directory = r_directory(),
@@ -314,7 +348,13 @@ new_dm_write_block <- function(
           shiny::observe({
             dir <- r_directory()
             existed <- r_dir_existed()
-            if (nzchar(dir) && existed) {
+            if (nzchar(dir) && !r_dir_ok()) {
+              session$sendCustomMessage("blockr-path-status", list(
+                id = session$ns("dir_path-path_text"),
+                text = "Blocked",
+                state = "error"
+              ))
+            } else if (nzchar(dir) && existed) {
               session$sendCustomMessage("blockr-path-status", list(
                 id = session$ns("dir_path-path_text"),
                 text = "Directory",

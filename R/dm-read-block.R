@@ -91,6 +91,21 @@ new_dm_read_block <- function(
           # Load button gating: armed expression
           r_expr_armed <- shiny::reactiveVal(NULL)
 
+          # Non-empty when the deployment's file-access policy rejected the
+          # current path; surfaced as an error on the path-status badge.
+          r_path_blocked <- shiny::reactiveVal("")
+
+          # The file-access policy applies to user-chosen filesystem paths, not
+          # to the app's own sandboxes: uploads land under upload_path, so a
+          # path there is exempt (mirrors blockr.io leaving uploads alone).
+          is_policed_path <- function(p) {
+            np <- normalizePath(p, winslash = "/", mustWork = FALSE)
+            roots <- normalizePath(
+              c(tempdir(), upload_path), winslash = "/", mustWork = FALSE
+            )
+            !any(startsWith(np, paste0(roots, "/")))
+          }
+
           # Data directory from board options
           data_dir_reactive <- shiny::reactive({
             blockr.core::coal(
@@ -135,12 +150,29 @@ new_dm_read_block <- function(
               resolved <- file.path(data_dir, path_val)
             }
 
-            if (file.exists(resolved) || dir.exists(resolved)) {
+            # Deployment file-access policy: reject paths outside the allowed
+            # roots before the path can be read. tryCatch so a stop() from the
+            # verifier becomes a block error, not an uncaught observer crash.
+            blocked <- tryCatch(
+              {
+                blockr.io::resolve_and_check(resolved, "read")
+                ""
+              },
+              error = function(e) conditionMessage(e)
+            )
+
+            if (nzchar(blocked)) {
+              r_path_blocked(blocked)
+              r_file_path(character())
+              r_input_type("unknown")
+            } else if (file.exists(resolved) || dir.exists(resolved)) {
+              r_path_blocked("")
               named_path <- stats::setNames(path_val, basename(resolved))
               r_path(named_path)
               r_file_path(named_path)
               r_input_type(detect_dm_input_type(resolved))
             } else {
+              r_path_blocked("")
               r_file_path(character())
               r_input_type("unknown")
             }
@@ -201,6 +233,17 @@ new_dm_read_block <- function(
               resolved <- file.path(data_dir, path_val)
             }
 
+            # Don't list files outside the allowed roots (covers a restored
+            # board whose path skipped the path observer).
+            ok <- !is_policed_path(resolved) || tryCatch(
+              {
+                blockr.io::resolve_and_check(resolved, "read")
+                TRUE
+              },
+              error = function(e) FALSE
+            )
+            shiny::req(ok)
+
             discover_dm_tables(resolved, r_input_type())
           })
 
@@ -250,6 +293,24 @@ new_dm_read_block <- function(
               resolved <- file.path(data_dir, path_val)
             }
 
+            # Deployment file-access policy: reject before arming the read.
+            blocked <- if (!is_policed_path(resolved)) {
+              ""
+            } else {
+              tryCatch(
+                {
+                  blockr.io::resolve_and_check(resolved, "read")
+                  ""
+                },
+                error = function(e) conditionMessage(e)
+              )
+            }
+            if (nzchar(blocked)) {
+              r_path_blocked(blocked)
+              return()
+            }
+            r_path_blocked("")
+
             r_expr_armed(
               dm_read_expr(resolved, input_type, selected)
             )
@@ -266,11 +327,25 @@ new_dm_read_block <- function(
               ) {
                 resolved <- file.path(data_dir, resolved)
               }
-              r_expr_armed(dm_read_expr(
-                resolved,
-                detect_dm_input_type(resolved),
-                selected_tables
-              ))
+              # Restored boards bypass the path observer, so re-check the
+              # deployment file-access policy here before arming the read.
+              ok <- !is_policed_path(resolved) || tryCatch(
+                {
+                  blockr.io::resolve_and_check(resolved, "read")
+                  TRUE
+                },
+                error = function(e) {
+                  r_path_blocked(conditionMessage(e))
+                  FALSE
+                }
+              )
+              if (ok) {
+                r_expr_armed(dm_read_expr(
+                  resolved,
+                  detect_dm_input_type(resolved),
+                  selected_tables
+                ))
+              }
             }) |> shiny::bindEvent(TRUE, once = TRUE)
           }
 
@@ -284,7 +359,13 @@ new_dm_read_block <- function(
               serialized = "R data", rdata = "RData"
             )
 
-            if (length(paths) > 0 && input_type != "unknown") {
+            if (nzchar(r_path_blocked())) {
+              session$sendCustomMessage("blockr-path-status", list(
+                id = session$ns("file_path-path_text"),
+                text = "Blocked",
+                state = "error"
+              ))
+            } else if (length(paths) > 0 && input_type != "unknown") {
               label <- unname(type_labels[input_type]) %||% "File"
               session$sendCustomMessage("blockr-path-status", list(
                 id = session$ns("file_path-path_text"),
