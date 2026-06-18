@@ -172,7 +172,7 @@ new_dm_write_block <- function(
               },
               error = function(e) {
                 r_dir_ok(FALSE)
-                r_write_status(sprintf("✗ %s", conditionMessage(e)))
+                r_write_status(sprintf("\u2717 %s", conditionMessage(e)))
               }
             )
           }, ignoreNULL = FALSE)
