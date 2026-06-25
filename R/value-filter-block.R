@@ -155,10 +155,17 @@ new_value_filter_block <- function(
         })
 
         list(
+          # NB: the expression *shape* depends on the input type — a data frame
+          # yields `dplyr::filter()`, a `dm` yields `dm::dm_filter()`, and value
+          # casting reads the column's type. So `expr` must track `data()`, NOT
+          # isolate it: on restore the upstream is often not ready yet (NULL), in
+          # which case the df branch is built; if the real input turns out to be
+          # a `dm`, evaluating that wrong-shaped expression errors until the
+          # value is re-edited. Depending on `data()` rebuilds on the real input.
           expr = shiny::reactive({
             make_filter_block_expr(
               r_state()$columns %||% list(),
-              shiny::isolate(data())
+              data()
             )
           }),
           state = list(state = r_state)
