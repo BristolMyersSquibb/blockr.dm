@@ -130,9 +130,6 @@ dm_example_choices <- function() {
   if (requireNamespace("pharmaverseadam", quietly = TRUE)) {
     choices[["Pharmaverse ADaM (pharmaverseadam)"]] <- "pharmaverseadam"
   }
-  if (requireNamespace("bmsExampleData", quietly = TRUE)) {
-    choices[["BMS Example ADaM (bmsExampleData)"]] <- "bmsexampledata"
-  }
   if (requireNamespace("nycflights13", quietly = TRUE)) {
     choices[["NYC Flights (nycflights13)"]] <- "nycflights13"
   }
@@ -153,7 +150,6 @@ dm_example_expr <- function(id) {
     bi_star_schema = bi_star_schema_expr(),
     safetydata_adam = safetydata_adam_expr(),
     pharmaverseadam = pharmaverseadam_expr(),
-    bmsexampledata = bmsexampledata_expr(),
     nycflights13 = nycflights13_expr(),
     insurancedata = insurancedata_expr(),
     stop("Unknown dm example: ", id)
@@ -281,31 +277,6 @@ pharmaverseadam_expr <- function() {
     result <- dm::dm_add_fk(result, adcm, USUBJID, adsl)
     result <- dm::dm_add_fk(result, adeg, USUBJID, adsl)
     result <- dm::dm_add_fk(result, adex, USUBJID, adsl)
-    result
-  }))
-}
-
-bmsexampledata_expr <- function() {
-  quote(local({
-    adsl     <- bmsExampleData::adsl
-    adae     <- bmsExampleData::adae
-    adcore   <- bmsExampleData::adcore
-    addv     <- bmsExampleData::addv
-    adexsum  <- bmsExampleData::adexsum
-    adqs2    <- bmsExampleData::adqs2
-    adqspref <- bmsExampleData::adqspref
-
-    result <- dm::dm(
-      adsl = adsl, adae = adae, adcore = adcore, addv = addv,
-      adexsum = adexsum, adqs2 = adqs2, adqspref = adqspref
-    )
-    result <- dm::dm_add_pk(result, adsl, USUBJID)
-    result <- dm::dm_add_fk(result, adae, USUBJID, adsl)
-    result <- dm::dm_add_fk(result, adcore, USUBJID, adsl)
-    result <- dm::dm_add_fk(result, addv, USUBJID, adsl)
-    result <- dm::dm_add_fk(result, adexsum, USUBJID, adsl)
-    result <- dm::dm_add_fk(result, adqs2, USUBJID, adsl)
-    result <- dm::dm_add_fk(result, adqspref, USUBJID, adsl)
     result
   }))
 }
