@@ -3,15 +3,26 @@ library(shiny)
 library(blockr.core)
 library(dm)
 
-# The shinytest2 tests launch headless Chrome via chromote, which leaves
-# `com.google.Chrome.*` scratch dirs in the session temp root. Those trip
-# R CMD check's "checking for detritus in the temp directory" NOTE -- not
-# anything blockr.dm writes. Sweep them after the whole test run (registered
-# on testthat's teardown_env so it fires once, last). On Linux unlink() drops
-# the directory entries even if Chrome still holds them open, so the detritus
-# check no longer sees them.
+# The shinytest2 tests drive headless Chrome through chromote's default
+# browser object. That Chrome stays alive past testthat's teardown (it only
+# dies when the test process exits), so it keeps (re)creating
+# `com.google.Chrome.*` scratch dirs in the temp root that R CMD check scans
+# for "checking for detritus in the temp directory" -- a NOTE that fails CI
+# under the strict fail-on-any-NOTE policy, even though the dirs aren't
+# anything blockr.dm writes. So: stop that Chrome first, THEN sweep its
+# leftovers (registered on teardown_env so it runs once, last). Killing the
+# process before unlinking is what makes the sweep stick -- otherwise Chrome
+# recreates a fresh dir after we delete. Scoped strictly to
+# com.google.Chrome.* so nothing else is touched.
 withr::defer(
   {
+    if (requireNamespace("chromote", quietly = TRUE) &&
+        isTRUE(chromote::has_default_chromote_object())) {
+      obj <- chromote::default_chromote_object()
+      proc <- tryCatch(obj$get_browser()$get_process(), error = function(e) NULL)
+      try(obj$close(), silent = TRUE)
+      if (!is.null(proc)) try(proc$kill(), silent = TRUE)
+    }
     roots <- unique(c(
       tempdir(),
       dirname(tempdir()),
