@@ -43,6 +43,7 @@ Suggests:
     blockr.dag,
     blockr.dock,
     bslib,
+    chromote,
     DBI,
     dbplyr,
     insuranceData,
