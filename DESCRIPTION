@@ -42,7 +42,6 @@ Suggests:
     blockr,
     blockr.dag,
     blockr.dock,
-    bmsExampleData,
     bslib,
     DBI,
     dbplyr,
@@ -66,5 +65,4 @@ Remotes:
     BristolMyersSquibb/blockr.ui,
     BristolMyersSquibb/blockr,
     BristolMyersSquibb/blockr.dag,
-    BristolMyersSquibb/blockr.dock,
-    BristolMyersSquibb/bmsExampleData
+    BristolMyersSquibb/blockr.dock
