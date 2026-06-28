@@ -24,6 +24,7 @@ CROSSFILTER_EMPTY <- "__EMPTY__" # nolint object_name_linter
 #' @param rng_f Named list of numeric(2) vectors (range filters)
 #' @param exclude_dim Optional dimension name to skip
 #' @return Filtered data frame
+#' @importFrom rlang .data :=
 #' @keywords internal
 apply_crossfilter_filters <- function(df, cat_f, rng_f, exclude_dim = NULL) {
   if (!is.null(exclude_dim)) {
