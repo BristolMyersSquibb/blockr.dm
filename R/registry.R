@@ -3,7 +3,8 @@
 #' Registers the dm blocks with blockr.
 #'
 #' @export
-#' @importFrom blockr.core register_blocks
+#' @importFrom blockr.core register_blocks new_block_args new_block_arg
+#'   arg_string arg_number arg_integer arg_boolean arg_enum arg_array arg_object
 register_dm_blocks <- function() {
   blockr.core::register_blocks(
     c(
@@ -117,6 +118,128 @@ register_dm_blocks <- function() {
       "lightning",
       "database",
       "filter"
+    ),
+    guidance = c(
+      # new_dm_read_block:
+      paste(
+        "Reads tabular data from disk into a dm (data model) object. Use as",
+        "the entry point when working with multi-table datasets from Excel /",
+        "ZIP / directories. The output is a dm that downstream dm_* blocks",
+        "can filter, select, join, and flatten."
+      ),
+      # new_dm_write_block:
+      paste(
+        "Write a dm object back to disk in Excel / CSV / Parquet form.",
+        "Use as a terminal block to export a curated dm."
+      ),
+      # new_dm_block:
+      paste(
+        "Wraps a set of data frames into a dm (data model) object. Use when",
+        "the upstream already provides multiple data frames \u2014 typically via",
+        "bind_cols or multiple file loads \u2014 and you want to treat them as a",
+        "related table collection. For CDISC/ADaM data prefer cdisc_dm_block",
+        "which knows the USUBJID convention."
+      ),
+      # new_cdisc_dm_block:
+      paste(
+        "Turns a plain dm of CDISC/ADaM tables (adsl, adae, adlbc, ...) into",
+        "a keyed dm where USUBJID is the primary key on ADSL and the foreign",
+        "key on every other table. Always place this block immediately after",
+        "loading CDISC data and before any filtering, joining, or crossfilter",
+        "work. Without keys, downstream dm blocks can't cascade filters."
+      ),
+      # new_dm_select_block:
+      paste(
+        "Narrows a dm to a subset of its tables. Use to trim large dm objects",
+        "before flattening or displaying."
+      ),
+      # new_dm_add_keys_block:
+      paste(
+        "Explicitly sets a primary/foreign key relationship on a dm. Use when",
+        "`dm_block(infer_keys=FALSE)` was used or when the relationships need",
+        "manual correction. For CDISC data, prefer cdisc_dm_block which sets",
+        "these automatically."
+      ),
+      # new_dm_filter_block:
+      paste(
+        "Filter a dm by one or more conditions on ONE selected table;",
+        "matching rows cascade to all related tables via the dm's FK",
+        "relationships. Reuses blockr.dplyr's type-aware filter UI",
+        "(categorical multi-select, numeric operator+value, or free R",
+        "expression) combined with & or |.",
+        "\n\nDo NOT use blockr.dplyr::filter_block on a dm - it doesn't",
+        "understand cascading."
+      ),
+      # new_dm_filter_by_data_block:
+      paste(
+        "Filters a dm by matching rows in a secondary data frame input (`by`).",
+        "Use to bridge drill-down / table outputs (data frames) back into a",
+        "dm: e.g. click a patient on a trajectory chart, feed the resulting",
+        "data frame in via `by`, and all downstream dm consumers (patient",
+        "profile, flatten, summaries) see the restricted dm.",
+        "\n\nThe block has TWO inputs: \"data\" (the dm) and \"by\" (the",
+        "filtering data frame). dm::dm_filter cascades via FKs, so setting",
+        "`table = \"adsl\"` with `key_col = \"USUBJID\"` restricts every",
+        "related table in one step. Any table/column combination that exists",
+        "in both inputs works."
+      ),
+      # new_dm_pull_block:
+      paste(
+        "Extracts a single table from a dm as a plain data frame, dropping",
+        "the dm wrapper. Use when a downstream block only accepts a data",
+        "frame (e.g. blockr.dplyr blocks, most plot blocks) but the upstream",
+        "is a dm."
+      ),
+      # new_dm_flatten_block:
+      paste(
+        "Flattens a dm into a single data frame by chained joins starting",
+        "from `start_table`. Use when you need a plain wide table for",
+        "downstream plotting or modeling."
+      ),
+      # new_dm_nested_view_block:
+      paste(
+        "Renders a dm as a nested expandable table. Use for interactive",
+        "exploration of relationship structure. Purely a display block \u2014 it",
+        "doesn't transform data."
+      ),
+      # new_temporal_join_block:
+      paste(
+        "Plain two-table temporal join (no dm wrapper). Joins x and y on",
+        "`by` AND filters to rows where y's `right_date` is within",
+        "`window_days` of x's `left_date`. Use this when you have two plain",
+        "data frames. For dm objects, use dm_temporal_join_block."
+      ),
+      # new_dm_temporal_join_block:
+      paste(
+        "Temporal join between two tables within a dm, filtering the right",
+        "table to rows whose date falls within `window_days` of the left",
+        "date. Use for \"AE on treatment\" style windows: which events occur",
+        "within N days of treatment start / end / visit.",
+        "\n\nMap common requests:",
+        "\n- \"AEs within 30 days of treatment start\" ->",
+        "left_table=\"adsl\", left_date=\"TRTSDT\", right_table=\"adae\",",
+        "right_date=\"ASTDT\", window_days=30, direction=\"after\"",
+        "\n- \"concomitant meds within a week before baseline\" ->",
+        "left_date=\"TRTSDT\", right_date=\"CMSTDT\", window_days=7,",
+        "direction=\"before\""
+      ),
+      # new_crossfilter_block:
+      paste(
+        "Interactive client-side crossfilter for data frames or dm objects.",
+        "Renders a linked bar/histogram for each `active_dims` column;",
+        "clicking a bar filters all downstream views. Categorical filters",
+        "live in `filters`, numeric/date ranges in `range_filters`.",
+        "\n\nUse whenever the user wants linked filtering across multiple",
+        "views. Don't reimplement by chaining filter + join \u2014 this single",
+        "block delivers the full brush/linked-filter UX."
+      ),
+      # new_dm_example_block:
+      paste(
+        "Loads a pre-built dm from the blockr.dm example catalog. Use for",
+        "demos and testing \u2014 no file paths needed."
+      ),
+      # new_value_filter_block:
+      ""
     ),
     arguments = list(
       dm_read_arguments(),
