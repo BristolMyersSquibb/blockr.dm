@@ -1,446 +1,450 @@
 # Argument metadata helpers for blockr.dm blocks.
 #
-# Returns named character vectors with `examples` and `prompt` attributes
-# that the MCP server surfaces as typed parameter documentation.
+# Each helper returns a `new_block_args()` object describing the block's
+# constructor arguments (description + worked example + optional type
+# descriptor). The free-text construction guidance that used to live in the
+# legacy `prompt` attribute now lives in the `guidance` vector of the
+# `register_blocks()` call in registry.R.
 
 #' @noRd
 dm_read_arguments <- function() {
-  structure(
-    c(
-      path = paste0(
+  new_block_args(
+    path = new_block_arg(
+      paste0(
         "Character. Path to a file or directory to read. Supported: ",
         ".xlsx / .xls (one sheet per table), .zip of per-table files, or a ",
         "directory containing per-table CSV / Parquet / Feather files."
       ),
-      selected_tables = paste0(
+      example = "/data/trial-01.xlsx",
+      type = arg_string()
+    ),
+    selected_tables = new_block_arg(
+      paste0(
         "Optional character vector restricting which tables to load. null ",
         "or unset loads every table found at `path`."
-      )
-    ),
-    examples = list(
-      path = "/data/trial-01.xlsx",
-      selected_tables = list("adsl", "adae", "adlbc")
-    ),
-    prompt = paste(
-      "Reads tabular data from disk into a dm (data model) object. Use as",
-      "the entry point when working with multi-table datasets from Excel /",
-      "ZIP / directories. The output is a dm that downstream dm_* blocks",
-      "can filter, select, join, and flatten."
+      ),
+      example = list("adsl", "adae", "adlbc"),
+      type = arg_array(arg_string())
     )
   )
 }
 
 #' @noRd
 dm_write_arguments <- function() {
-  structure(
-    c(
-      directory = "Character. Output directory path.",
-      filename = paste0(
+  new_block_args(
+    directory = new_block_arg(
+      "Character. Output directory path.",
+      example = "/out/",
+      type = arg_string()
+    ),
+    filename = new_block_arg(
+      paste0(
         "Character. Base filename (no extension). Extension is derived ",
         "from `format`. For Excel, one file; for CSV / Parquet, one file per table."
       ),
-      format = paste0(
+      example = "trial-01-snapshot",
+      type = arg_string()
+    ),
+    format = new_block_arg(
+      paste0(
         "Output format. One of \"excel\", \"csv\", or \"parquet\". ",
         "Default \"excel\"."
       ),
-      auto_write = paste0(
+      example = "excel",
+      type = arg_enum(c("excel", "csv", "parquet"))
+    ),
+    auto_write = new_block_arg(
+      paste0(
         "Logical. TRUE writes on every upstream update; FALSE (default) ",
         "writes only on explicit action."
-      )
-    ),
-    examples = list(
-      directory = "/out/",
-      filename = "trial-01-snapshot",
-      format = "excel",
-      auto_write = FALSE
-    ),
-    prompt = paste(
-      "Write a dm object back to disk in Excel / CSV / Parquet form.",
-      "Use as a terminal block to export a curated dm."
+      ),
+      example = FALSE,
+      type = arg_boolean()
     )
   )
 }
 
 #' @noRd
 dm_block_arguments <- function() {
-  structure(
-    c(
-      infer_keys = paste0(
+  new_block_args(
+    infer_keys = new_block_arg(
+      paste0(
         "Logical. TRUE (default) auto-infers primary and foreign key ",
         "relationships from matching column names. FALSE leaves the dm ",
         "key-less (use dm_add_keys_block to set keys explicitly)."
-      )
-    ),
-    examples = list(infer_keys = TRUE),
-    prompt = paste(
-      "Wraps a set of data frames into a dm (data model) object. Use when",
-      "the upstream already provides multiple data frames \u2014 typically via",
-      "bind_cols or multiple file loads \u2014 and you want to treat them as a",
-      "related table collection. For CDISC/ADaM data prefer cdisc_dm_block",
-      "which knows the USUBJID convention."
+      ),
+      example = TRUE,
+      type = arg_boolean()
     )
   )
 }
 
 #' @noRd
 cdisc_dm_arguments <- function() {
-  structure(
-    c(
-      set_keys = paste0(
+  new_block_args(
+    set_keys = new_block_arg(
+      paste0(
         "Logical. TRUE (default) sets USUBJID as primary key on ADSL and ",
         "foreign key on all other tables. Required for any cascading dm ",
         "filter to work."
       ),
-      dedup_cols = paste0(
+      example = TRUE,
+      type = arg_boolean()
+    ),
+    dedup_cols = new_block_arg(
+      paste0(
         "Logical. TRUE (default) removes duplicated subject-level columns ",
         "(AGE, SEX, ARM, etc.) from non-ADSL tables so they live only on ",
         "ADSL. Avoids column-name collisions in downstream joins."
-      )
-    ),
-    examples = list(set_keys = TRUE, dedup_cols = TRUE),
-    prompt = paste(
-      "Turns a plain dm of CDISC/ADaM tables (adsl, adae, adlbc, ...) into",
-      "a keyed dm where USUBJID is the primary key on ADSL and the foreign",
-      "key on every other table. Always place this block immediately after",
-      "loading CDISC data and before any filtering, joining, or crossfilter",
-      "work. Without keys, downstream dm blocks can't cascade filters."
+      ),
+      example = TRUE,
+      type = arg_boolean()
     )
   )
 }
 
 #' @noRd
 dm_select_arguments <- function() {
-  structure(
-    c(
-      tables = paste0(
+  new_block_args(
+    tables = new_block_arg(
+      paste0(
         "Character vector of table names to keep in the dm. Tables not ",
         "listed are dropped. Relationships to dropped tables are removed."
-      )
-    ),
-    examples = list(tables = list("adsl", "adae")),
-    prompt = paste(
-      "Narrows a dm to a subset of its tables. Use to trim large dm objects",
-      "before flattening or displaying."
+      ),
+      example = list("adsl", "adae"),
+      type = arg_array(arg_string())
     )
   )
 }
 
 #' @noRd
 dm_add_keys_arguments <- function() {
-  structure(
-    c(
-      pk_table = "Character. Name of the table to receive the primary key.",
-      pk_column = "Character. Column name on `pk_table` to mark as the primary key.",
-      fk_tables = paste0(
+  new_block_args(
+    pk_table = new_block_arg(
+      "Character. Name of the table to receive the primary key.",
+      example = "adsl",
+      type = arg_string()
+    ),
+    pk_column = new_block_arg(
+      "Character. Column name on `pk_table` to mark as the primary key.",
+      example = "USUBJID",
+      type = arg_string()
+    ),
+    fk_tables = new_block_arg(
+      paste0(
         "Character vector of table names that should get a foreign key ",
         "pointing to `pk_table`."
       ),
-      fk_column = paste0(
+      example = list("adae", "adlbc"),
+      type = arg_array(arg_string())
+    ),
+    fk_column = new_block_arg(
+      paste0(
         "Character. Column name on each `fk_tables` entry to mark as the ",
         "foreign key. Must match `pk_column` in meaning, and usually in name."
-      )
-    ),
-    examples = list(
-      pk_table = "adsl",
-      pk_column = "USUBJID",
-      fk_tables = list("adae", "adlbc"),
-      fk_column = "USUBJID"
-    ),
-    prompt = paste(
-      "Explicitly sets a primary/foreign key relationship on a dm. Use when",
-      "`dm_block(infer_keys=FALSE)` was used or when the relationships need",
-      "manual correction. For CDISC data, prefer cdisc_dm_block which sets",
-      "these automatically."
+      ),
+      example = "USUBJID",
+      type = arg_string()
     )
   )
 }
 
 #' @noRd
 dm_filter_arguments <- function() {
-  structure(
-    c(
-      table = paste0(
+  new_block_args(
+    table = new_block_arg(
+      paste0(
         "Character. Name of the table within the dm where conditions are ",
         "applied. Rows removed from this table cascade to related tables ",
         "via the dm's FK relationships."
       ),
-      state = paste0(
+      example = "adsl",
+      type = arg_string()
+    ),
+    # `state` is an object wrapping a polymorphic-union conditions array
+    # (values | numeric | expr). Every possible condition field is declared;
+    # the non-universal ones are required = FALSE so the worked example
+    # (which uses only the `values` subset) still conforms.
+    state = new_block_arg(
+      paste0(
         "List with `conditions` and `operator`. Matches the state format ",
         "of blockr.dplyr::new_filter_block - condition types `values`, ",
         "`numeric`, and `expr`, combined with `&` or `|`."
-      )
-    ),
-    examples = list(
-      table = "adsl",
-      state = list(
+      ),
+      example = list(
         conditions = list(list(
           type = "values", column = "ARM",
           values = list("Drug A"), mode = "include"
         )),
         operator = "&"
+      ),
+      type = arg_object(
+        conditions = arg_array(
+          arg_object(
+            type = arg_enum(c("values", "numeric", "expr")),
+            column = arg_string(required = FALSE),
+            values = arg_array(arg_string(), required = FALSE),
+            mode = arg_enum(c("include", "exclude"), required = FALSE),
+            op = arg_enum(c(">", ">=", "<", "<="), required = FALSE),
+            value = arg_number(required = FALSE),
+            expr = arg_string(required = FALSE)
+          )
+        ),
+        operator = arg_enum(c("&", "|"))
       )
-    ),
-    prompt = paste(
-      "Filter a dm by one or more conditions on ONE selected table;",
-      "matching rows cascade to all related tables via the dm's FK",
-      "relationships. Reuses blockr.dplyr's type-aware filter UI",
-      "(categorical multi-select, numeric operator+value, or free R",
-      "expression) combined with & or |.",
-      "\n\nDo NOT use blockr.dplyr::filter_block on a dm - it doesn't",
-      "understand cascading."
     )
   )
 }
 
 #' @noRd
 dm_filter_by_data_arguments <- function() {
-  structure(
-    c(
-      table = paste0(
+  new_block_args(
+    table = new_block_arg(
+      paste0(
         "Character. Name of the dm table to filter. Rows whose `key_col` ",
         "value is absent from `by[[key_col]]` are dropped; matching rows ",
         "cascade to related tables via FKs. Default \"adsl\"."
       ),
-      key_col = paste0(
+      example = "adsl",
+      type = arg_string()
+    ),
+    key_col = new_block_arg(
+      paste0(
         "Character. Column used for the match. Must exist in both ",
         "`by` (the second input data frame) and `table` (the selected dm ",
         "table). Default \"USUBJID\"."
       ),
-      distinct_only = paste0(
+      example = "USUBJID",
+      type = arg_string()
+    ),
+    distinct_only = new_block_arg(
+      paste0(
         "Logical. TRUE (default) deduplicates `by[[key_col]]` before ",
         "matching. FALSE passes the raw column through."
-      )
-    ),
-    examples = list(
-      table = "adsl",
-      key_col = "USUBJID",
-      distinct_only = TRUE
-    ),
-    prompt = paste(
-      "Filters a dm by matching rows in a secondary data frame input (`by`).",
-      "Use to bridge drill-down / table outputs (data frames) back into a",
-      "dm: e.g. click a patient on a trajectory chart, feed the resulting",
-      "data frame in via `by`, and all downstream dm consumers (patient",
-      "profile, flatten, summaries) see the restricted dm.",
-      "\n\nThe block has TWO inputs: \"data\" (the dm) and \"by\" (the",
-      "filtering data frame). dm::dm_filter cascades via FKs, so setting",
-      "`table = \"adsl\"` with `key_col = \"USUBJID\"` restricts every",
-      "related table in one step. Any table/column combination that exists",
-      "in both inputs works."
+      ),
+      example = TRUE,
+      type = arg_boolean()
     )
   )
 }
 
 #' @noRd
 dm_pull_arguments <- function() {
-  structure(
-    c(
-      table = "Character. Name of the table to extract as a data frame."
-    ),
-    examples = list(table = "adsl"),
-    prompt = paste(
-      "Extracts a single table from a dm as a plain data frame, dropping",
-      "the dm wrapper. Use when a downstream block only accepts a data",
-      "frame (e.g. blockr.dplyr blocks, most plot blocks) but the upstream",
-      "is a dm."
+  new_block_args(
+    table = new_block_arg(
+      "Character. Name of the table to extract as a data frame.",
+      example = "adsl",
+      type = arg_string()
     )
   )
 }
 
 #' @noRd
 dm_flatten_arguments <- function() {
-  structure(
-    c(
-      start_table = paste0(
+  new_block_args(
+    start_table = new_block_arg(
+      paste0(
         "Character. Table to flatten from \u2014 becomes the left side of every ",
         "join. Output row count equals this table's row count (for left joins)."
       ),
-      include_tables = paste0(
+      example = "adsl",
+      type = arg_string()
+    ),
+    include_tables = new_block_arg(
+      paste0(
         "Character vector. Tables to join into `start_table`. Empty vector ",
         "flattens the full dm by following all related tables."
       ),
-      join_type = paste0(
+      example = list("adae", "adlbc"),
+      type = arg_array(arg_string())
+    ),
+    join_type = new_block_arg(
+      paste0(
         "Join type to use throughout. One of \"left\" (default), \"inner\", ",
         "\"full\", \"right\"."
       ),
-      recursive = paste0(
+      example = "left",
+      type = arg_enum(c("left", "inner", "full", "right"))
+    ),
+    recursive = new_block_arg(
+      paste0(
         "Logical. TRUE (default) follows multi-hop relationships through ",
         "the FK graph. FALSE joins only direct neighbors of `start_table`."
-      )
-    ),
-    examples = list(
-      start_table = "adsl",
-      include_tables = list("adae", "adlbc"),
-      join_type = "left",
-      recursive = TRUE
-    ),
-    prompt = paste(
-      "Flattens a dm into a single data frame by chained joins starting",
-      "from `start_table`. Use when you need a plain wide table for",
-      "downstream plotting or modeling."
+      ),
+      example = TRUE,
+      type = arg_boolean()
     )
   )
 }
 
 #' @noRd
 dm_nested_view_arguments <- function() {
-  structure(
-    c(
-      root_table = paste0(
+  new_block_args(
+    root_table = new_block_arg(
+      paste0(
         "Character vector. Root table(s) to render at the top level. Child ",
         "tables are shown as expandable rows via FK relationships."
-      )
-    ),
-    examples = list(root_table = list("adsl")),
-    prompt = paste(
-      "Renders a dm as a nested expandable table. Use for interactive",
-      "exploration of relationship structure. Purely a display block \u2014 it",
-      "doesn't transform data."
+      ),
+      example = list("adsl"),
+      type = arg_array(arg_string())
     )
   )
 }
 
 #' @noRd
 dm_temporal_join_arguments <- function() {
-  structure(
-    c(
-      left_table = "Character. Name of the \"anchor\" table in the dm.",
-      left_date = paste0(
+  new_block_args(
+    left_table = new_block_arg(
+      "Character. Name of the \"anchor\" table in the dm.",
+      example = "adsl",
+      type = arg_string()
+    ),
+    left_date = new_block_arg(
+      paste0(
         "Character. Date/datetime column on `left_table` that defines the ",
         "anchor time (e.g. treatment start)."
       ),
-      right_table = paste0(
+      example = "TRTSDT",
+      type = arg_string()
+    ),
+    right_table = new_block_arg(
+      paste0(
         "Character. Name of the \"event\" table in the dm being joined in."
       ),
-      right_date = paste0(
+      example = "adae",
+      type = arg_string()
+    ),
+    right_date = new_block_arg(
+      paste0(
         "Character. Date/datetime column on `right_table` whose offset from ",
         "`left_date` is checked against the window."
       ),
-      window_days = paste0(
+      example = "ASTDT",
+      type = arg_string()
+    ),
+    window_days = new_block_arg(
+      paste0(
         "Integer. Size of the time window in days (default 7)."
       ),
-      direction = paste0(
+      example = 30,
+      type = arg_integer()
+    ),
+    direction = new_block_arg(
+      paste0(
         "Window direction relative to `left_date`. One of \"after\" (default, ",
         "keep events within window_days AFTER anchor), \"before\", or ",
         "\"around\" (two-sided window)."
-      )
-    ),
-    examples = list(
-      left_table = "adsl",
-      left_date = "TRTSDT",
-      right_table = "adae",
-      right_date = "ASTDT",
-      window_days = 30,
-      direction = "after"
-    ),
-    prompt = paste(
-      "Temporal join between two tables within a dm, filtering the right",
-      "table to rows whose date falls within `window_days` of the left",
-      "date. Use for \"AE on treatment\" style windows: which events occur",
-      "within N days of treatment start / end / visit.",
-      "\n\nMap common requests:",
-      "\n- \"AEs within 30 days of treatment start\" ->",
-      "left_table=\"adsl\", left_date=\"TRTSDT\", right_table=\"adae\",",
-      "right_date=\"ASTDT\", window_days=30, direction=\"after\"",
-      "\n- \"concomitant meds within a week before baseline\" ->",
-      "left_date=\"TRTSDT\", right_date=\"CMSTDT\", window_days=7,",
-      "direction=\"before\""
+      ),
+      example = "after",
+      type = arg_enum(c("after", "before", "around"))
     )
   )
 }
 
 #' @noRd
 temporal_join_arguments <- function() {
-  structure(
-    c(
-      by = paste0(
+  new_block_args(
+    by = new_block_arg(
+      paste0(
         "Character vector of column names to match on as the join key ",
         "(e.g. subject ID). Rows with matching key AND date-within-window ",
         "are joined."
       ),
-      left_date = paste0(
+      example = list("USUBJID"),
+      type = arg_array(arg_string())
+    ),
+    left_date = new_block_arg(
+      paste0(
         "Character. Date column on the LEFT (x) table that defines the ",
         "anchor time."
       ),
-      right_date = paste0(
+      example = "TRTSDT",
+      type = arg_string()
+    ),
+    right_date = new_block_arg(
+      paste0(
         "Character. Date column on the RIGHT (y) table whose offset from ",
         "`left_date` is checked against the window."
       ),
-      window_days = "Integer. Window size in days. Default 7.",
-      direction = paste0(
+      example = "ASTDT",
+      type = arg_string()
+    ),
+    window_days = new_block_arg(
+      "Integer. Window size in days. Default 7.",
+      example = 30,
+      type = arg_integer()
+    ),
+    direction = new_block_arg(
+      paste0(
         "Window direction relative to `left_date`. One of \"after\" (default), ",
         "\"before\", \"around\"."
-      )
-    ),
-    examples = list(
-      by = list("USUBJID"),
-      left_date = "TRTSDT",
-      right_date = "ASTDT",
-      window_days = 30,
-      direction = "after"
-    ),
-    prompt = paste(
-      "Plain two-table temporal join (no dm wrapper). Joins x and y on",
-      "`by` AND filters to rows where y's `right_date` is within",
-      "`window_days` of x's `left_date`. Use this when you have two plain",
-      "data frames. For dm objects, use dm_temporal_join_block."
+      ),
+      example = "after",
+      type = arg_enum(c("after", "before", "around"))
     )
   )
 }
 
 #' @noRd
 crossfilter_arguments <- function() {
-  structure(
-    c(
-      active_dims = paste0(
+  new_block_args(
+    # arbitrary-key map (table name -> array of columns); the JSON-Schema
+    # subset has no open-ended object so `type` is omitted and the consumer
+    # infers the shape from the worked example.
+    active_dims = new_block_arg(
+      paste0(
         "Per-table active filter columns. Object: table name -> array of ",
         "column names that are eligible for filtering. For a single data ",
         "frame input (not a dm), use \".tbl\" as the table name."
       ),
-      filters = paste0(
+      example = list(
+        adsl = list("SEX", "AGE", "ARM"),
+        adae = list("AESEV")
+      )
+    ),
+    # arbitrary-key nested map (table -> {column -> kept values}); type omitted.
+    filters = new_block_arg(
+      paste0(
         "Per-table categorical filters. Object: table name -> {column -> ",
         "array of kept values}. Values not listed are excluded."
       ),
-      range_filters = paste0(
+      example = list(adsl = list(SEX = list("F")))
+    ),
+    # arbitrary-key nested map (table -> {column -> [min, max]}); type omitted.
+    range_filters = new_block_arg(
+      paste0(
         "Per-table numeric/date range filters. Object: table name -> ",
         "{column -> [min, max]}."
       ),
-      measure = paste0(
+      example = list(adsl = list(AGE = c(40, 60)))
+    ),
+    # scalar whose type varies (string | null); type omitted per guidance.
+    measure = new_block_arg(
+      paste0(
         "Aggregation measure as a \"table.column\" string, or null for row ",
         "counts. Used in linked summary views."
       ),
-      agg_func = paste0(
+      example = NULL
+    ),
+    agg_func = new_block_arg(
+      paste0(
         "Aggregation function applied to `measure`. One of \"sum\" or ",
         "\"mean\". Only used when measure is set."
-      )
-    ),
-    examples = list(
-      active_dims = list(
-        adsl = list("SEX", "AGE", "ARM"),
-        adae = list("AESEV")
       ),
-      filters = list(adsl = list(SEX = list("F"))),
-      range_filters = list(adsl = list(AGE = c(40, 60))),
-      measure = NULL,
-      agg_func = "sum"
-    ),
-    prompt = paste(
-      "Interactive client-side crossfilter for data frames or dm objects.",
-      "Renders a linked bar/histogram for each `active_dims` column;",
-      "clicking a bar filters all downstream views. Categorical filters",
-      "live in `filters`, numeric/date ranges in `range_filters`.",
-      "\n\nUse whenever the user wants linked filtering across multiple",
-      "views. Don't reimplement by chaining filter + join \u2014 this single",
-      "block delivers the full brush/linked-filter UX."
+      example = "sum",
+      type = arg_enum(c("sum", "mean"))
     )
   )
 }
 
 #' @noRd
 dm_example_arguments <- function() {
-  structure(
-    c(
-      dataset = paste0(
+  new_block_args(
+    # The set of valid dataset IDs depends on which data packages are
+    # installed (see dm_example_choices()), so it is left as an open string
+    # rather than a fixed enum.
+    dataset = new_block_arg(
+      paste0(
         "Character. ID of the dm example dataset to load. One of: ",
         "\"bi_star_schema\" (retail star schema), ",
         "\"safetydata_adam\" / \"pharmaverseadam\" / \"bms_adam\" ",
@@ -449,12 +453,9 @@ dm_example_arguments <- function() {
         "safety dm use \"safetydata_adam\" (NOT \"cdisc_adam\"). Availability ",
         "depends on installed data packages; call dm_example_choices() for ",
         "the live list."
-      )
-    ),
-    examples = list(dataset = "bi_star_schema"),
-    prompt = paste(
-      "Loads a pre-built dm from the blockr.dm example catalog. Use for",
-      "demos and testing \u2014 no file paths needed."
+      ),
+      example = "bi_star_schema",
+      type = arg_string()
     )
   )
 }
