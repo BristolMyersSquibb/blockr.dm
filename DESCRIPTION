@@ -48,6 +48,7 @@ Suggests:
     dbplyr,
     insuranceData,
     jsonlite,
+    nanoparquet,
     nycflights13,
     pharmaverseadam,
     rio,
@@ -58,6 +59,9 @@ Suggests:
     testthat (>= 3.0.0),
     withr
 Config/testthat/edition: 3
+Config/Needs/website:
+    DiagrammeR,
+    DiagrammeRsvg
 Remotes:
     BristolMyersSquibb/blockr.ai,
     BristolMyersSquibb/blockr.core,

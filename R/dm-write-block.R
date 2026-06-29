@@ -328,6 +328,8 @@ new_dm_write_block <- function(
                   file_path <- file.path(temp_dir, paste0(nm, ext))
                   if (r_format() == "csv") {
                     readr::write_csv(tables[[nm]], file_path)
+                  } else if (requireNamespace("nanoparquet", quietly = TRUE)) {
+                    nanoparquet::write_parquet(tables[[nm]], file_path)
                   } else {
                     arrow::write_parquet(tables[[nm]], file_path)
                   }
@@ -682,6 +684,8 @@ dm_write_expr <- function(directory, filename, format) {
     ext <- if (format == "csv") ".csv" else ".parquet"
     write_fn <- if (format == "csv") {
       quote(readr::write_csv)
+    } else if (requireNamespace("nanoparquet", quietly = TRUE)) {
+      quote(nanoparquet::write_parquet)
     } else {
       quote(arrow::write_parquet)
     }
