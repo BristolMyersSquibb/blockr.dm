@@ -18,6 +18,8 @@ License: GPL (>= 3)
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.3
+URL: https://bristolmyerssquibb.github.io/blockr.dm/
+BugReports: https://github.com/BristolMyersSquibb/blockr.dm/issues
 Imports:
     blockr.ai,
     blockr.core,
