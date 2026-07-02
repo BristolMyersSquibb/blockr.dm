@@ -474,7 +474,10 @@ block_output.dm_block <- function(x, result, session) {
         page = paged$page,
         page_size = page_size,
         table_label = tbl_label,
-        has_more = paged$has_more
+        has_more = paged$has_more,
+        # Same per-table cache as table_page(): keeps the server-computed
+        # column widths identical across sort/page renders.
+        cache = cache
       )
     )
   })
