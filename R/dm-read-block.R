@@ -913,10 +913,10 @@ dm_read_expr_zip <- function(path, selected = NULL) {
         } else if (ext %in% c("xlsx", "xls")) {
           readxl::read_excel(f)
         } else if (ext == "parquet") {
-          if (requireNamespace("nanoparquet", quietly = TRUE)) {
-            nanoparquet::read_parquet(f)
-          } else {
+          if (requireNamespace("arrow", quietly = TRUE)) {
             arrow::read_parquet(f)
+          } else {
+            nanoparquet::read_parquet(f)
           }
         } else if (ext == "feather") {
           arrow::read_feather(f)
@@ -976,10 +976,10 @@ dm_read_expr_directory <- function(path, selected = NULL) {
         } else if (ext %in% c("xlsx", "xls")) {
           readxl::read_excel(f)
         } else if (ext == "parquet") {
-          if (requireNamespace("nanoparquet", quietly = TRUE)) {
-            nanoparquet::read_parquet(f)
-          } else {
+          if (requireNamespace("arrow", quietly = TRUE)) {
             arrow::read_parquet(f)
+          } else {
+            nanoparquet::read_parquet(f)
           }
         } else if (ext == "feather") {
           arrow::read_feather(f)

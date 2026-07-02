@@ -328,10 +328,12 @@ new_dm_write_block <- function(
                   file_path <- file.path(temp_dir, paste0(nm, ext))
                   if (r_format() == "csv") {
                     readr::write_csv(tables[[nm]], file_path)
-                  } else if (requireNamespace("nanoparquet", quietly = TRUE)) {
-                    nanoparquet::write_parquet(tables[[nm]], file_path)
-                  } else {
+                  } else if (requireNamespace("arrow", quietly = TRUE)) {
+                    # arrow keeps label attributes in parquet metadata;
+                    # nanoparquet strips them
                     arrow::write_parquet(tables[[nm]], file_path)
+                  } else {
+                    nanoparquet::write_parquet(tables[[nm]], file_path)
                   }
                   files_to_zip <- c(files_to_zip, paste0(nm, ext))
                 }
@@ -684,10 +686,12 @@ dm_write_expr <- function(directory, filename, format) {
     ext <- if (format == "csv") ".csv" else ".parquet"
     write_fn <- if (format == "csv") {
       quote(readr::write_csv)
-    } else if (requireNamespace("nanoparquet", quietly = TRUE)) {
-      quote(nanoparquet::write_parquet)
-    } else {
+    } else if (requireNamespace("arrow", quietly = TRUE)) {
+      # arrow keeps label attributes in parquet metadata; nanoparquet strips
+      # them
       quote(arrow::write_parquet)
+    } else {
+      quote(nanoparquet::write_parquet)
     }
 
     bquote(
