@@ -5,24 +5,24 @@
   flex-direction: column;
 }
 
-/* Per-column row: .blockr-row (from blockr-blocks.css) is the bordered pill.
-   bi-filter-label-wrap is the left half with a border-right separator,
-   matching the mutate/summarize block pattern. */
-.bi-filter-label-wrap {
-  display: flex;
-  align-items: center;
-  flex: 1 1 50%;
+/* Per-column entry: label on top, full-width select below (classic form
+   field, like shiny::selectInput). Value filters often sit in a narrow
+   sidebar, so the select gets the whole row width. The .blockr-row bordered
+   pill (from blockr-blocks.css) wraps just the select. */
+.bi-filter-item {
+  margin-bottom: 8px;
   min-width: 0;
-  border-right: 1px solid var(--blockr-color-border, #e5e7eb);
-  padding-right: 10px;
-  align-self: stretch;
 }
 
-.bi-filter-label-wrap .blockr-label {
+.bi-filter-item:last-child {
   margin-bottom: 0;
-  font-size: var(--blockr-font-size-base, 0.875rem);
-  font-weight: normal;
-  color: var(--blockr-color-text-primary, #111827);
+}
+
+.bi-filter-item .bi-filter-row {
+  margin-bottom: 0;
+}
+
+.bi-filter-label {
   display: flex;
   align-items: baseline;
   gap: 6px;
@@ -42,7 +42,8 @@
 }
 
 .bi-filter-select-wrap {
-  flex: 1 1 50%;
+  flex: 1 1 auto;
+  width: 100%;
   min-width: 0;
 }
 

@@ -326,13 +326,14 @@
       }
 
       this.entries.forEach((entry, idx) => {
-        const row = document.createElement('div');
-        row.className = 'blockr-row bi-filter-row';
+        // Stacked layout: label above, full-width select below (classic form
+        // field). Value filters often sit in a narrow sidebar, so the 50/50
+        // label|select split used by mutate/summarize doesn't fit here.
+        const item = document.createElement('div');
+        item.className = 'bi-filter-item';
 
-        const labelWrap = document.createElement('div');
-        labelWrap.className = 'bi-filter-label-wrap';
         const label = document.createElement('label');
-        label.className = 'blockr-label';
+        label.className = 'blockr-label bi-filter-label';
         const display = this.isDm
           ? entry.table + '.' + entry.name
           : entry.name;
@@ -344,8 +345,11 @@
           subEl.textContent = sub;
           label.appendChild(subEl);
         }
-        labelWrap.appendChild(label);
-        row.appendChild(labelWrap);
+        item.appendChild(label);
+
+        const row = document.createElement('div');
+        row.className = 'blockr-row bi-filter-row';
+        item.appendChild(row);
 
         const wrap = document.createElement('div');
         wrap.className = 'bi-filter-select-wrap';
@@ -394,7 +398,7 @@
           });
         }
 
-        this.bodyEl.appendChild(row);
+        this.bodyEl.appendChild(item);
       });
     }
 
