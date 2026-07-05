@@ -129,3 +129,37 @@ test_that("dm block handles three or more inputs", {
    )
  )
 })
+
+test_that("dm block keeps an unnamed (DAG-UI) input instead of dropping it", {
+  # Regression: connecting a dataframe to the dm block by dragging an edge in
+  # the DAG UI adds an *unnamed* link, which a live board stores as a positional
+  # slot in the `...args` reactives object. `names()` is then NULL, which used
+  # to collapse the classification loop to zero iterations -> an empty dm. Build
+  # the positional `reactives` object the live board produces (reactiveValues()
+  # can only hold named slots).
+  block <- new_dm_block()
+  df1 <- data.frame(id = 1:3, name = c("a", "b", "c"))
+
+  args_obj <- shiny::isolate({
+    ra <- blockr.core:::reactives()
+    blockr.core:::append_reactive(ra, function() df1)
+    ra
+  })
+
+  testServer(
+    blockr.core:::get_s3_method("block_server", block),
+    {
+      session$flushReact()
+      result <- session$returned$result()
+
+      expect_s3_class(result, "dm")
+
+      # The unnamed input is present as "table_1" (the positional display
+      # fallback), carrying its data — not dropped into an empty dm.
+      tables <- names(dm::dm_get_tables(result))
+      expect_true("table_1" %in% tables)
+      expect_equal(nrow(dm::pull_tbl(result, table_1)), 3)
+    },
+    args = list(x = block, data = list(...args = args_obj))
+  )
+})

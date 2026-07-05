@@ -1,21 +1,40 @@
 #' @importFrom blockr.core block_output block_ui block_render_trigger
 NULL
 
-# Helper function to extract argument names for variadic blocks
-# Copied from blockr.core:::dot_args_names (not exported)
-dot_args_names <- function(x) {
-  res <- names(x)
-  unnamed <- grepl("^[1-9][0-9]*$", res)
+# Variadic ...args helpers, mirroring blockr.core (not exported). A variadic
+# block server receives `...args` as a `reactives` object; slots added by
+# dragging an edge in the DAG UI are unnamed and stored positionally, so
+# `names(...args)` returns "" for them (NULL when every slot is unnamed). The
+# old names-based helper collapsed that to NULL, which dropped the connected
+# input silently (empty dm). `dot_arg_refs()` maps each slot to the symbol it is
+# bound to in the eval env (the link name, or .arg1/.arg2/... for unnamed ones),
+# keyed by display name; `dot_arg_values()` pairs those symbols with the
+# realized slot values and works on both the live-board `reactives` and the
+# `reactiveValues` used in tests. Keep in sync with blockr.core R/utils-misc.R.
+dot_sym <- function(i) {
+  paste0(".arg", i)
+}
 
-  if (all(unnamed)) {
-    return(NULL)
+arg_refs <- function(nms) {
+  unnamed <- !nzchar(nms)
+  replace(nms, unnamed, dot_sym(seq_len(sum(unnamed))))
+}
+
+dot_arg_refs <- function(x) {
+  nms <- names(x)
+  if (is.null(nms)) {
+    nms <- character(length(x))
   }
+  stats::setNames(arg_refs(nms), nms)
+}
 
-  if (any(unnamed)) {
-    return(replace(res, unnamed, ""))
+dot_arg_values <- function(x) {
+  vals <- if (inherits(x, "reactivevalues")) {
+    shiny::reactiveValuesToList(x)
+  } else {
+    as.list(x)
   }
-
-  res
+  stats::setNames(vals, unname(dot_arg_refs(x)))
 }
 
 #' Infer primary and foreign keys from column name equality
@@ -175,19 +194,29 @@ new_dm_block <- function(infer_keys = TRUE, ...) {
 
           # Analyze inputs to classify as dm or data.frame, and pre-compute keys
           input_info <- shiny::reactive({
-            nms <- names(...args)
-            display_nms <- dot_args_names(...args)
-            if (is.null(display_nms)) {
-              display_nms <- paste0("table_", nms)
-            }
+            # Eval-env symbols the generated expression binds each input under
+            # (get(nms[i]) below), plus positional-safe values. Unnamed DAG-UI
+            # slots resolve to .arg1, .arg2, ...; a raw names() lookup would
+            # miss them and silently drop the connected input.
+            refs <- dot_arg_refs(...args)
+            eval_syms <- unname(refs)
+            link_nms <- names(refs)
+            arg_vals <- dot_arg_values(...args)
+
+            # Human-facing table names: a descriptive link name when present,
+            # else "table_<i>". Numeric-only and unnamed (DAG-UI) slots both get
+            # the positional fallback, matching the block's legacy naming.
+            synthetic <- !nzchar(link_nms) | grepl("^[1-9][0-9]*$", link_nms)
+            display_nms <- ifelse(
+              synthetic, paste0("table_", seq_along(refs)), link_nms
+            )
 
             # Classify each input and collect data
-            is_dm <- logical(length(nms))
+            is_dm <- logical(length(eval_syms))
             all_tables <- list()
 
-            for (i in seq_along(nms)) {
-              nm <- nms[i]
-              arg <- ...args[[nm]]
+            for (i in seq_along(eval_syms)) {
+              arg <- arg_vals[[i]]
               if (shiny::is.reactive(arg)) arg <- arg()
 
               if (inherits(arg, "dm")) {
@@ -203,7 +232,7 @@ new_dm_block <- function(infer_keys = TRUE, ...) {
             }
 
             list(
-              nms = nms,
+              nms = eval_syms,
               display_nms = display_nms,
               is_dm = is_dm,
               all_tables = all_tables
