@@ -36,6 +36,7 @@ options(blockr.html_table_preview = TRUE)  # lazy-aware HTML preview (dm + flatt
 
 blockr_pkgs <- c(
   "blockr.core",
+  "blockr.session", # project save / load / versions
   "blockr.ui",
   "blockr.dplyr",
   "blockr.dm",       # dm blocks (dm_select, dm_flatten, dm_example) + Key-lines preview
@@ -48,6 +49,21 @@ for (pkg in blockr_pkgs) {
   if (dev_local) pkgload::load_all(pkg, quiet = TRUE)
   else library(pkg, character.only = TRUE)
 }
+
+# ---- Curate the block browser ----------------------------------------------
+# Keep ONLY `dataset` and `glue` from blockr.core; drop its low-level / noise
+# blocks (subset, merge, rbind, head, scatter, csv, filebrowser, upload) via
+# unregister_blocks(), selecting by the registry `package` attribute so only
+# core blocks are affected.
+core_keep <- c("dataset_block", "glue_block")
+core_drop <- setdiff(
+  names(Filter(
+    function(entry) identical(attr(entry, "package"), "blockr.core"),
+    available_blocks()
+  )),
+  core_keep
+)
+unregister_blocks(core_drop)
 
 # DuckDB pushdown backend (CRAN).
 requireNamespace("duckdb", quietly = TRUE)   # embedded OLAP engine, reads parquet
@@ -230,4 +246,4 @@ board <- new_dock_board(
   )
 )
 
-serve(board, "duckdb-remote-dm")
+serve(board, "duckdb-remote-dm", plugins = custom_plugins(manage_project()))
