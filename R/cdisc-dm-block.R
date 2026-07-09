@@ -11,6 +11,22 @@ find_cdisc_parent <- function(dm_obj) {
   if (length(match) > 0) match[1] else NULL
 }
 
+#' Turn a key's column names into a tidyselect expression
+#'
+#' A single column becomes a symbol, multiple columns a `c(a, b)` call.
+#'
+#' @param cols Character vector of column names
+#' @return A symbol or call suitable for splicing into a `dm` key expression
+#' @keywords internal
+key_cols_expr <- function(cols) {
+  cols <- unlist(cols)
+  if (length(cols) == 1L) {
+    as.name(cols)
+  } else {
+    as.call(c(quote(c), lapply(cols, as.name)))
+  }
+}
+
 #' Find duplicated columns between parent and child tables
 #'
 #' For each child table that has USUBJID, finds columns shared with the parent
@@ -183,16 +199,20 @@ new_cdisc_dm_block <- function(set_keys = TRUE, dedup_cols = TRUE, ...) {
               quote(result <- data)
             ))
 
-            # Strip existing FKs (hardcoded at build time)
+            # Strip existing FKs (hardcoded at build time). Each key names its
+            # columns and ref_columns: an underspecified dm_rm_fk() makes dm
+            # emit a disambiguation message.
             existing_fks <- dm::dm_get_all_fks(dm_input)
             if (nrow(existing_fks) > 0) {
-              pairs <- unique(existing_fks[, c("child_table", "parent_table")])
-              for (i in seq_len(nrow(pairs))) {
-                cs <- as.name(pairs$child_table[i])
-                ps <- as.name(pairs$parent_table[i])
+              for (i in seq_len(nrow(existing_fks))) {
+                cs <- as.name(existing_fks$child_table[i])
+                ps <- as.name(existing_fks$parent_table[i])
+                cc <- key_cols_expr(existing_fks$child_fk_cols[[i]])
+                pc <- key_cols_expr(existing_fks$parent_key_cols[[i]])
                 body_exprs <- c(body_exprs, list(
                   bquote(result <- dm::dm_rm_fk(
-                    result, .(cs), ref_table = .(ps)
+                    result, .(cs), columns = .(cc),
+                    ref_table = .(ps), ref_columns = .(pc)
                   ))
                 ))
               }
