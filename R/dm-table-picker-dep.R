@@ -9,14 +9,14 @@
 #'
 #' @return An `htmltools::htmlDependency`.
 #' @keywords internal
-dm_table_picker_dep <- function() {
+dm_table_picker_dep <- memoise0(function() {
   htmltools::htmlDependency(
     name = "dm-table-picker-js",
     version = utils::packageVersion("blockr.dm"),
     src = system.file("js", package = "blockr.dm"),
     script = "dm-table-picker.js"
   )
-}
+})
 
 #' Convenience: all assets needed for a dm table picker
 #'
@@ -26,11 +26,11 @@ dm_table_picker_dep <- function() {
 #'
 #' @return An `htmltools::tagList` of `htmlDependency` objects.
 #' @keywords internal
-dm_table_picker_deps <- function() {
+dm_table_picker_deps <- memoise0(function() {
   htmltools::tagList(
     blockr.dplyr::blockr_core_js_dep(),
     blockr.dplyr::blockr_blocks_css_dep(),
     blockr.dplyr::blockr_select_dep(),
     dm_table_picker_dep()
   )
-}
+})
