@@ -893,7 +893,7 @@ crossfilter_ui <- function(id) {
   )
 }
 
-crossfilter_deps <- function() {
+crossfilter_deps <- memoise0(function() {
   htmltools::tagList(
     htmltools::htmlDependency(
       name = "crossfilter2",
@@ -914,4 +914,4 @@ crossfilter_deps <- function() {
       stylesheet = "crossfilter-block.css"
     )
   )
-}
+})

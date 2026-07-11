@@ -685,7 +685,7 @@ block_render_trigger.value_filter_block <- function(
 
 #' HTML dependency for the value filter block JS + CSS
 #' @noRd
-value_filter_block_dep <- function() {
+value_filter_block_dep <- memoise0(function() {
   htmltools::tagList(
     htmltools::htmlDependency(
       name = "blockr-value-filter-js",
@@ -700,4 +700,4 @@ value_filter_block_dep <- function() {
       stylesheet = "value-filter-block.css"
     )
   )
-}
+})
