@@ -624,6 +624,23 @@ normalize_state_for_json <- function(s) {
   list(columns = cols_norm)
 }
 
+# The preview container. Every branch of block_output.value_filter_block
+# below returns a renderUI (dm diagram, dynamic table, HTML fallback), so the
+# container MUST be a uiOutput. Without this method the block fell back to
+# block_ui.transform_block's DT::dataTableOutput: the client then binds the
+# element as an htmlwidget, and the arriving `{html, deps}` renderUI payload
+# crashes htmlwidgets' renderValue (`data.evals` undefined -> TypeError),
+# killing the whole Shiny message batch it rides in -- every other output in
+# that flush (other blocks' previews, titles, downstream re-renders) is
+# silently lost. Same pairing as block_ui.dm_block / block_ui.crossfilter_block.
+#' @method block_ui value_filter_block
+#' @export
+block_ui.value_filter_block <- function(id, x, ...) {
+  shiny::tagList(
+    shiny::uiOutput(shiny::NS(id, "result"))
+  )
+}
+
 # Render the block output preview. The block accepts a data frame or a `dm`, so
 # the output renderer dispatches on the result type (same pattern as
 # block_output.crossfilter_block): a `dm` routes to block_output.dm_block (the
