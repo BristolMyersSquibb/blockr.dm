@@ -550,12 +550,43 @@ crossfilter_server <- function(active_dims, filters, range_filters,
       # `ignoreInit = TRUE`: the JS InputBinding holds back its first
       # getValue() (returns null until setData has rendered the
       # constructor state). Belt + suspenders.
+      # JS -> R. The client publishes its filter state once on its first
+      # setData, before the user has touched anything, so this fires on every
+      # cold start with the state R already has.
+      #
+      # That echo must not read as a change. An empty JS object arrives as a
+      # NAMED empty list, while the constructor default is a plain `list()`, and
+      # the two are not identical() -- so `r_filters(state$cat_filters %||%
+      # list())` wrote a "new" value, the block re-evaluated, and EVERY block
+      # downstream redrew. On a board whose pipeline takes seconds the table has
+      # already painted by the time the echo lands, so you see the right content,
+      # then a rebuild: the startup double render. Normalise the empty case, and
+      # only write when the value actually differs.
+      #
+      # `self_write` is flipped only when a write really happens. Setting it
+      # unconditionally would leave it armed after a no-op echo, and the R -> JS
+      # observer below would swallow the NEXT genuine change (an AI write, a
+      # board restore) as if it were this echo coming back.
+      norm_filters <- function(x) {
+        if (!length(x)) list() else x
+      }
+
       shiny::observeEvent(input$crossfilter_input, {
+
         state <- input$crossfilter_input
-        self_write$active <- TRUE
-        r_filters(state$cat_filters %||% list())
-        self_write$active <- TRUE
-        r_range_filters(state$rng_filters %||% list())
+
+        cat_new <- norm_filters(state$cat_filters)
+        rng_new <- norm_filters(state$rng_filters)
+
+        if (!identical(cat_new, shiny::isolate(r_filters()))) {
+          self_write$active <- TRUE
+          r_filters(cat_new)
+        }
+
+        if (!identical(rng_new, shiny::isolate(r_range_filters()))) {
+          self_write$active <- TRUE
+          r_range_filters(rng_new)
+        }
       }, ignoreInit = TRUE)
 
       # --- R -> JS: push filter changes when the caller is NOT the JS
