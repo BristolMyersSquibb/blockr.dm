@@ -238,7 +238,12 @@ build_crossfilter_lookups <- function(
     lookups = lookups,
     dim_source = dim_source,
     parent_key = parent_key,
-    child_fk_cols = child_fk_col_map,
+    # as.list(): this ends up in a sendCustomMessage payload, and Shiny's
+    # jsonlite serialization (keep_vec_names = TRUE) is deprecated for
+    # named vectors — a future jsonlite would encode them as arrays,
+    # dropping the table keys the JS relies on (childFkCols[table]).
+    # A named list yields the same keyed-object JSON, warning-free.
+    child_fk_cols = as.list(child_fk_col_map),
     parent_table = parent_table,
     child_tables = child_fk_rows$child_table
   )

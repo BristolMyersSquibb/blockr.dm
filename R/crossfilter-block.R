@@ -327,12 +327,18 @@ crossfilter_server <- function(active_dims, filters, range_filters,
             if (is.null(lbl)) "" else lbl
           }, character(1))
 
+          # as.list(): Shiny serializes sendCustomMessage payloads with
+          # jsonlite (keep_vec_names = TRUE). Named vectors trigger a
+          # deprecation warning today, and a future jsonlite will encode
+          # them as ARRAYS (names dropped) — silently breaking the JS,
+          # which indexes these as keyed objects (e.g. labels[dim]).
+          # Named lists produce the same keyed-object JSON, forever.
           result[[tbl_name]] <- list(
             dimensions = as.list(names(df)[is_dimension]),
             range_dimensions = as.list(names(df)[is_range_dim]),
             date_dimensions = as.list(names(df)[is_date_dim]),
             measures = as.list(names(df)[is_numeric & !is_low_cardinality]),
-            labels = col_labels
+            labels = as.list(col_labels)
           )
         }
         result
@@ -846,7 +852,9 @@ build_lookups_flat <- function(dm_obj, active_dims, measure_col = NULL) {
     lookups = stats::setNames(list(lookup), fact_table),
     dim_source = dim_source,
     parent_key = parent_key,
-    child_fk_cols = stats::setNames(parent_key, fact_table),
+    # as.list(): named list, not named vector — keeps the keyed-object
+    # JSON under future jsonlite (see column_info_per_table()).
+    child_fk_cols = as.list(stats::setNames(parent_key, fact_table)),
     parent_table = parent_table,
     child_tables = fact_table
   )
