@@ -81,7 +81,10 @@ dm_read_table <- function(f, cache_dir, cache_board) {
   cached <- dm_read_cache_path(f, cache_dir)
 
   if (file.exists(cached)) {
-    return(arrow::read_parquet(cached))
+    # mmap = FALSE: a memory-mapped read keeps the file open, and on Windows a
+    # later invalidation (rewriting the same path) then fails with a locked-file
+    # error. Read it fully into memory so the cache entry stays replaceable.
+    return(arrow::read_parquet(cached, mmap = FALSE))
   }
 
   res <- dm_read_file(f, ext)
@@ -164,7 +167,7 @@ dm_read_table_board <- function(f, ext, board) {
 
   if (hit) {
     res <- tryCatch(
-      arrow::read_parquet(pins::pin_download(board, name)),
+      arrow::read_parquet(pins::pin_download(board, name), mmap = FALSE),
       error = function(e) NULL
     )
     if (!is.null(res)) {
