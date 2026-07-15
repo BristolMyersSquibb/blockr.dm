@@ -906,30 +906,7 @@ dm_read_expr_zip <- function(path, selected = NULL) {
       }
 
       # Read each file
-      tables <- lapply(files, function(f) {
-        ext <- tolower(tools::file_ext(f))
-        if (ext %in% c("csv", "tsv")) {
-          readr::read_csv(f, show_col_types = FALSE)
-        } else if (ext %in% c("xlsx", "xls")) {
-          readxl::read_excel(f)
-        } else if (ext == "parquet") {
-          if (requireNamespace("arrow", quietly = TRUE)) {
-            arrow::read_parquet(f)
-          } else {
-            nanoparquet::read_parquet(f)
-          }
-        } else if (ext == "feather") {
-          arrow::read_feather(f)
-        } else if (ext %in% c("rds")) {
-          readRDS(f)
-        } else if (ext == "rda") {
-          e <- new.env()
-          load(f, envir = e)
-          as.list(e)[[1]]
-        } else {
-          rio::import(f)
-        }
-      })
+      tables <- .(dm_read_tables_expr(cache = FALSE))
 
       names(tables) <- table_names
       do.call(dm::dm, tables)
@@ -969,30 +946,7 @@ dm_read_expr_directory <- function(path, selected = NULL) {
       }
 
       # Read each file
-      tables <- lapply(files, function(f) {
-        ext <- tolower(tools::file_ext(f))
-        if (ext %in% c("csv", "tsv")) {
-          readr::read_csv(f, show_col_types = FALSE)
-        } else if (ext %in% c("xlsx", "xls")) {
-          readxl::read_excel(f)
-        } else if (ext == "parquet") {
-          if (requireNamespace("arrow", quietly = TRUE)) {
-            arrow::read_parquet(f)
-          } else {
-            nanoparquet::read_parquet(f)
-          }
-        } else if (ext == "feather") {
-          arrow::read_feather(f)
-        } else if (ext %in% c("rds")) {
-          readRDS(f)
-        } else if (ext == "rda") {
-          e <- new.env()
-          load(f, envir = e)
-          as.list(e)[[1]]
-        } else {
-          rio::import(f)
-        }
-      })
+      tables <- .(dm_read_tables_expr())
 
       names(tables) <- table_names
       do.call(dm::dm, tables)
