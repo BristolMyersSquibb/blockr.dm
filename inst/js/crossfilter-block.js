@@ -1,6 +1,9 @@
 (() => {
   'use strict';
 
+  // Monotonic id for the re-init handshake (see the binding's initialize).
+  let readyCounter = 0;
+
   // =========================================================================
   // SVG icons (blockr design system)
   // =========================================================================
@@ -1452,7 +1455,23 @@
     getValue: (el) => el._block ? el._block.getValue() : null,
     subscribe: (el, callback) => { $(el).on('change.jscf', () => callback()); },
     unsubscribe: (el) => { $(el).off('.jscf'); },
-    initialize: (el) => { el._block = new CrossfilterBlock(el); }
+    initialize: (el) => {
+      el._block = new CrossfilterBlock(el);
+      // Re-init handshake: announce ONLY on a RE-bind -- an id this page has
+      // bound before means the element was recreated and its JS state
+      // (el._block data) is gone, so R re-ships its cached payload without a
+      // rebuild. The FIRST bind stays silent: R's regular data push covers the
+      // initial ship (announcing there would double-ship the multi-MB payload
+      // at boot, since deferred UIs bind after the first push). A full page
+      // reload resets this registry AND starts a fresh Shiny session, whose
+      // normal push path applies again.
+      window._blockrCfBound = window._blockrCfBound || {};
+      if (window._blockrCfBound[el.id] && window.Shiny && Shiny.setInputValue) {
+        readyCounter += 1;
+        Shiny.setInputValue(el.id + '_ready', readyCounter, { priority: 'event' });
+      }
+      window._blockrCfBound[el.id] = true;
+    }
   });
 
   Shiny.inputBindings.register(binding, 'blockr.jscrossfilter');

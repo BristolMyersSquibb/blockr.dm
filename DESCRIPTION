@@ -1,6 +1,6 @@
 Package: blockr.dm
 Title: Relational Data Management Blocks for 'blockr'
-Version: 0.0.8
+Version: 0.0.10
 Authors@R:
     c(person(given = "Christoph",
              family = "Sax",
@@ -48,11 +48,13 @@ Suggests:
     chromote,
     DBI,
     dbplyr,
+    haven,
     insuranceData,
     jsonlite,
     nanoparquet,
     nycflights13,
     pharmaverseadam,
+    pins,
     rio,
     RSQLite,
     rvest,

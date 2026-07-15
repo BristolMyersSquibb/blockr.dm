@@ -533,12 +533,20 @@
     },
     initialize: (el) => {
       el._block = new FilterBlock(el);
-      if (el._pendingColumns) {
-        el._block.updateColumns(el._pendingColumns);
+      // Replays in dependency order: columns first, then the state that
+      // references them. `pendingById` holds pushes that arrived before the
+      // element existed at all (lazy dockview panel); the `el._pending*`
+      // slots hold pushes that found the element but not yet the binding.
+      const queued = pendingById[el.id];
+      delete pendingById[el.id];
+      const columns = (queued && queued.columns) || el._pendingColumns;
+      if (columns) {
+        el._block.updateColumns(columns);
         delete el._pendingColumns;
       }
-      if (el._pendingState) {
-        el._block.setState(el._pendingState);
+      const state = (queued && queued.state) || el._pendingState;
+      if (state) {
+        el._block.setState(state);
         delete el._pendingState;
       }
     },
@@ -549,6 +557,17 @@
 
   Shiny.inputBindings.register(binding, 'blockr.bi.filter');
 
+  // Pushes that arrived before their container was in the DOM (a lazy
+  // dockview panel mounts long after the block server flushed them).
+  // Latest wins per id, replayed from the binding's initialize(); no
+  // expiry -- the old 5 s retry window lost any panel visited later.
+  const pendingById = {};
+
+  const enqueue = (id, kind, payload) => {
+    if (!pendingById[id]) pendingById[id] = {};
+    pendingById[id][kind] = payload;
+  };
+
   const pumpColumns = (id, payload) => {
     const el = document.getElementById(id);
     if (el && el._block) {
@@ -556,14 +575,7 @@
     } else if (el) {
       el._pendingColumns = payload;
     } else {
-      let attempts = 0;
-      const t = setInterval(() => {
-        attempts++;
-        const el2 = document.getElementById(id);
-        if (el2 && el2._block) { el2._block.updateColumns(payload); clearInterval(t); }
-        else if (el2) { el2._pendingColumns = payload; clearInterval(t); }
-        if (attempts > 50) clearInterval(t);
-      }, 100);
+      enqueue(id, 'columns', payload);
     }
   };
 
@@ -588,6 +600,8 @@
       el._block.setState(msg.state);
     } else if (el) {
       el._pendingState = msg.state;
+    } else {
+      enqueue(msg.id, 'state', msg.state);
     }
   });
 })();
