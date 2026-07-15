@@ -168,19 +168,26 @@ test_that("No parent table warns and passes through", {
 
   dm_input <- dm::dm(exposure = tbl1, labs = tbl2)
 
-  testServer(
-    blockr.core:::get_s3_method("block_server", block),
-    {
-      expect_warning(session$flushReact(), "No CDISC parent table")
+  # The pass-through warning fires when the block first evaluates. Under
+  # blockr.core's eager evaluation that happens during testServer setup, before
+  # this expression runs, so wrap the whole call instead of a later flushReact()
+  # (which then has nothing left to emit).
+  expect_warning(
+    testServer(
+      blockr.core:::get_s3_method("block_server", block),
+      {
+        session$flushReact()
 
-      result <- session$returned$result()
-      expect_s3_class(result, "dm")
-      expect_equal(sort(names(dm::dm_get_tables(result))), c("exposure", "labs"))
-    },
-    args = list(
-      x = block,
-      data = list(data = function() dm_input)
-    )
+        result <- session$returned$result()
+        expect_s3_class(result, "dm")
+        expect_equal(sort(names(dm::dm_get_tables(result))), c("exposure", "labs"))
+      },
+      args = list(
+        x = block,
+        data = list(data = function() dm_input)
+      )
+    ),
+    "No CDISC parent table"
   )
 })
 
