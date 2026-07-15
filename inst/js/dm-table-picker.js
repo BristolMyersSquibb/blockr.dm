@@ -17,9 +17,28 @@
 (() => {
   'use strict';
 
+  // Messages that arrived before their container existed (a lazy dockview
+  // panel mounts long after the block server flushed its restore push).
+  // Held keyed by id, latest wins, replayed when the element turns up.
+  // No expiry: a never-mounted panel just keeps its pending entry.
+  const pending = {};
+
+  const replayPending = () => {
+    Object.keys(pending).forEach((id) => {
+      if (document.getElementById(id)) {
+        const msg = pending[id];
+        delete pending[id];
+        mount(msg);
+      }
+    });
+  };
+
   const mount = (msg) => {
     const root = document.getElementById(msg.id);
-    if (!root) return;
+    if (!root) {
+      pending[msg.id] = msg;
+      return;
+    }
     const mode = msg.mode === 'multi' ? 'multi' : 'single';
     const opts = Array.isArray(msg.options) ? msg.options : [];
     const sel  = msg.selected;
@@ -49,6 +68,11 @@
       return;
     }
     Shiny.addCustomMessageHandler('dm-table-picker', mount);
+    // Dockview panels enter the DOM after the fact; every render/bind pass
+    // is a chance that a pending picker's container now exists.
+    $(document).on('shiny:value shiny:bound', () => {
+      setTimeout(replayPending, 100);
+    });
   };
   register();
 })();
