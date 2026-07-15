@@ -429,12 +429,35 @@ crossfilter_server <- function(active_dims, filters, range_filters,
       }, ignoreInit = TRUE)
 
       # --- Build lookups and send to JS ---
+      # Last shipped lookup payload + its identity key. Spurious invalidations
+      # reach the data observe below through board-wide transitions (a view
+      # switch parks and un-parks the visibility channels) with the upstream dm
+      # POINTER-IDENTICAL (blockr.core's unchanged-inputs guard returns the
+      # cached object) -- without the guard every first visit to a view re-ran
+      # the full lookup build (~0.2-0.5s) and re-shipped the multi-MB payload
+      # (~27MB on a real study, several times per session). The cached payload
+      # also backs the `_ready` handshake: if the client element is ever
+      # genuinely recreated (its JS state lost), it announces itself and gets
+      # the LAST payload re-shipped without a rebuild.
+      last_send <- new.env(parent = emptyenv())
+
       shiny::observe({
         info <- dm_info()
         active <- r_active_dims()
         col_info <- column_info_per_table()
         cur_measure <- r_measure()
         cur_agg_func <- r_agg_func()
+
+        # Everything that shapes the payload. dm_data() compares by pointer
+        # when upstream re-evals were skipped, so this is cheap. Filter state
+        # is deliberately NOT part of the key: filter changes travel through
+        # the dedicated js-crossfilter-filters observer, not a data re-ship.
+        send_key <- list(dm_data(), active, cur_measure, cur_agg_func)
+        if (identical(send_key, last_send$key)) {
+          message("[js-crossfilter] payload unchanged, send skipped")
+          return()
+        }
+
         t_start <- proc.time()[3]
 
         # Build lookups only if there are active dims
@@ -520,7 +543,7 @@ crossfilter_server <- function(active_dims, filters, range_filters,
             lapply(tbl, function(rng) as.list(as.numeric(unlist(rng))))
           })
 
-          session$sendCustomMessage("js-crossfilter-data", list(
+          payload <- list(
             id = ns("crossfilter_input"),
             lookups = encoded_lookups,
             dim_source = lookup_info$dim_source,
@@ -534,11 +557,14 @@ crossfilter_server <- function(active_dims, filters, range_filters,
             rng_filters = safe_rng,
             measure = cur_measure,
             agg_func = cur_agg_func
-          ))
+          )
+          session$sendCustomMessage("js-crossfilter-data", payload)
+          last_send$key <- send_key
+          last_send$msg <- payload
         } else {
           # No active dims — send empty state with column catalog
           safe_active <- lapply(active, as.list)
-          session$sendCustomMessage("js-crossfilter-data", list(
+          payload <- list(
             id = ns("crossfilter_input"),
             lookups = list(),
             dim_source = list(),
@@ -548,7 +574,26 @@ crossfilter_server <- function(active_dims, filters, range_filters,
             column_info = col_info,
             all_columns = col_info,
             active_dims = safe_active
-          ))
+          )
+          session$sendCustomMessage("js-crossfilter-data", payload)
+          last_send$key <- send_key
+          last_send$msg <- payload
+        }
+      })
+
+      # --- Client re-init handshake ---
+      # The widget's data lives on the DOM element (el._block) and survives
+      # dockview re-parenting, so the guard above never starves a live client.
+      # If the element is ever genuinely RECREATED (fresh bind, JS state gone),
+      # the binding announces itself and gets the cached payload re-shipped --
+      # no lookup rebuild. At cold start the announcement typically arrives
+      # before the first payload exists (data evals take longer than binding
+      # init), so the NULL check makes it a no-op there; the data observe
+      # handles the initial ship.
+      shiny::observeEvent(input$crossfilter_input_ready, {
+        if (!is.null(last_send$msg)) {
+          message("[js-crossfilter] client re-initialized, re-shipping cached payload")
+          session$sendCustomMessage("js-crossfilter-data", last_send$msg)
         }
       })
 
