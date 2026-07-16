@@ -130,6 +130,9 @@ dm_example_choices <- function() {
   if (requireNamespace("pharmaverseadam", quietly = TRUE)) {
     choices[["Pharmaverse ADaM (pharmaverseadam)"]] <- "pharmaverseadam"
   }
+  if (requireNamespace("pharmaversesdtm", quietly = TRUE)) {
+    choices[["Pharmaverse SDTM (pharmaversesdtm)"]] <- "pharmaversesdtm"
+  }
   if (requireNamespace("nycflights13", quietly = TRUE)) {
     choices[["NYC Flights (nycflights13)"]] <- "nycflights13"
   }
@@ -150,6 +153,7 @@ dm_example_expr <- function(id) {
     bi_star_schema = bi_star_schema_expr(),
     safetydata_adam = safetydata_adam_expr(),
     pharmaverseadam = pharmaverseadam_expr(),
+    pharmaversesdtm = pharmaversesdtm_expr(),
     nycflights13 = nycflights13_expr(),
     insurancedata = insurancedata_expr(),
     stop("Unknown dm example: ", id)
@@ -277,6 +281,35 @@ pharmaverseadam_expr <- function() {
     result <- dm::dm_add_fk(result, adcm, USUBJID, adsl)
     result <- dm::dm_add_fk(result, adeg, USUBJID, adsl)
     result <- dm::dm_add_fk(result, adex, USUBJID, adsl)
+    result
+  }))
+}
+
+# Raw SDTM domains (not ADaM): domain table names (dm/ae/vs/lb/cm) and SDTM
+# column spellings (AESTDTC, VSTESTCD, LBSTRESN, ...). Consumers that
+# declare against ADaM names reconcile via their own normalization (e.g.
+# blockr.pharma's patient profile); this block hands over the study as
+# shipped.
+pharmaversesdtm_expr <- function() {
+  quote(local({
+    dm <- pharmaversesdtm::dm
+    ae <- pharmaversesdtm::ae
+    vs <- pharmaversesdtm::vs
+    lb <- pharmaversesdtm::lb
+    cm <- pharmaversesdtm::cm
+    eg <- pharmaversesdtm::eg
+    ex <- pharmaversesdtm::ex
+
+    result <- dm::dm(
+      dm = dm, ae = ae, vs = vs, lb = lb, cm = cm, eg = eg, ex = ex
+    )
+    result <- dm::dm_add_pk(result, dm, USUBJID)
+    result <- dm::dm_add_fk(result, ae, USUBJID, dm)
+    result <- dm::dm_add_fk(result, vs, USUBJID, dm)
+    result <- dm::dm_add_fk(result, lb, USUBJID, dm)
+    result <- dm::dm_add_fk(result, cm, USUBJID, dm)
+    result <- dm::dm_add_fk(result, eg, USUBJID, dm)
+    result <- dm::dm_add_fk(result, ex, USUBJID, dm)
     result
   }))
 }

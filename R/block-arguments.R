@@ -449,6 +449,7 @@ dm_example_arguments <- function() {
         "\"bi_star_schema\" (retail star schema), ",
         "\"safetydata_adam\" / \"pharmaverseadam\" / \"bms_adam\" ",
         "(CDISC ADaM clinical dm with adsl, adae, ...), ",
+        "\"pharmaversesdtm\" (raw CDISC SDTM domains: dm, ae, vs, lb, cm), ",
         "\"nycflights13\", \"insurancedata\". For a CDISC ADaM / clinical ",
         "safety dm use \"safetydata_adam\" (NOT \"cdisc_adam\"). Availability ",
         "depends on installed data packages; call dm_example_choices() for ",
