@@ -109,16 +109,16 @@ dm_keylines_depths <- function(table_names, edges) {
       parents[[e$child]] <- c(parents[[e$child]], e$parent)
     }
   }
-  memo <- list()
-  stack <- list()
+  memo <- new.env(parent = emptyenv())
+  stack <- new.env(parent = emptyenv())
   d <- function(id) {
     if (!is.null(memo[[id]])) return(memo[[id]])
     if (isTRUE(stack[[id]])) return(0L) # cycle guard
-    stack[[id]] <<- TRUE
+    stack[[id]] <- TRUE
     mx <- 0L
     for (p in parents[[id]]) mx <- max(mx, 1L + d(p))
-    stack[[id]] <<- FALSE
-    memo[[id]] <<- mx
+    stack[[id]] <- FALSE
+    memo[[id]] <- mx
     mx
   }
   for (tn in table_names) d(tn)
