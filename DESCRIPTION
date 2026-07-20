@@ -37,11 +37,13 @@ Imports:
     shinyjs,
     stats,
     utils,
+    vctrs,
     writexl,
     zip
 Suggests:
     arrow,
     blockr,
+    blockr.assistant,
     blockr.dag,
     blockr.dock,
     bslib,
@@ -74,5 +76,6 @@ Remotes:
     BristolMyersSquibb/blockr.io,
     BristolMyersSquibb/blockr.ui,
     BristolMyersSquibb/blockr,
+    BristolMyersSquibb/blockr.assistant,
     BristolMyersSquibb/blockr.dag,
     BristolMyersSquibb/blockr.dock
