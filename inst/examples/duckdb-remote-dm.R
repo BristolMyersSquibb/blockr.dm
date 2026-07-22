@@ -241,7 +241,9 @@ board <- new_dock_board(
         "example",
         sizes = c(0.55, 0.45)
       ),
-      panels("dag_extension", "joined", "filtered", "remote", "collected",
+      # ext(), not "dag_extension": extension ids are container-owned, so the
+      # class-derived name resolves to nothing and the tab silently vanishes.
+      panels(ext("dag"), "joined", "filtered", "remote", "collected",
              active = "collected"),
       sizes = c(0.64, 0.36)
     )
