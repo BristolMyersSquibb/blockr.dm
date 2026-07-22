@@ -7,7 +7,7 @@ pkgload::load_all("blockr.dm")
 
 library(blockr)
 
-options(blockr.html_table_preview = TRUE)
+options(blockr.tabular_display = blockr.ui::html_table_display)
 
 board <- new_dock_board(
   blocks = c(

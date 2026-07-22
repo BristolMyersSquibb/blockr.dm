@@ -20,7 +20,7 @@ pkgload::load_all("blockr.dock")
 pkgload::load_all("blockr.dm")
 
 # Use the restyled HTML table preview for the row view.
-options(blockr.html_table_preview = TRUE)
+options(blockr.tabular_display = blockr.ui::html_table_display)
 
 board <- new_dock_board(
   blocks = c(

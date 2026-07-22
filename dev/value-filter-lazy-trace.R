@@ -73,7 +73,7 @@ cat(sprintf("\n[before] eager all-columns value payload: %s B across %d columns\
 port <- 4849L
 app_script <- tempfile(fileext = ".R")
 writeLines(sprintf('
-options(blockr.lazy_eval = FALSE, blockr.html_table_preview = TRUE)
+options(blockr.lazy_eval = FALSE, blockr.tabular_display = blockr.ui::html_table_display)
 suppressMessages({
   pkgload::load_all("/workspace/blockr.core", quiet = TRUE)
   pkgload::load_all("/workspace/blockr.dplyr", quiet = TRUE)

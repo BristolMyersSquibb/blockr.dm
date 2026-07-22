@@ -10,7 +10,7 @@ options(
   # shiny.port = 7861L,
   # shiny.host = "0.0.0.0",
   # shiny.launch.browser = FALSE,
-  blockr.html_table_preview = TRUE
+  blockr.tabular_display = blockr.ui::html_table_display
 )
 
 # datasets::penguins has NAs in `sex` (11 rows) and `body_mass_g` (2 rows),
