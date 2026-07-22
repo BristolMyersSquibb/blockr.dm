@@ -10,7 +10,7 @@ pkgload::load_all("blockr.sandbox")
 options(
   shiny.port = 7860L,
   shiny.launch.browser = FALSE,
-  blockr.html_table_preview = TRUE
+  blockr.tabular_display = blockr.ui::html_table_display
 )
 
 board <- new_dock_board(

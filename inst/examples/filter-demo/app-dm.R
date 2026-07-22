@@ -7,7 +7,7 @@
 #   Rscript blockr.dm/inst/examples/filter-demo/app-dm.R
 
 options(
-  blockr.html_table_preview = TRUE,
+  blockr.tabular_display = blockr.ui::html_table_display,
   blockr.lazy_eval          = FALSE
 )
 

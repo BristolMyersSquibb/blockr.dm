@@ -18,7 +18,7 @@
 #   Rscript blockr.dm/dev/example-crossfilter.R
 # open the local URL serve() prints (or uncomment the options line to pin 3838).
 
-options(blockr.html_table_preview = TRUE)
+options(blockr.tabular_display = blockr.ui::html_table_display)
 options(blockr.dock_is_locked = FALSE)
 # options(shiny.port = 3838L, shiny.host = "0.0.0.0")  # uncomment to pin (devcontainer)
 

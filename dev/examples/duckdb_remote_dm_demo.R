@@ -23,7 +23,7 @@
 # so it is a true arity-0 source -- no upstream block needed.
 
 options(
-  blockr.html_table_preview = TRUE,   # lazy-aware HTML preview (dm + flatten)
+  blockr.tabular_display = blockr.ui::html_table_display,   # lazy-aware HTML preview (dm + flatten)
   shiny.port = 3822,
   # shiny.host = "0.0.0.0",
   shiny.launch.browser = FALSE

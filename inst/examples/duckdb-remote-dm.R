@@ -32,7 +32,7 @@
 # source checkout with pkgload::load_all(). One board, two loaders, no drift.
 if (!exists("dev_local")) dev_local <- FALSE
 
-options(blockr.html_table_preview = TRUE)  # lazy-aware HTML preview (dm + flatten)
+options(blockr.tabular_display = blockr.ui::html_table_display)  # lazy-aware HTML preview (dm + flatten)
 
 blockr_pkgs <- c(
   "blockr.core",
@@ -234,15 +234,17 @@ board <- new_dock_board(
   # right tab strip holds everything else -- the Workflow graph, the star join,
   # the filter, the reader code, and the materialized result -- so the function
   # code is never the first thing a visitor sees.
-  layouts = dock_layout(
-    group(
-      "model",
-      "example",
-      sizes = c(0.55, 0.45)
-    ),
-    panels("dag_extension", "joined", "filtered", "remote", "collected",
-           active = "collected"),
-    sizes = c(0.64, 0.36)
+  grids = list(
+    Main = dock_grid(
+      group(
+        "model",
+        "example",
+        sizes = c(0.55, 0.45)
+      ),
+      panels("dag_extension", "joined", "filtered", "remote", "collected",
+             active = "collected"),
+      sizes = c(0.64, 0.36)
+    )
   )
 )
 
