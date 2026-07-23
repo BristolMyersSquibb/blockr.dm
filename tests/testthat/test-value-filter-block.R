@@ -15,14 +15,19 @@ test_that("constructor accepts default empty state", {
 # Migration -------------------------------------------------------------------
 
 test_that("migrate_value_filter_state handles NULL", {
-  expect_equal(migrate_value_filter_state(NULL), list(columns = list()))
+  expect_equal(
+    migrate_value_filter_state(NULL),
+    list(columns = list(), operator = "&")
+  )
 })
 
 test_that("migrate_value_filter_state passes through new-shape state", {
   new_state <- list(columns = list(
     list(name = "Species", mode = "single", values = "setosa")
   ))
-  expect_identical(migrate_value_filter_state(new_state), new_state)
+  out <- migrate_value_filter_state(new_state)
+  expect_identical(out$columns, new_state$columns)
+  expect_equal(out$operator, "&")
 })
 
 test_that("migrate_value_filter_state converts old parallel-list shape", {
@@ -32,9 +37,12 @@ test_that("migrate_value_filter_state converts old parallel-list shape", {
     values  = list(Species = "setosa")
   )
   out <- migrate_value_filter_state(old)
-  expect_equal(out, list(columns = list(
-    list(name = "Species", mode = "single", values = "setosa")
-  )))
+  expect_equal(out, list(
+    columns = list(
+      list(name = "Species", mode = "single", values = "setosa")
+    ),
+    operator = "&"
+  ))
 })
 
 test_that("migrate_value_filter_state handles multi-column old shape", {
@@ -355,8 +363,8 @@ test_that("build_column_meta on df returns flat metadata", {
   attr(df$x, "label") <- "X axis"
   meta <- build_column_meta(df)
   expect_false(meta$is_dm)
-  expect_equal(meta$columns[[1]], list(value = "x", label = "X axis"))
-  expect_equal(meta$columns[[2]], list(value = "y", label = ""))
+  expect_equal(meta$columns[[1]], list(value = "x", label = "X axis", type = ""))
+  expect_equal(meta$columns[[2]], list(value = "y", label = "", type = ""))
 })
 
 test_that("build_column_meta does NOT ship per-column value lists", {
@@ -544,4 +552,109 @@ test_that("binding announce re-sends columns and state (lazy-panel handshake)", 
     },
     args = list(x = blk, data = list(data = function() iris))
   )
+})
+
+# operator (AND/OR) --------------------------------------------------------
+
+test_that("migrate defaults operator to & and normalizes junk", {
+  expect_equal(migrate_value_filter_state(NULL)$operator, "&")
+  expect_equal(migrate_value_filter_state(list(columns = list()))$operator, "&")
+  expect_equal(
+    migrate_value_filter_state(list(columns = list(), operator = "|"))$operator,
+    "|"
+  )
+  expect_equal(
+    migrate_value_filter_state(list(columns = list(), operator = "nope"))$operator,
+    "&"
+  )
+})
+
+test_that("migrate keeps operator through the old-shape conversion", {
+  out <- migrate_value_filter_state(
+    list(columns = "Species",
+         modes   = list(Species = "single"),
+         values  = list(Species = "setosa"),
+         operator = "|")
+  )
+  expect_equal(out$operator, "|")
+  expect_equal(out$columns[[1]]$name, "Species")
+})
+
+test_that("df expr combines with | when operator is |", {
+  cols <- list(
+    list(name = "Species", mode = "single", values = "setosa"),
+    list(name = "Petal.Width", mode = "single", values = "0.2")
+  )
+  e_and <- make_filter_block_expr(cols, iris)
+  e_or <- make_filter_block_expr(cols, iris, operator = "|")
+  out_and <- eval(e_and, list(data = iris))
+  out_or <- eval(e_or, list(data = iris))
+  expect_true(all(out_and$Species == "setosa" & out_and$Petal.Width == 0.2))
+  expect_true(all(out_or$Species == "setosa" | out_or$Petal.Width == 0.2))
+  expect_gt(nrow(out_or), nrow(out_and))
+})
+
+test_that("enforce_single_rule preserves the operator", {
+  s <- list(
+    columns = list(list(name = "Species", mode = "single", values = "setosa")),
+    operator = "|"
+  )
+  expect_equal(enforce_single_rule(s, iris)$operator, "|")
+})
+
+test_that("normalize_state_for_json carries the operator", {
+  s <- list(columns = list(), operator = "|")
+  expect_equal(normalize_state_for_json(s)$operator, "|")
+  expect_equal(normalize_state_for_json(list(columns = list()))$operator, "&")
+})
+
+# column meta type ----------------------------------------------------------
+
+test_that("build_column_meta flags logical columns", {
+  df <- data.frame(flag = c(TRUE, FALSE), x = 1:2, s = c("a", "b"))
+  meta <- build_column_meta(df)
+  types <- vapply(meta$columns, function(cc) cc$type, character(1))
+  expect_equal(types, c("logical", "", ""))
+})
+
+# logical columns: switch semantics -----------------------------------------
+
+test_that("single-mode logical TRUE filters to TRUE, excluding NA", {
+  df <- data.frame(flag = c(TRUE, FALSE, NA, TRUE))
+  e <- make_filter_block_expr(
+    list(list(name = "flag", mode = "single", values = "TRUE")), df
+  )
+  out <- eval(e, list(data = df))
+  expect_equal(nrow(out), 2L)
+  expect_true(all(out$flag))
+})
+
+test_that("single-mode logical FALSE counts NA as FALSE", {
+  df <- data.frame(flag = c(TRUE, FALSE, NA, TRUE))
+  e <- make_filter_block_expr(
+    list(list(name = "flag", mode = "single", values = "FALSE")), df
+  )
+  expect_identical(e[[3]], bquote(!(flag %in% TRUE)))
+  out <- eval(e, list(data = df))
+  expect_equal(nrow(out), 2L)
+  expect_true(all(!out$flag | is.na(out$flag)))
+})
+
+test_that("multi-mode logical keeps exact %in% semantics (NA excluded)", {
+  df <- data.frame(flag = c(TRUE, FALSE, NA, TRUE))
+  e <- make_filter_block_expr(
+    list(list(name = "flag", mode = "multi", values = "FALSE")), df
+  )
+  out <- eval(e, list(data = df))
+  expect_equal(nrow(out), 1L)
+  expect_false(out$flag)
+})
+
+test_that("multi-mode logical <NA> token still selects missings", {
+  df <- data.frame(flag = c(TRUE, FALSE, NA, TRUE))
+  e <- make_filter_block_expr(
+    list(list(name = "flag", mode = "multi", values = c("FALSE", "<NA>"))), df
+  )
+  out <- eval(e, list(data = df))
+  expect_equal(nrow(out), 2L)
 })

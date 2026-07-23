@@ -44,12 +44,23 @@ VALUE_FILTER_EMPTY <- "<empty>"  # nolint: object_name_linter.
 #' path depends on `dm`; it is fully usable in a dashboard by composing it
 #' onto a board.
 #'
-#' @param state List with `columns` — a list of column-object entries. Each
-#'   entry has `name` (column name), `table` (source table; only when input
-#'   is a `dm`), `mode` (`"single"` or `"multi"`), and `values` (character
-#'   vector of selected values). Old-style state
-#'   (`list(columns=character, modes=list, values=list)`) is auto-migrated
-#'   via [migrate_value_filter_state()] for backward compatibility.
+#' @param state List with `columns` — a list of column-object entries — and
+#'   `operator` ("&" or "|", default "&") controlling how the per-column
+#'   conditions combine on a data-frame input (same AND/OR pill as the
+#'   blockr.dplyr filter block; a builder option, so it sits in the gear
+#'   popover and shows once two or more fields are active). On a `dm` input
+#'   the operator is ignored: the restriction cascades per-table through
+#'   `dm::dm_filter()`, whose chaining is inherently AND, so the pill is not
+#'   offered there. Each column entry has `name` (column name), `table`
+#'   (source table; only when input is a `dm`), `mode` (`"single"` or
+#'   `"multi"`), and `values` (character vector of selected values). Logical
+#'   columns in single mode render as a switch instead of a dropdown: ON
+#'   filters to `col %in% TRUE`, OFF to `!(col %in% TRUE)` — i.e. missings
+#'   count as FALSE. For NA as an explicit category, flip the column to
+#'   Multi (the `<NA>` token) or use the blockr.dplyr filter block.
+#'   Old-style state (`list(columns=character, modes=list, values=list)`)
+#'   is auto-migrated via [migrate_value_filter_state()] for backward
+#'   compatibility.
 #' @param ... Additional arguments forwarded to [blockr.core::new_transform_block()].
 #'
 #' @examples
@@ -193,7 +204,8 @@ new_value_filter_block <- function(
           expr = shiny::reactive({
             make_filter_block_expr(
               r_state()$columns %||% list(),
-              data()
+              data(),
+              operator = r_state()$operator %||% "&"
             )
           }),
           state = list(state = r_state)
@@ -238,7 +250,8 @@ new_value_filter_block <- function(
 #'   `list(columns = list(list(name="A", mode="single", values="x"),
 #'                        list(name="B", mode="multi",  values=c("y","z"))))`
 #'
-#' Idempotent: passing a new-shape state returns it unchanged.
+#' Idempotent: passing a new-shape state returns it unchanged (with the
+#' `operator` field normalized to "&" or "|", defaulting to "&").
 #'
 #' @param state Filter state (old or new shape).
 #' @return Filter state in the new column-object shape.
@@ -253,17 +266,19 @@ new_value_filter_block <- function(
 #' @export
 migrate_value_filter_state <- function(state) {
   if (is.null(state)) {
-    return(list(columns = list()))
+    return(list(columns = list(), operator = "&"))
   }
+  op <- state$operator %||% "&"
+  if (!identical(op, "|")) op <- "&"
   cols <- state$columns
   # Already new shape: `columns` is a list of column-object entries.
   if (is.list(cols) && length(cols) > 0L &&
       is.list(cols[[1L]]) && !is.null(cols[[1L]]$name)) {
-    return(state)
+    return(list(columns = cols, operator = op))
   }
   if (is.list(cols) && length(cols) == 0L && is.null(state$modes) &&
       is.null(state$values)) {
-    return(list(columns = list()))
+    return(list(columns = list(), operator = op))
   }
   cols_vec <- as.character(cols %||% character())
   modes <- state$modes %||% list()
@@ -275,7 +290,7 @@ migrate_value_filter_state <- function(state) {
       values = as.character(values[[cn]] %||% character())
     )
   })
-  list(columns = entries)
+  list(columns = entries, operator = op)
 }
 
 #' Build cheap column metadata (names/labels/table) for the JS side.
@@ -300,7 +315,11 @@ build_column_meta <- function(data) {
 #' @noRd
 build_column_meta_df <- function(df) {
   cols <- lapply(names(df), function(cn) {
-    list(value = cn, label = column_label(df[[cn]]))
+    list(
+      value = cn,
+      label = column_label(df[[cn]]),
+      type  = column_meta_type(df[[cn]])
+    )
   })
   list(columns = cols, is_dm = FALSE)
 }
@@ -323,6 +342,7 @@ build_column_meta_dm <- function(dm_obj) {
       cols[[length(cols) + 1L]] <- list(
         value  = paste0(tbl_nm, ".", cn),
         label  = column_label(head0[[cn]]),
+        type   = column_meta_type(head0[[cn]]),
         table  = tbl_nm,
         column = cn
       )
@@ -349,6 +369,13 @@ table_head0 <- function(tbl) {
 column_label <- function(col) {
   lbl <- attr(col, "label", exact = TRUE)
   if (is.null(lbl)) "" else as.character(lbl)[1L]
+}
+
+#' Coarse column type for the JS side: "logical" columns render as a
+#' click-to-cycle value pill instead of a dropdown; everything else is "".
+#' @noRd
+column_meta_type <- function(col) {
+  if (is.logical(col)) "logical" else ""
 }
 
 #' Lazily compute the value options for one column, by qualified key.
@@ -484,11 +511,14 @@ first_value <- function(src) {
 }
 
 #' Enforce "single-select always has a value" and drop schema-missing entries.
+#' Preserves the state's `operator` field.
 #' @noRd
 enforce_single_rule <- function(state, data) {
-  if (is.null(state)) return(list(columns = list()))
+  if (is.null(state)) return(list(columns = list(), operator = "&"))
+  op <- state$operator %||% "&"
+  if (!identical(op, "|")) op <- "&"
   cols <- state$columns %||% list()
-  if (length(cols) == 0L) return(list(columns = cols))
+  if (length(cols) == 0L) return(list(columns = cols, operator = op))
   # Drop entries whose source is missing in the upstream data.
   cols <- Filter(function(entry) {
     !is.null(column_source(data, entry))
@@ -503,18 +533,23 @@ enforce_single_rule <- function(state, data) {
     fv <- first_value(src)
     if (!is.null(fv)) cols[[i]]$values <- fv
   }
-  list(columns = cols)
+  list(columns = cols, operator = op)
 }
 
 #' Build the filter expression — branches on input type.
 #'
-#' Data frame: `dplyr::filter(data, <combined-cond>)`. Empty state =
+#' Data frame: `dplyr::filter(data, <combined-cond>)`, with the per-column
+#' conditions joined by `operator` ("&" or "|"). Empty state =
 #' `dplyr::filter(data, TRUE)`.
 #'
 #' dm: chained `dm::dm_filter()` calls, one per table, with same-table
-#' conditions joined by `&`. Empty state = `dm::dm_filter(data)` (identity).
+#' conditions joined by `&`. The `operator` is deliberately ignored here —
+#' `dm_filter()` chaining cascades per table through foreign keys, which is
+#' inherently AND; a cross-table OR is not expressible in that form (the UI
+#' hides the AND/OR pill for dm input accordingly). Empty state =
+#' `dm::dm_filter(data)` (identity).
 #' @noRd
-make_filter_block_expr <- function(columns, data) {
+make_filter_block_expr <- function(columns, data, operator = "&") {
   if (length(columns) == 0L) {
     if (inherits(data, "dm")) return(bquote(dm::dm_filter(data)))
     return(bquote(dplyr::filter(data, TRUE)))
@@ -522,12 +557,12 @@ make_filter_block_expr <- function(columns, data) {
   if (inherits(data, "dm")) {
     make_dm_filter_expr(columns, data)
   } else {
-    make_df_filter_expr(columns, data)
+    make_df_filter_expr(columns, data, operator = operator)
   }
 }
 
 #' @noRd
-make_df_filter_expr <- function(columns, df) {
+make_df_filter_expr <- function(columns, df, operator = "&") {
   exprs <- list()
   for (entry in columns) {
     cond <- column_condition_expr(entry, df)
@@ -536,7 +571,7 @@ make_df_filter_expr <- function(columns, df) {
   if (length(exprs) == 0L) {
     return(bquote(dplyr::filter(data, TRUE)))
   }
-  combined <- combine_conds_and(exprs)
+  combined <- combine_conds(exprs, operator)
   as.call(list(quote(dplyr::filter), quote(data), combined))
 }
 
@@ -563,7 +598,7 @@ make_dm_filter_expr <- function(columns, dm_obj) {
   # — this is how dm::dm_filter() targets a table via tidy-eval.
   result <- quote(data)
   for (tbl in names(by_table)) {
-    cond <- combine_conds_and(by_table[[tbl]])
+    cond <- combine_conds(by_table[[tbl]], "&")
     cl <- call("dm_filter", result)
     cl[[tbl]] <- cond
     cl[[1L]] <- quote(dm::dm_filter)
@@ -579,6 +614,13 @@ make_dm_filter_expr <- function(columns, dm_obj) {
 #' become `is.na(col)` / `col == ""` and are OR'd in (see the design note at
 #' the top of this file). Returns the bare `%in%` call when no tokens are
 #' selected, so the common case is unchanged.
+#'
+#' Special case — single-mode LOGICAL columns (the switch UI): ON emits
+#' `col %in% TRUE` (missings excluded, as always), OFF emits
+#' `!(col %in% TRUE)` so missings count as FALSE. A flag that was never set
+#' is not "treatment-emergent", so the OFF side must keep NA rows; users who
+#' need NA as its own category flip the column to Multi (the `<NA>` token)
+#' or use the dplyr filter block.
 #' @noRd
 column_condition_expr <- function(entry, src_df) {
   v <- entry$values
@@ -592,6 +634,21 @@ column_condition_expr <- function(entry, src_df) {
   real <- v[!v %in% c(VALUE_FILTER_NA, VALUE_FILTER_EMPTY)]
 
   sym <- as.name(col)
+
+  mode <- entry$mode %||% "single"
+  if (identical(mode, "single") && length(real) == 1L &&
+      !has_na && !has_empty &&
+      is.data.frame(src_df) && col %in% names(src_df) &&
+      is.logical(src_df[[col]]) && real %in% c("TRUE", "FALSE")) {
+    return(
+      if (identical(real, "TRUE")) {
+        bquote(.(sym) %in% TRUE)
+      } else {
+        bquote(!(.(sym) %in% TRUE))
+      }
+    )
+  }
+
   parts <- list()
 
   if (length(real) > 0L) {
@@ -620,13 +677,14 @@ column_condition_expr <- function(entry, src_df) {
   Reduce(function(a, b) bquote(.(a) | .(b)), parts)
 }
 
-#' Combine N condition expressions with `&`.
+#' Combine N condition expressions with `&` or `|`.
 #' @noRd
-combine_conds_and <- function(exprs) {
+combine_conds <- function(exprs, operator = "&") {
+  if (!identical(operator, "|")) operator <- "&"
   combined <- exprs[[1L]]
   if (length(exprs) > 1L) {
     for (i in seq.int(2L, length(exprs))) {
-      combined <- bquote(.(combined) & .(exprs[[i]]))
+      combined <- call(operator, combined, exprs[[i]])
     }
   }
   combined
@@ -639,6 +697,8 @@ combine_conds_and <- function(exprs) {
 #' @noRd
 normalize_state_for_json <- function(s) {
   if (is.null(s)) s <- list(columns = list())
+  op <- s$operator %||% "&"
+  if (!identical(op, "|")) op <- "&"
   cols <- s$columns %||% list()
   cols_norm <- lapply(cols, function(e) {
     out <- list(
@@ -649,7 +709,7 @@ normalize_state_for_json <- function(s) {
     if (!is.null(e$table) && nzchar(e$table)) out$table <- e$table
     out
   })
-  list(columns = cols_norm)
+  list(columns = cols_norm, operator = op)
 }
 
 # The preview container. Every branch of block_output.value_filter_block

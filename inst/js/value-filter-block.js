@@ -29,8 +29,10 @@
     constructor(el) {
       this.el = el;
       this.isDm = false;
-      this.columns = [];     // [{value, label, table?, column?}] all columns
+      this.operator = '&';   // how column conditions combine (df input only)
+      this.columns = [];     // [{value, label, type?, table?, column?}] all columns
       this.colLabels = {};   // qualKey -> label
+      this.colTypes = {};    // qualKey -> coarse type ('logical' or '')
       this.colValues = {};   // qualKey -> options array (loaded lazily on open)
       this._loadedKeys = new Set();        // qualKeys whose values have arrived
       this._pendingValueRequests = new Set(); // qualKeys with a request in flight
@@ -140,7 +142,41 @@
       this.modesContainer.className = 'bi-filter-modes';
       this.popoverEl.appendChild(this.modesContainer);
 
+      // Combine row: AND/OR value pill (same as blockr.dplyr's filter block).
+      // A builder-level option, so it lives in the gear, not the body. Only
+      // meaningful with two or more conditions, and only on df input: dm
+      // filtering cascades per table via chained dm_filter(), which is
+      // inherently AND, so offering OR there would lie about the semantics.
+      this.opRow = document.createElement('div');
+      this.opRow.className = 'blockr-popover-row bi-filter-op-row';
+      this.opRow.style.display = 'none';
+      const opLabel = document.createElement('label');
+      opLabel.className = 'blockr-popover-label';
+      opLabel.textContent = 'Combine';
+      this.opRow.appendChild(opLabel);
+      this.opPill = document.createElement('button');
+      this.opPill.type = 'button';
+      this.opPill.className = 'blockr-pill bi-filter-op-toggle';
+      this.opPill.textContent = 'AND';
+      this.opPill.title =
+        'Toggle between AND (all conditions must match) and OR (any condition can match)';
+      this.opPill.addEventListener('click', () => {
+        this.operator = this.operator === '&' ? '|' : '&';
+        this.opPill.textContent = this.operator === '&' ? 'AND' : 'OR';
+        this._autoSubmit(0);
+      });
+      this.opRow.appendChild(this.opPill);
+      this.popoverEl.appendChild(this.opRow);
+
       this.card.appendChild(this.popoverEl);
+    }
+
+    // Sync the gear's Combine row with the current operator/entries: shown
+    // for df input with 2+ conditions, hidden otherwise (and always for dm).
+    _refreshOpRow() {
+      this.opPill.textContent = this.operator === '&' ? 'AND' : 'OR';
+      this.opRow.style.display =
+        (!this.isDm && this.entries.length >= 2) ? '' : 'none';
     }
 
     _columnsForCurrentTable() {
@@ -234,6 +270,7 @@
     }
 
     _rebuildModes() {
+      this._refreshOpRow();
       this.modesContainer.innerHTML = '';
       this._modePills = {};
 
@@ -364,7 +401,34 @@
         // render (single-select falls back to the value text; multi-select
         // renders chips from `selected`) so chips show before the list lands.
         const loading = !this._loadedKeys.has(key);
-        if (mode === 'single') {
+        if (mode === 'single' && this.colTypes[key] === 'logical') {
+          // Boolean column: a switch. ON = TRUE, OFF = FALSE — where OFF
+          // counts missings as FALSE too (the R side emits `!(col %in% TRUE)`
+          // for single-mode logical columns). Users who need NA as an explicit
+          // category flip the column to Multi in the gear (the <NA> token
+          // appears in the multi-select) or use the dplyr filter block.
+          const on = String(sel[0]) === 'TRUE';
+          const sw = document.createElement('label');
+          sw.className = 'blockr-switch bi-filter-bool-switch';
+          const swInput = document.createElement('input');
+          swInput.type = 'checkbox';
+          swInput.checked = on;
+          const track = document.createElement('span');
+          track.className = 'blockr-switch__track';
+          const swLabel = document.createElement('span');
+          swLabel.className = 'bi-filter-bool-switch-label';
+          swLabel.textContent = on ? 'TRUE' : 'FALSE';
+          swInput.addEventListener('change', () => {
+            const v = swInput.checked ? 'TRUE' : 'FALSE';
+            this.entries[idx].values = [v];
+            swLabel.textContent = v;
+            this._autoSubmit(0);
+          });
+          sw.appendChild(swInput);
+          sw.appendChild(track);
+          sw.appendChild(swLabel);
+          wrap.appendChild(sw);
+        } else if (mode === 'single') {
           this._bodySelects[key] = Blockr.Select.single(wrap, {
             options: opts,
             selected: sel[0] != null ? sel[0] : null,
@@ -427,7 +491,7 @@
         if (this.isDm && e.table != null && e.table !== '') out.table = e.table;
         return out;
       });
-      return { columns: cols };
+      return { columns: cols, operator: this.operator };
     }
 
     _submit() {
@@ -456,6 +520,7 @@
         if (e && e.table != null && e.table !== '') entry.table = e.table;
         return entry;
       });
+      this.operator = (state && state.operator === '|') ? '|' : '&';
       this._rebuildTableSelect();
       this._rebuildFieldsSelect();
       this._rebuildModes();
@@ -474,6 +539,7 @@
       this._pendingValueRequests.clear();
 
       this.colLabels = {};
+      this.colTypes = {};
       const tableSet = new Set();
       this.columns.forEach((c) => {
         const key = this.isDm
@@ -481,6 +547,8 @@
           : (c.value || c);
         const lab = (typeof c === 'object' && c !== null && c.label) ? c.label : '';
         this.colLabels[key] = lab;
+        this.colTypes[key] =
+          (typeof c === 'object' && c !== null && c.type) ? c.type : '';
         if (this.isDm && c.table) tableSet.add(c.table);
       });
       this.tables = Array.from(tableSet);

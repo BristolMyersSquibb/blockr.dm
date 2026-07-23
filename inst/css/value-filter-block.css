@@ -64,3 +64,79 @@
 .bi-filter-mode-row .blockr-popover-label {
   margin-bottom: 0;
 }
+
+/* Boolean column: design-system switch (ON = TRUE, OFF = FALSE incl. NA).
+   Markup + CSS follow design-system/target boolean-controls-proposals'
+   .blockr-switch spec (30x18 track, 14px knob, primary when on); scoped
+   here until a shared switch component lands in the design-system assets. */
+.blockr-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: var(--blockr-font-size-sm, 13px);
+  color: var(--blockr-grey-700, #374151);
+  min-height: var(--blockr-control-h-xs, 26px);
+  user-select: none;
+  position: relative;
+  margin: 0;
+}
+
+.blockr-switch input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+}
+
+.blockr-switch__track {
+  width: 30px;
+  height: 18px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  background: var(--blockr-grey-300, #d1d5db);
+  position: relative;
+  transition: background 0.15s ease;
+}
+
+.blockr-switch__track::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  transition: left 0.15s ease;
+}
+
+.blockr-switch:hover .blockr-switch__track {
+  background: var(--blockr-grey-400, #9ca3af);
+}
+
+.blockr-switch input:checked + .blockr-switch__track {
+  background: var(--blockr-color-primary, #3b82f6);
+}
+
+.blockr-switch input:checked + .blockr-switch__track::after {
+  left: 14px;
+}
+
+.blockr-switch input:focus-visible + .blockr-switch__track {
+  box-shadow: var(--blockr-focus-ring, 0 0 0 3px rgba(59, 130, 246, 0.25));
+}
+
+.bi-filter-bool-switch-label {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  color: var(--blockr-grey-500, #6b7280);
+}
+
+/* AND/OR combinator pill (gear popover Combine row). */
+.bi-filter-op-toggle {
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}

@@ -19,7 +19,8 @@ New shape:
 \code{list(columns = list(list(name="A", mode="single", values="x"), list(name="B", mode="multi",  values=c("y","z"))))}
 }
 \details{
-Idempotent: passing a new-shape state returns it unchanged.
+Idempotent: passing a new-shape state returns it unchanged (with the
+\code{operator} field normalized to "&" or "|", defaulting to "&").
 }
 \examples{
 migrate_value_filter_state(

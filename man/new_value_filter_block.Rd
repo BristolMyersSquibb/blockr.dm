@@ -7,12 +7,23 @@
 new_value_filter_block(state = list(columns = list()), ...)
 }
 \arguments{
-\item{state}{List with \code{columns} — a list of column-object entries. Each
-entry has \code{name} (column name), \code{table} (source table; only when input
-is a \code{dm}), \code{mode} (\code{"single"} or \code{"multi"}), and \code{values} (character
-vector of selected values). Old-style state
-(\code{list(columns=character, modes=list, values=list)}) is auto-migrated
-via \code{\link[=migrate_value_filter_state]{migrate_value_filter_state()}} for backward compatibility.}
+\item{state}{List with \code{columns} — a list of column-object entries — and
+\code{operator} ("&" or "|", default "&") controlling how the per-column
+conditions combine on a data-frame input (same AND/OR pill as the
+blockr.dplyr filter block; a builder option, so it sits in the gear
+popover and shows once two or more fields are active). On a \code{dm} input
+the operator is ignored: the restriction cascades per-table through
+\code{dm::dm_filter()}, whose chaining is inherently AND, so the pill is not
+offered there. Each column entry has \code{name} (column name), \code{table}
+(source table; only when input is a \code{dm}), \code{mode} (\code{"single"} or
+\code{"multi"}), and \code{values} (character vector of selected values). Logical
+columns in single mode render as a switch instead of a dropdown: ON
+filters to \code{col \%in\% TRUE}, OFF to \code{!(col \%in\% TRUE)} — i.e. missings
+count as FALSE. For NA as an explicit category, flip the column to
+Multi (the \verb{<NA>} token) or use the blockr.dplyr filter block.
+Old-style state (\code{list(columns=character, modes=list, values=list)})
+is auto-migrated via \code{\link[=migrate_value_filter_state]{migrate_value_filter_state()}} for backward
+compatibility.}
 
 \item{...}{Additional arguments forwarded to \code{\link[blockr.core:new_transform_block]{blockr.core::new_transform_block()}}.}
 }
