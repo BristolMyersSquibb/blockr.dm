@@ -1,5 +1,38 @@
 /* blockr.dm value filter block — thin layout on top of blockr.dplyr's shared styles. */
 
+/* Gear options band. Replaces the old floating .blockr-popover: an in-flow,
+   full-width band between the gear header and the body, so opening it pushes
+   the block content down instead of floating over it, and it shrinks to the
+   block width instead of overflowing a narrow sidebar (no min-width:280px).
+   Design-system settings band, mirroring blockr.viz's settings-band.css. */
+.bi-filter-settings {
+  border: 1px solid var(--blockr-color-border, #e5e7eb);
+  border-radius: 8px;
+  padding: 12px 14px 16px;
+  margin-bottom: 10px;
+  background: #fff;
+  box-sizing: border-box;
+  position: relative;
+}
+
+/* Beak on the top-right edge pointing at the gear button (shown only while
+   open — the band is display:none when closed, so ::before never renders). */
+.bi-filter-settings::before {
+  content: "";
+  position: absolute;
+  top: -6px;
+  right: 8px;
+  width: 10px;
+  height: 10px;
+  background: #fff;
+  border-left: 1px solid var(--blockr-color-border, #e5e7eb);
+  border-top: 1px solid var(--blockr-color-border, #e5e7eb);
+  transform: rotate(45deg);
+}
+
+/* Let the selects inside shrink to the band width. */
+.bi-filter-settings .blockr-popover-select-wrap { min-width: 0; }
+
 .bi-filter-body {
   display: flex;
   flex-direction: column;
@@ -65,74 +98,82 @@
   margin-bottom: 0;
 }
 
-/* Boolean column: design-system switch (ON = TRUE, OFF = FALSE incl. NA).
-   Markup + CSS follow design-system/target boolean-controls-proposals'
-   .blockr-switch spec (30x18 track, 14px knob, primary when on); scoped
-   here until a shared switch component lands in the design-system assets. */
-.blockr-switch {
+/* Boolean column: one compact design-system checkbox row (no label-above,
+   no bordered row wrap). Markup + CSS vendored from blockr.dplyr's
+   settings-band checkbox (canonical boolean control) — distinct selectors
+   would drift, so the classes are kept verbatim; scoped additions only. */
+.blockr-checkbox {
   display: inline-flex;
   align-items: center;
   gap: 8px;
   cursor: pointer;
-  font-size: var(--blockr-font-size-sm, 13px);
+  font-size: var(--blockr-font-size-sm, 0.8125rem);
   color: var(--blockr-grey-700, #374151);
-  min-height: var(--blockr-control-h-xs, 26px);
+  min-height: 26px;
   user-select: none;
   position: relative;
-  margin: 0;
+  margin-bottom: 0;           /* neutralize bootstrap label margin */
+  font-weight: var(--blockr-font-weight-normal, 400);
 }
 
-.blockr-switch input {
+.blockr-checkbox input {
   position: absolute;
   opacity: 0;
   width: 1px;
   height: 1px;
 }
 
-.blockr-switch__track {
-  width: 30px;
-  height: 18px;
+.blockr-checkbox__box {
+  width: 16px;
+  height: 16px;
   flex-shrink: 0;
-  border-radius: 999px;
-  background: var(--blockr-grey-300, #d1d5db);
-  position: relative;
-  transition: background 0.15s ease;
-}
-
-.blockr-switch__track::after {
-  content: "";
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
+  border: 1px solid var(--blockr-grey-300, #d1d5db);
+  border-radius: 4px;
   background: #fff;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
-  transition: left 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  transition: background 0.15s ease, border-color 0.15s ease;
 }
 
-.blockr-switch:hover .blockr-switch__track {
-  background: var(--blockr-grey-400, #9ca3af);
+.blockr-checkbox:hover .blockr-checkbox__box {
+  border-color: var(--blockr-grey-400, #9ca3af);
 }
 
-.blockr-switch input:checked + .blockr-switch__track {
-  background: var(--blockr-color-primary, #3b82f6);
+.blockr-checkbox input:checked + .blockr-checkbox__box {
+  background: var(--blockr-color-primary, #2563eb);
+  border-color: var(--blockr-color-primary, #2563eb);
 }
 
-.blockr-switch input:checked + .blockr-switch__track::after {
-  left: 14px;
+.blockr-checkbox input:focus-visible + .blockr-checkbox__box {
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
 }
 
-.blockr-switch input:focus-visible + .blockr-switch__track {
-  box-shadow: var(--blockr-focus-ring, 0 0 0 3px rgba(59, 130, 246, 0.25));
+.blockr-checkbox__box svg {
+  opacity: 0;
+  transform: scale(0.5);
+  transition: opacity 0.15s ease, transform 0.15s ease;
 }
 
-.bi-filter-bool-switch-label {
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0.05em;
-  color: var(--blockr-grey-500, #6b7280);
+.blockr-checkbox input:checked + .blockr-checkbox__box svg {
+  opacity: 1;
+  transform: scale(1);
+}
+
+/* Tighter stacking for a run of flag checkboxes. */
+.bi-filter-item-bool {
+  margin-bottom: 4px;
+}
+
+.bi-filter-bool-checkbox {
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.bi-filter-bool-checkbox .blockr-checkbox__label {
+  flex-shrink: 0;
 }
 
 /* AND/OR combinator pill (gear popover Combine row). */

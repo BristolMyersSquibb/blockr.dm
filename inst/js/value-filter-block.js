@@ -39,6 +39,8 @@
       this.tables = [];      // [string] only for dm — ordered table names
       this.currentTable = ''; // dm: which table the Fields picker is scoped to
       this.entries = [];     // [{name, table?, mode, values}] active filters
+      this.groups = [];      // [{name, labels}] author-declared flag groups
+      this.groupSel = {};    // group name -> selected labels
 
       this._callback = null;
       this._submitted = false;
@@ -93,18 +95,33 @@
       this.bodyEl.className = 'bi-filter-body';
       this.card.appendChild(this.bodyEl);
 
+      // CAPTURE phase: Blockr.Select handles the option click in the bubble
+      // phase and re-renders the dropdown, detaching the clicked <option> from
+      // the DOM. By the time a bubble-phase document handler ran, e.target would
+      // be detached and e.target.closest() would return null — so the guard
+      // below has to test the target while it is still attached, i.e. on the way
+      // DOWN. Blockr.Select portals its open dropdown to document.body, so an
+      // option click is outside the band's DOM; without this guard, picking a
+      // field would close the whole band (and its dropdown) on every pick.
       document.addEventListener('click', (e) => {
+        const inSelectMenu = e.target.closest &&
+          e.target.closest('.blockr-select__dropdown');
         if (this._popoverOpen && this.popoverEl &&
             !this.popoverEl.contains(e.target) &&
-            !this.gearBtn.contains(e.target)) {
+            !this.gearBtn.contains(e.target) &&
+            !inSelectMenu) {
           this._closePopover();
         }
-      });
+      }, true);
     }
 
     _buildPopover() {
       this.popoverEl = document.createElement('div');
-      this.popoverEl.className = 'blockr-popover';
+      // In-flow settings band (not the floating .blockr-popover): it sits
+      // between the gear header and the body, so opening it pushes the block
+      // content down and it can never overflow a narrow sidebar. Rows keep the
+      // .blockr-popover-* classes (child-keyed styles, position-neutral).
+      this.popoverEl.className = 'bi-filter-settings';
       this.popoverEl.style.display = 'none';
 
       // Table row (dm only — hidden in df mode).
@@ -260,8 +277,14 @@
         if (exists) return;
         const entry = { name: nm, mode: 'single', values: [] };
         if (this.isDm) entry.table = tbl;
-        const first = this._firstValueOf(entry);
-        if (first != null) entry.values = [String(first)];
+        if (this.colTypes[qualKey(nm, this.isDm ? tbl : undefined)] === 'logical') {
+          // A fresh flag checkbox starts checked: adding it means "require
+          // this flag" (unchecked = no constraint, which would be a no-op).
+          entry.values = ['TRUE'];
+        } else {
+          const first = this._firstValueOf(entry);
+          if (first != null) entry.values = [String(first)];
+        }
         this.entries.push(entry);
       });
 
@@ -354,15 +377,109 @@
       this._bodySelects = {};
       this.bodyEl.innerHTML = '';
 
+      // Author-declared flag groups render first: each is one multi-select
+      // over the group's labels (the block's normal field paradigm — empty
+      // selection passes through, selected labels union server-side).
+      if (!this.isDm) {
+        this.groups.forEach((grp) => {
+          const item = document.createElement('div');
+          item.className = 'bi-filter-item';
+
+          const label = document.createElement('label');
+          label.className = 'blockr-label bi-filter-label';
+          label.appendChild(document.createTextNode(grp.name));
+          item.appendChild(label);
+
+          const row = document.createElement('div');
+          row.className = 'blockr-row bi-filter-row';
+          item.appendChild(row);
+
+          const wrap = document.createElement('div');
+          wrap.className = 'bi-filter-select-wrap';
+          row.appendChild(wrap);
+
+          const labels = (grp.labels || []).map(String);
+          const sel = (this.groupSel[grp.name] || [])
+            .filter((v) => labels.indexOf(v) >= 0);
+          Blockr.Select.multi(wrap, {
+            options: labels,
+            selected: sel.slice(),
+            placeholder: 'Select…',
+            reorderable: false,
+            onChange: (vals) => {
+              this.groupSel[grp.name] = vals.map(String);
+              this._autoSubmit();
+            }
+          });
+
+          this.bodyEl.appendChild(item);
+        });
+      }
+
       if (this.entries.length === 0) {
-        const empty = document.createElement('div');
-        empty.className = 'bi-filter-empty';
-        empty.textContent = 'No filters. Click the gear to add fields.';
-        this.bodyEl.appendChild(empty);
+        if (this.isDm || this.groups.length === 0) {
+          const empty = document.createElement('div');
+          empty.className = 'bi-filter-empty';
+          empty.textContent = 'No filters. Click the gear to add fields.';
+          this.bodyEl.appendChild(empty);
+        }
         return;
       }
 
       this.entries.forEach((entry, idx) => {
+        const entryKey = qualKey(entry.name, entry.table);
+        const entryMode = entry.mode || 'single';
+
+        // Boolean column in single mode: one compact checkbox row — the box
+        // itself, then the column name + sublabel as the checkbox label. No
+        // label-above and no bordered row wrap (deliberately quieter than
+        // the selects; a stack of flags should scan like an option list).
+        // Include semantics: checked = require the flag (`col %in% TRUE`),
+        // unchecked = NO constraint from this column (empty values). FALSE
+        // or NA targeting = flip the column to Multi in the gear, or use
+        // the dplyr filter.
+        // Markup + CSS vendored from blockr.dplyr's settings-band checkbox
+        // (the design-system boolean control), same vendoring convention as
+        // that dep itself.
+        if (entryMode === 'single' && this.colTypes[entryKey] === 'logical') {
+          const item = document.createElement('div');
+          item.className = 'bi-filter-item bi-filter-item-bool';
+          const cb = document.createElement('label');
+          cb.className = 'blockr-checkbox bi-filter-bool-checkbox';
+          const cbInput = document.createElement('input');
+          cbInput.type = 'checkbox';
+          cbInput.checked = String((entry.values || [])[0]) === 'TRUE';
+          const box = document.createElement('span');
+          box.className = 'blockr-checkbox__box';
+          box.innerHTML =
+            '<svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor">' +
+            '<path d="M13.854 3.646a.5.5 0 0 1 0 .708l-7 7a.5.5 0 0 1-.708 ' +
+            '0l-3.5-3.5a.5.5 0 1 1 .708-.708L6.5 10.293l6.646-6.647a.5.5 0 ' +
+            '0 1 .708 0"/></svg>';
+          const txt = document.createElement('span');
+          txt.className = 'blockr-checkbox__label';
+          txt.textContent = this.isDm
+            ? entry.table + '.' + entry.name
+            : entry.name;
+          cb.appendChild(cbInput);
+          cb.appendChild(box);
+          cb.appendChild(txt);
+          const subText = this.colLabels[entryKey];
+          if (subText) {
+            const subEl = document.createElement('span');
+            subEl.className = 'bi-filter-label-sublabel';
+            subEl.textContent = subText;
+            cb.appendChild(subEl);
+          }
+          cbInput.addEventListener('change', () => {
+            this.entries[idx].values = cbInput.checked ? ['TRUE'] : [];
+            this._autoSubmit(0);
+          });
+          item.appendChild(cb);
+          this.bodyEl.appendChild(item);
+          return;
+        }
+
         // Stacked layout: label above, full-width select below (classic form
         // field). Value filters often sit in a narrow sidebar, so the 50/50
         // label|select split used by mutate/summarize doesn't fit here.
@@ -401,34 +518,7 @@
         // render (single-select falls back to the value text; multi-select
         // renders chips from `selected`) so chips show before the list lands.
         const loading = !this._loadedKeys.has(key);
-        if (mode === 'single' && this.colTypes[key] === 'logical') {
-          // Boolean column: a switch. ON = TRUE, OFF = FALSE — where OFF
-          // counts missings as FALSE too (the R side emits `!(col %in% TRUE)`
-          // for single-mode logical columns). Users who need NA as an explicit
-          // category flip the column to Multi in the gear (the <NA> token
-          // appears in the multi-select) or use the dplyr filter block.
-          const on = String(sel[0]) === 'TRUE';
-          const sw = document.createElement('label');
-          sw.className = 'blockr-switch bi-filter-bool-switch';
-          const swInput = document.createElement('input');
-          swInput.type = 'checkbox';
-          swInput.checked = on;
-          const track = document.createElement('span');
-          track.className = 'blockr-switch__track';
-          const swLabel = document.createElement('span');
-          swLabel.className = 'bi-filter-bool-switch-label';
-          swLabel.textContent = on ? 'TRUE' : 'FALSE';
-          swInput.addEventListener('change', () => {
-            const v = swInput.checked ? 'TRUE' : 'FALSE';
-            this.entries[idx].values = [v];
-            swLabel.textContent = v;
-            this._autoSubmit(0);
-          });
-          sw.appendChild(swInput);
-          sw.appendChild(track);
-          sw.appendChild(swLabel);
-          wrap.appendChild(sw);
-        } else if (mode === 'single') {
+        if (mode === 'single') {
           this._bodySelects[key] = Blockr.Select.single(wrap, {
             options: opts,
             selected: sel[0] != null ? sel[0] : null,
@@ -484,12 +574,20 @@
 
     _compose() {
       // Emit the column-object state shape. Each entry carries name + table?
-      // + mode + values.
+      // + mode + values; group selections ride along as group:true entries.
       const cols = this.entries.map((e) => {
         const out = { name: e.name, mode: e.mode || 'single',
                       values: (Array.isArray(e.values) ? e.values : []).slice() };
         if (this.isDm && e.table != null && e.table !== '') out.table = e.table;
         return out;
+      });
+      this.groups.forEach((grp) => {
+        cols.push({
+          name: grp.name,
+          group: true,
+          mode: 'multi',
+          values: (this.groupSel[grp.name] || []).slice()
+        });
       });
       return { columns: cols, operator: this.operator };
     }
@@ -507,18 +605,25 @@
     setState(state) {
       const colsIn = (state && state.columns) || [];
       // Accept the column-object list shape only — R-side auto-migration
-      // ensures we never see the old parallel-list shape.
-      this.entries = colsIn.map((e) => {
+      // ensures we never see the old parallel-list shape. Group entries
+      // (group: true) feed the group selections, not the column entries.
+      this.entries = [];
+      this.groupSel = {};
+      colsIn.forEach((e) => {
         const vals = (e && e.values != null)
           ? (Array.isArray(e.values) ? e.values.map(String) : [String(e.values)])
           : [];
+        if (e && e.group === true) {
+          this.groupSel[(e && e.name) || ''] = vals;
+          return;
+        }
         const entry = {
           name:   (e && e.name) || '',
           mode:   (e && e.mode) || 'single',
           values: vals
         };
         if (e && e.table != null && e.table !== '') entry.table = e.table;
-        return entry;
+        this.entries.push(entry);
       });
       this.operator = (state && state.operator === '|') ? '|' : '&';
       this._rebuildTableSelect();
@@ -529,7 +634,16 @@
 
     updateColumns(payload) {
       this.columns = (payload && payload.columns) || [];
+      this.groups = (payload && payload.groups) || [];
       this.isDm = !!(payload && payload.is_dm);
+      // Prune group selections to declared groups + known labels.
+      const known = {};
+      this.groups.forEach((g) => { known[g.name] = (g.labels || []).map(String); });
+      Object.keys(this.groupSel).forEach((nm) => {
+        if (!known[nm]) { delete this.groupSel[nm]; return; }
+        this.groupSel[nm] = this.groupSel[nm].filter(
+          (v) => known[nm].indexOf(v) >= 0);
+      });
 
       // A data change invalidates any cached values — they reload lazily on
       // the next dropdown-open. The startup payload carries column metadata
@@ -655,6 +769,7 @@
   Shiny.addCustomMessageHandler('bi-filter-columns', (msg) => {
     pumpColumns(msg.id, {
       columns: msg.columns,
+      groups: msg.groups,
       values: msg.values,
       is_dm: msg.is_dm
     });

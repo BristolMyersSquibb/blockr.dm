@@ -54,13 +54,28 @@ VALUE_FILTER_EMPTY <- "<empty>"  # nolint: object_name_linter.
 #'   offered there. Each column entry has `name` (column name), `table`
 #'   (source table; only when input is a `dm`), `mode` (`"single"` or
 #'   `"multi"`), and `values` (character vector of selected values). Logical
-#'   columns in single mode render as a switch instead of a dropdown: ON
-#'   filters to `col %in% TRUE`, OFF to `!(col %in% TRUE)` — i.e. missings
-#'   count as FALSE. For NA as an explicit category, flip the column to
-#'   Multi (the `<NA>` token) or use the blockr.dplyr filter block.
+#'   columns in single mode render as compact include-style checkbox rows:
+#'   checked requires `col %in% TRUE`, unchecked means no constraint from
+#'   that column (NOT a `FALSE` filter). To target FALSE/NA explicitly,
+#'   flip the column to Multi (values plus the `<NA>` token) or use the
+#'   blockr.dplyr filter block. (Legacy saved states with a logical
+#'   single-select value of "FALSE" still evaluate as `!(col %in% TRUE)`.)
+#'   A flag-group selection is stored as an entry with `group = TRUE`,
+#'   `name` (the group's name) and `values` (selected labels).
 #'   Old-style state (`list(columns=character, modes=list, values=list)`)
 #'   is auto-migrated via [migrate_value_filter_state()] for backward
 #'   compatibility.
+#' @param flag_groups Named list declaring families of indicator columns
+#'   that encode ONE categorical field — e.g. treatment period as
+#'   ADaM-style flags. Each element is a named character vector mapping a
+#'   display label to the logical column carrying that category:
+#'   `list("Treatment period" = c(Before = "PREFL", During = "TRTEMFL",
+#'   After = "FUPFL"))`. Each group renders as a single multi-select of
+#'   its labels; selected labels union (`PREFL %in% TRUE | ...`), an empty
+#'   selection passes everything through, and the group joins the other
+#'   conditions via `operator`. Member columns are hidden from the Fields
+#'   picker so the same flag cannot be constrained twice. Data-frame input
+#'   only (ignored for `dm`).
 #' @param ... Additional arguments forwarded to [blockr.core::new_transform_block()].
 #'
 #' @examples
@@ -87,9 +102,17 @@ VALUE_FILTER_EMPTY <- "<empty>"  # nolint: object_name_linter.
 #' @export
 new_value_filter_block <- function(
   state = list(columns = list()),
+  flag_groups = list(),
   ...
 ) {
   state <- migrate_value_filter_state(state)
+  # `fg` (named character vectors) is the internal working form. The ctor
+  # variable `flag_groups` is rebound to the named-LIST shape because that
+  # is what initial_block_state() captures on save — and toJSON drops names
+  # on atomic vectors, which would strip the label -> column mapping.
+  # normalize_flag_groups() unlists back on restore.
+  fg <- normalize_flag_groups(flag_groups)
+  flag_groups <- lapply(fg, as.list)
   blockr.core::new_transform_block(
     # -- server ---------------------------------------------------------------
     function(id, data) {
@@ -107,18 +130,19 @@ new_value_filter_block <- function(
         # and never collects a remote (e.g. DuckDB-backed) table.
         shiny::observeEvent(data(), {
           d <- data()
-          meta <- build_column_meta(d)
+          meta <- build_column_meta(d, fg)
           if (is.null(meta)) return()
           session$sendCustomMessage(
             "bi-filter-columns",
             list(
               id      = ns("filter_input"),
               columns = meta$columns,
+              groups  = meta$groups,
               is_dm   = meta$is_dm
             )
           )
           # Re-apply single-select rule against fresh data.
-          s <- enforce_single_rule(r_state(), d)
+          s <- enforce_single_rule(r_state(), d, fg)
           if (!identical(s, r_state())) {
             self_write$active <- FALSE
             r_state(s)
@@ -148,13 +172,14 @@ new_value_filter_block <- function(
         # duplicate is harmless.
         shiny::observeEvent(input$filter_input_ready, {
           d <- tryCatch(data(), error = function(e) NULL)
-          meta <- build_column_meta(d)
+          meta <- build_column_meta(d, fg)
           if (!is.null(meta)) {
             session$sendCustomMessage(
               "bi-filter-columns",
               list(
                 id      = ns("filter_input"),
                 columns = meta$columns,
+                groups  = meta$groups,
                 is_dm   = meta$is_dm
               )
             )
@@ -169,7 +194,7 @@ new_value_filter_block <- function(
         # JS -> R: user changed state.
         shiny::observeEvent(input$filter_input, {
           incoming <- migrate_value_filter_state(input$filter_input)
-          s <- enforce_single_rule(incoming, shiny::isolate(data()))
+          s <- enforce_single_rule(incoming, shiny::isolate(data()), fg)
           # Suppress the R->JS echo only when the server left the JS-sent state
           # untouched. When enforce_single_rule fills a single-select default
           # (the lazy widget can no longer prefill it client-side) or drops a
@@ -205,10 +230,17 @@ new_value_filter_block <- function(
             make_filter_block_expr(
               r_state()$columns %||% list(),
               data(),
-              operator = r_state()$operator %||% "&"
+              operator = r_state()$operator %||% "&",
+              flag_groups = fg
             )
           }),
-          state = list(state = r_state)
+          state = list(
+            state = r_state,
+            # Constant (author-declared), but external_ctrl requires every
+            # state field to be a reactiveVal. Holds the JSON-safe list
+            # shape (see the ctor comment on `fg`).
+            flag_groups = shiny::reactiveVal(flag_groups)
+          )
         )
       })
     },
@@ -236,7 +268,7 @@ new_value_filter_block <- function(
     class = "value_filter_block",
     expr_type = "bquoted",
     external_ctrl = TRUE,
-    allow_empty_state = "state",
+    allow_empty_state = c("state", "flag_groups"),
     ...
   )
 }
@@ -293,6 +325,26 @@ migrate_value_filter_state <- function(state) {
   list(columns = entries, operator = op)
 }
 
+#' Validate and normalize the `flag_groups` constructor argument into a
+#' named list of named character vectors (labels -> logical column names).
+#' Tolerates list-valued mappings (the JSON round-trip shape).
+#' @noRd
+normalize_flag_groups <- function(flag_groups) {
+  if (is.null(flag_groups) || length(flag_groups) == 0L) return(list())
+  if (!is.list(flag_groups) || is.null(names(flag_groups)) ||
+      any(!nzchar(names(flag_groups)))) {
+    stop("`flag_groups` must be a named list of named character vectors.")
+  }
+  lapply(flag_groups, function(m) {
+    m <- unlist(m)
+    if (length(m) == 0L || is.null(names(m)) || any(!nzchar(names(m)))) {
+      stop("Each `flag_groups` entry must be a named character vector ",
+           "mapping labels to logical column names.")
+    }
+    stats::setNames(as.character(m), names(m))
+  })
+}
+
 #' Build cheap column metadata (names/labels/table) for the JS side.
 #'
 #' Returns a list with `columns` (metadata entries) plus `is_dm` so the JS
@@ -302,26 +354,33 @@ migrate_value_filter_state <- function(state) {
 #' fields and the `value` key is `"table.column"`.
 #'
 #' @noRd
-build_column_meta <- function(data) {
+build_column_meta <- function(data, flag_groups = list()) {
   if (inherits(data, "dm")) {
     build_column_meta_dm(data)
   } else if (is.data.frame(data) && ncol(data) > 0L) {
-    build_column_meta_df(data)
+    build_column_meta_df(data, flag_groups)
   } else {
     NULL
   }
 }
 
 #' @noRd
-build_column_meta_df <- function(df) {
-  cols <- lapply(names(df), function(cn) {
+build_column_meta_df <- function(df, flag_groups = list()) {
+  # Flag-group member columns are surfaced through their group's
+  # multi-select, so they are hidden from the Fields picker (no
+  # double-constraining the same flag).
+  members <- unique(as.character(unlist(flag_groups)))
+  cols <- lapply(setdiff(names(df), members), function(cn) {
     list(
       value = cn,
       label = column_label(df[[cn]]),
       type  = column_meta_type(df[[cn]])
     )
   })
-  list(columns = cols, is_dm = FALSE)
+  groups <- lapply(names(flag_groups), function(nm) {
+    list(name = nm, labels = as.list(names(flag_groups[[nm]])))
+  })
+  list(columns = cols, groups = groups, is_dm = FALSE)
 }
 
 #' @noRd
@@ -348,7 +407,7 @@ build_column_meta_dm <- function(dm_obj) {
       )
     }
   }
-  list(columns = cols, is_dm = TRUE)
+  list(columns = cols, groups = list(), is_dm = TRUE)
 }
 
 #' A 0-row, in-memory template of a (possibly lazy) table.
@@ -511,25 +570,37 @@ first_value <- function(src) {
 }
 
 #' Enforce "single-select always has a value" and drop schema-missing entries.
-#' Preserves the state's `operator` field.
+#' Preserves the state's `operator` field. Flag-group entries are kept when
+#' their group is declared (dropped otherwise) and never value-filled —
+#' empty selection is the deliberate pass-through state, as is an unchecked
+#' logical include-checkbox.
 #' @noRd
-enforce_single_rule <- function(state, data) {
+enforce_single_rule <- function(state, data, flag_groups = list()) {
   if (is.null(state)) return(list(columns = list(), operator = "&"))
   op <- state$operator %||% "&"
   if (!identical(op, "|")) op <- "&"
   cols <- state$columns %||% list()
   if (length(cols) == 0L) return(list(columns = cols, operator = op))
-  # Drop entries whose source is missing in the upstream data.
+  # Drop entries whose source is missing: group entries must name a declared
+  # group, column entries a column present in the upstream data.
   cols <- Filter(function(entry) {
+    if (isTRUE(entry$group)) {
+      return((entry$name %||% "") %in% names(flag_groups))
+    }
     !is.null(column_source(data, entry))
   }, cols)
   for (i in seq_along(cols)) {
     entry <- cols[[i]]
+    if (isTRUE(entry$group)) next
     mode <- entry$mode %||% "single"
     if (!identical(mode, "single")) next
     v <- entry$values
     if (length(v) > 0L && !is.null(v)) next
     src <- column_source(data, entry)
+    # Logical columns are include-style checkboxes: empty values = unchecked
+    # = "no constraint from this flag" — a deliberate state, never filled.
+    # (The JS side adds fresh flag entries as checked/TRUE.)
+    if (is.logical(src)) next
     fv <- first_value(src)
     if (!is.null(fv)) cols[[i]]$values <- fv
   }
@@ -549,7 +620,8 @@ enforce_single_rule <- function(state, data) {
 #' hides the AND/OR pill for dm input accordingly). Empty state =
 #' `dm::dm_filter(data)` (identity).
 #' @noRd
-make_filter_block_expr <- function(columns, data, operator = "&") {
+make_filter_block_expr <- function(columns, data, operator = "&",
+                                   flag_groups = list()) {
   if (length(columns) == 0L) {
     if (inherits(data, "dm")) return(bquote(dm::dm_filter(data)))
     return(bquote(dplyr::filter(data, TRUE)))
@@ -557,15 +629,39 @@ make_filter_block_expr <- function(columns, data, operator = "&") {
   if (inherits(data, "dm")) {
     make_dm_filter_expr(columns, data)
   } else {
-    make_df_filter_expr(columns, data, operator = operator)
+    make_df_filter_expr(columns, data, operator = operator,
+                        flag_groups = flag_groups)
   }
 }
 
+#' Condition for a flag-group entry: OR of `col %in% TRUE` over the columns
+#' mapped by the selected labels. Empty selection (or an unknown group) is
+#' no constraint — the multi-select pass-through rule.
 #' @noRd
-make_df_filter_expr <- function(columns, df, operator = "&") {
+flag_group_condition_expr <- function(entry, flag_groups) {
+  mapping <- flag_groups[[entry$name %||% ""]]
+  if (is.null(mapping)) return(NULL)
+  sel <- as.character(entry$values %||% character())
+  sel <- sel[sel %in% names(mapping)]
+  if (length(sel) == 0L) return(NULL)
+  conds <- lapply(unname(mapping[sel]), function(cn) {
+    bquote(.(as.name(cn)) %in% TRUE)
+  })
+  grp <- combine_conds(conds, "|")
+  if (length(conds) > 1L) grp <- call("(", grp)
+  grp
+}
+
+#' @noRd
+make_df_filter_expr <- function(columns, df, operator = "&",
+                                flag_groups = list()) {
   exprs <- list()
   for (entry in columns) {
-    cond <- column_condition_expr(entry, df)
+    cond <- if (isTRUE(entry$group)) {
+      flag_group_condition_expr(entry, flag_groups)
+    } else {
+      column_condition_expr(entry, df)
+    }
     if (!is.null(cond)) exprs[[length(exprs) + 1L]] <- cond
   }
   if (length(exprs) == 0L) {
@@ -707,6 +803,7 @@ normalize_state_for_json <- function(s) {
       values = as.list(as.character(e$values %||% character()))
     )
     if (!is.null(e$table) && nzchar(e$table)) out$table <- e$table
+    if (isTRUE(e$group)) out$group <- TRUE
     out
   })
   list(columns = cols_norm, operator = op)
