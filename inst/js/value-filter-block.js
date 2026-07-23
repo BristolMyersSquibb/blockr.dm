@@ -549,6 +549,11 @@
         el._block.setState(state);
         delete el._pendingState;
       }
+      // Announce the (re)bind to the server. In a deferred dock panel this
+      // script loads with the panel on first visit, so pushes flushed at
+      // boot were dropped before ANY handler existed -- nothing client-side
+      // can replay those. The server answers by re-sending columns + state.
+      Shiny.setInputValue(el.id + '_ready', Date.now(), { priority: 'event' });
     },
     receiveMessage: (el, data) => {
       if (data && data.state && el._block) el._block.setState(data.state);

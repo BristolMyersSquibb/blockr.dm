@@ -127,6 +127,34 @@ new_value_filter_block <- function(
           )
         })
 
+        # JS -> R: the widget binding announced itself (fires from the
+        # binding's initialize(), every time the element is (re)bound). In a
+        # deferred dock panel the block's script arrives with the panel on
+        # FIRST VISIT — any push flushed before that had no registered
+        # handler and was dropped by Shiny outright, out of reach of the JS
+        # replay queue. Re-send column metadata and the current state on
+        # announce; the widget applies latest-wins, so the boot-path
+        # duplicate is harmless.
+        shiny::observeEvent(input$filter_input_ready, {
+          d <- tryCatch(data(), error = function(e) NULL)
+          meta <- build_column_meta(d)
+          if (!is.null(meta)) {
+            session$sendCustomMessage(
+              "bi-filter-columns",
+              list(
+                id      = ns("filter_input"),
+                columns = meta$columns,
+                is_dm   = meta$is_dm
+              )
+            )
+          }
+          session$sendCustomMessage(
+            "bi-filter-update",
+            list(id    = ns("filter_input"),
+                 state = normalize_state_for_json(r_state()))
+          )
+        })
+
         # JS -> R: user changed state.
         shiny::observeEvent(input$filter_input, {
           incoming <- migrate_value_filter_state(input$filter_input)

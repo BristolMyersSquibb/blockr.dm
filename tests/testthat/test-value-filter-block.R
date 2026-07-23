@@ -511,3 +511,37 @@ test_that("block server result filters a dm by FK cascade", {
     args = list(x = blk, data = list(data = function() d))
   )
 })
+
+test_that("binding announce re-sends columns and state (lazy-panel handshake)", {
+  # In a deferred dock panel the block's script loads with the panel on first
+  # visit, so every push flushed before that was dropped with no handler
+  # registered — the JS replay queue never saw them. The binding announces
+  # itself via `filter_input_ready` and the server must answer with BOTH the
+  # column metadata and the full current state.
+  blk <- new_value_filter_block(state = list(columns = list(
+    list(name = "Species", mode = "single", values = "setosa")
+  )))
+  testthat::skip_if_not_installed("blockr.core")
+  shiny::testServer(
+    blockr.core:::get_s3_method("block_server", blk),
+    {
+      msgs <- list()
+      root <- session$rootScope()
+      root$sendCustomMessage <- function(type, message) {
+        msgs[[length(msgs) + 1L]] <<- list(type = type, message = message)
+      }
+      session$setInputs(filter_input_ready = 1)
+      types <- vapply(msgs, function(m) m$type, character(1))
+      expect_true("bi-filter-columns" %in% types)
+      expect_true("bi-filter-update" %in% types)
+      upd <- msgs[[max(which(types == "bi-filter-update"))]]$message
+      expect_equal(upd$state$columns[[1]]$name, "Species")
+      expect_equal(upd$state$columns[[1]]$values, list("setosa"))
+      cols <- msgs[[max(which(types == "bi-filter-columns"))]]$message
+      expect_true("Species" %in% vapply(
+        cols$columns, function(cc) cc$value, character(1)
+      ))
+    },
+    args = list(x = blk, data = list(data = function() iris))
+  )
+})
