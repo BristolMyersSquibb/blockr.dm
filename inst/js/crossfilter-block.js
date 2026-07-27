@@ -490,10 +490,19 @@
         // record and `new Date(null)` collapses the bound to 1970-01-01 —
         // an inverted range and an unusable slider. As epoch-days, missing
         // values become NaN, which crossfilter drops from the sorted index.
-        this.dimensions[dim] = this._getDimType(dim) === 'date'
+        const dimType = this._getDimType(dim);
+        this.dimensions[dim] = dimType === 'date'
           ? cf.dimension(d => toEpochDay(d[dim]))
           : cf.dimension(d => d[dim]);
-        this.groups[dim] = this._createGroup(dim, sourceTable);
+        // Groups exist ONLY for categorical dims -- they are what the bar
+        // cards render. Range/date cards never read a group, and creating
+        // one is not just waste: a date dim with missing values has NaN
+        // keys, and crossfilter's group machinery on NaN keys kills the
+        // renderer (observed as a tab crash inside group(); the
+        // NaN-is-dropped guarantee holds for the dimension index only).
+        if (dimType === 'categorical') {
+          this.groups[dim] = this._createGroup(dim, sourceTable);
+        }
       }
 
       this._updateMeasureUI();
@@ -1326,15 +1335,17 @@
     // update — its filter doesn't affect its own all-but-self bounds).
     // Pass null to refresh all bounds (e.g., after a global reset).
     _updateAllCounts(changedDim) {
+      // Iterate dimensions, not groups: range/date dims have no group (see
+      // setData), only categorical dims do.
       // Update range bounds first so range cards show new min/max before
       // their blue KDE / count text refresh in _updateRangeInfo.
-      for (const dim of Object.keys(this.groups)) {
+      for (const dim of Object.keys(this.dimensions)) {
         const type = this._getDimType(dim);
         if ((type === 'range' || type === 'date') && dim !== changedDim) {
           this._updateRangeBounds(dim);
         }
       }
-      for (const dim of Object.keys(this.groups)) {
+      for (const dim of Object.keys(this.dimensions)) {
         const type = this._getDimType(dim);
         if (type === 'range' || type === 'date') {
           this._updateRangeInfo(dim);

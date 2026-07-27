@@ -79,10 +79,14 @@ test_that("date dimension with NAs filters correctly (bounds + parity)", {
   ))
   on.exit(app$stop(), add = TRUE)
 
-  deadline <- Sys.time() + 20
+  # `instances != null` is true from the constructor on (it's `{}` before any
+  # data), so polling it can pass BEFORE the first setData under load and the
+  # bounds probe below then reads an empty block. `_ready` flips only at the
+  # end of setData.
+  deadline <- Sys.time() + 30
   repeat {
     ready <- isTRUE(tryCatch(
-      app$get_js("window.__cfDebug != null && window.__cfDebug.instances != null"),
+      app$get_js("window.__cfDebug != null && window.__cfDebug._ready === true"),
       error = function(e) FALSE
     ))
     if (ready || Sys.time() > deadline) break
