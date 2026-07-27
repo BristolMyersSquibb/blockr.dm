@@ -29,7 +29,6 @@ Imports:
     dm,
     dplyr,
     htmltools,
-    reactable,
     readr,
     readxl,
     rlang,

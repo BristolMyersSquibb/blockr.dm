@@ -278,20 +278,6 @@ dm_flatten_arguments <- function() {
 }
 
 #' @noRd
-dm_nested_view_arguments <- function() {
-  new_arg_specs(
-    root_table = new_arg_spec(
-      paste0(
-        "Character vector. Root table(s) to render at the top level. Child ",
-        "tables are shown as expandable rows via FK relationships."
-      ),
-      example = list("adsl"),
-      type = arg_array(arg_string())
-    )
-  )
-}
-
-#' @noRd
 dm_temporal_join_arguments <- function() {
   new_arg_specs(
     left_table = new_arg_spec(

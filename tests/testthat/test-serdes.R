@@ -123,17 +123,6 @@ test_that("ser/deser dm_flatten_block", {
   expect_false(state$recursive)
 })
 
-test_that("ser/deser dm_nested_view_block", {
-  blk <- new_dm_nested_view_block()
-  restored <- ser_deser(blk)
-  expect_s3_class(restored, class(blk))
-
-  blk2 <- new_dm_nested_view_block(root_table = "adsl")
-  restored2 <- ser_deser(blk2)
-  state <- blockr.core:::initial_block_state(restored2)
-  expect_equal(state$root_table, "adsl")
-})
-
 test_that("ser/deser dm_read_block", {
   blk <- new_dm_read_block()
   restored <- ser_deser(blk)

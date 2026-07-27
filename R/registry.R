@@ -18,7 +18,6 @@ register_dm_blocks <- function() {
       "new_dm_filter_by_data_block",
       "new_dm_pull_block",
       "new_dm_flatten_block",
-      "new_dm_nested_view_block",
       "new_temporal_join_block",
       "new_dm_temporal_join_block",
       "new_crossfilter_block",
@@ -36,7 +35,6 @@ register_dm_blocks <- function() {
       "Filter dm by data",
       "Pull table",
       "Flatten dm",
-      "Nested view",
       "Temporal join",
       "dm Temporal join",
       "Crossfilter",
@@ -63,7 +61,6 @@ register_dm_blocks <- function() {
       ),
       "Extract a single table from dm as a data frame",
       "Flatten dm into a single data frame by joining",
-      "Display dm as nested table with expandable rows",
       paste(
         "Join two tables and filter by time window",
         "between date columns"
@@ -98,7 +95,6 @@ register_dm_blocks <- function() {
       "structured",
       "structured",
       "structured",
-      "structured",
       "structured"
     ),
     icon = c(
@@ -112,7 +108,6 @@ register_dm_blocks <- function() {
       "link-45deg",
       "box-arrow-up-right",
       "layers",
-      "list-nested",
       "clock-history",
       "clock-history",
       "lightning",
@@ -196,12 +191,6 @@ register_dm_blocks <- function() {
         "from `start_table`. Use when you need a plain wide table for",
         "downstream plotting or modeling."
       ),
-      # new_dm_nested_view_block:
-      paste(
-        "Renders a dm as a nested expandable table. Use for interactive",
-        "exploration of relationship structure. Purely a display block \u2014 it",
-        "doesn't transform data."
-      ),
       # new_temporal_join_block:
       paste(
         "Plain two-table temporal join (no dm wrapper). Joins x and y on",
@@ -252,7 +241,6 @@ register_dm_blocks <- function() {
       dm_filter_by_data_arguments(),
       dm_pull_arguments(),
       dm_flatten_arguments(),
-      dm_nested_view_arguments(),
       temporal_join_arguments(),
       dm_temporal_join_arguments(),
       crossfilter_arguments(),

@@ -45,7 +45,6 @@ This loads a multi-table ADaM dataset and launches a crossfilter UI with linked 
 - **new_dm_pull_block()** -- Extract one table as a data frame
 - **new_dm_flatten_block()** -- Join all related tables into one data frame
 - **new_dm_select_block()** -- Keep a subset of tables
-- **new_dm_nested_view_block()** -- Expandable parent/child table view
 
 ### Joins
 - **new_dm_temporal_join_block()** -- Date-window join between dm tables
