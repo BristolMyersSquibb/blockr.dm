@@ -12,6 +12,113 @@ CROSSFILTER_EMPTY <- "__EMPTY__" # nolint object_name_linter
 # so filtering is just cheap column operations on pre-joined data.
 
 
+#' Dictionary-encode lookup tables for the wire
+#'
+#' Replaces every character/factor column in every lookup with 0-based
+#' integer codes into a GLOBAL per-column levels vector, then serializes each
+#' lookup as columnar JSON. Global (across lookups, per column name) is a
+#' correctness requirement, not a size optimization: the client intersects
+#' FK-code sets across lookups (`_syncSiblingKeys`), and parent dims are
+#' joined into every child lookup as well as the parent lookup, so identical
+#' values must encode to identical codes everywhere.
+#'
+#' NA/empty-string cells become the `CROSSFILTER_NA` / `CROSSFILTER_EMPTY`
+#' sentinel BEFORE level collection, so sentinels are ordinary levels: codes
+#' never contain NA, and the sentinels keep round-tripping to R as strings
+#' through the client's filter state. Non-character columns (numeric,
+#' logical, Date) pass through untouched and keep the `na = "null"`
+#' serialization -- jsonlite's vector default would write NA as the string
+#' `"NA"`, which mixes types in numeric columns and breaks crossfilter's
+#' sort/binary-search (filterRange returns wrong rows). JSON null becomes JS
+#' null which sorts predictably.
+#'
+#' Levels are sorted with a C-locale radix sort so re-encoding identical
+#' input is byte-identical (supports the send-once identity guard and
+#' snapshot tests). The client decodes only at its edges; display order does
+#' not depend on level order.
+#'
+#' @param lookups Named list of data frames (the `lookups` element of any
+#'   lookup builder's result)
+#' @return List with `lookups` (named list of pre-serialized columnar
+#'   `json` strings, one per input lookup) and `levels` (pre-serialized
+#'   `json` object: column name -> array of level strings; `{}` when no
+#'   column is encoded). Both are embedded verbatim by Shiny
+#'   (`json_verbatim = TRUE`), so the client receives parsed objects.
+#' @keywords internal
+encode_crossfilter_payload <- function(lookups) {
+  sentinelize <- function(col) {
+    col <- as.character(col)
+    col[is.na(col)] <- CROSSFILTER_NA
+    col[col == ""] <- CROSSFILTER_EMPTY
+    col
+  }
+  is_enc <- function(col) is.character(col) || is.factor(col)
+
+  lvls <- structure(list(), names = character(0))
+  for (df in lookups) {
+    for (cn in names(df)) {
+      if (is_enc(df[[cn]])) {
+        lvls[[cn]] <- unique(c(lvls[[cn]], sentinelize(df[[cn]])))
+      }
+    }
+  }
+  lvls <- lapply(lvls, function(v) sort(v, method = "radix"))
+
+  encoded <- lapply(lookups, function(df) {
+    for (cn in names(df)) {
+      if (is_enc(df[[cn]])) {
+        df[[cn]] <- match(sentinelize(df[[cn]]), lvls[[cn]]) - 1L
+      } else if (inherits(df[[cn]], "Date")) {
+        # Ship dates as epoch-day ints, not ISO strings (~12 bytes/row -> ~5).
+        # The client's toEpochDay() accepts both formats (number
+        # short-circuit), and NA -> null -> NaN keeps the documented NA-drop
+        # behavior. POSIXct is deliberately NOT converted: toEpochDay does
+        # not floor, so datetimes carry fractional days, and a whole-day
+        # conversion here would silently change range-filter semantics.
+        df[[cn]] <- as.integer(unclass(df[[cn]]))
+      }
+    }
+    jsonlite::toJSON(df, dataframe = "columns", na = "null")
+  })
+
+  list(lookups = encoded, levels = jsonlite::toJSON(lvls))
+}
+
+
+#' Compress the encoded lookups for the wire
+#'
+#' httpuv does not negotiate websocket permessage-deflate (verified against
+#' the handshake: the 101 response carries no Sec-WebSocket-Extensions), so
+#' Shiny custom messages travel uncompressed. Deflating the columnar JSON in
+#' R and inflating with the browser's native DecompressionStream recovers
+#' what the transport won't give us; the dictionary-encoded int arrays
+#' compress extremely well, far outweighing base64's 4/3 inflation.
+#'
+#' Format trap: R's `memCompress(type = "gzip")` emits ZLIB framing
+#' (RFC 1950, `0x78 0x9C` header), NOT gzip (RFC 1952, `0x1F 0x8B`). The
+#' Compression Streams API calls that format `'deflate'`, so the payload's
+#' `compression` field says "deflate" and the client inflates with
+#' `DecompressionStream('deflate')` -- `'gzip'` there fails on the header.
+#'
+#' Gate: `options(blockr.dm.crossfilter_gzip = FALSE)` ships plain JSON for
+#' clients without DecompressionStream (Safari < 16.4); the client accepts
+#' both forms per message, keyed on the payload's `compression` field.
+#'
+#' @param encoded_lookups The `lookups` element of
+#'   [encode_crossfilter_payload()]'s result (named list of `json` strings)
+#' @return Named list of single-line base64 strings of deflated JSON
+#' @keywords internal
+compress_crossfilter_lookups <- function(encoded_lookups) {
+  lapply(encoded_lookups, function(js) {
+    b64 <- jsonlite::base64_enc(
+      memCompress(charToRaw(as.character(js)), "gzip")
+    )
+    # atob() rejects embedded newlines
+    gsub("[\r\n]", "", b64)
+  })
+}
+
+
 # ============================================================================
 # Shared helpers
 # ============================================================================

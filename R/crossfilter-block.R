@@ -493,25 +493,23 @@ crossfilter_server <- function(active_dims, filters, range_filters,
         }
 
         if (!is.null(lookup_info)) {
-          # Encode NA sentinels and serialize as columnar JSON (fast path)
-          encoded_lookups <- lapply(lookup_info$lookups, function(df) {
-            for (cn in names(df)) {
-              col <- df[[cn]]
-              if (is.character(col) || is.factor(col)) {
-                col <- as.character(col)
-                col[is.na(col)] <- CROSSFILTER_NA
-                col[col == ""] <- CROSSFILTER_EMPTY
-                df[[cn]] <- col
-              }
-            }
-            # toJSON returns a "json" class; Shiny embeds it verbatim
-            # (json_verbatim = TRUE). JS receives a parsed columnar object.
-            # `na = "null"`: jsonlite's vector default encodes NA as the
-            # string "NA", which mixes types in numeric columns and breaks
-            # crossfilter's sort/binary-search (filterRange returns wrong
-            # rows). JSON null becomes JS null which sorts predictably as 0.
-            jsonlite::toJSON(df, dataframe = "columns", na = "null")
-          })
+          # Dictionary-encode char/factor columns (codes + global levels) and
+          # serialize as columnar JSON; the client keeps the codes in its
+          # crossfilter rows and decodes only at its edges. toJSON returns a
+          # "json" class; Shiny embeds it verbatim (json_verbatim = TRUE), so
+          # JS receives parsed objects. See encode_crossfilter_payload() for
+          # the sentinel and na = "null" contracts.
+          enc <- encode_crossfilter_payload(lookup_info$lookups)
+
+          # Gzip the columnar JSON unless a deployment opts out (see
+          # compress_crossfilter_lookups); the websocket itself never
+          # compresses.
+          use_gzip <- isTRUE(getOption("blockr.dm.crossfilter_gzip", TRUE))
+          encoded_lookups <- if (use_gzip) {
+            compress_crossfilter_lookups(enc$lookups)
+          } else {
+            enc$lookups
+          }
 
           # Force arrays for length-1 vectors (avoid JSON scalar unboxing)
           safe_active <- lapply(active, as.list)
@@ -519,12 +517,14 @@ crossfilter_server <- function(active_dims, filters, range_filters,
           t_elapsed <- round((proc.time()[3] - t_start) * 1000)
           sizes <- vapply(encoded_lookups, nchar, numeric(1))
           message(sprintf(
-            "[js-crossfilter] R prep: %dms | lookups: %s",
+            "[js-crossfilter] R prep: %dms | lookups%s: %s | levels=%dKB",
             t_elapsed,
+            if (use_gzip) " (gzip+b64)" else "",
             paste(
               names(sizes), round(sizes / 1024), "KB",
               sep = "=", collapse = ", "
-            )
+            ),
+            round(nchar(enc$levels) / 1024)
           ))
 
           # Ship the current filter state too — block restore loads
@@ -546,6 +546,10 @@ crossfilter_server <- function(active_dims, filters, range_filters,
           payload <- list(
             id = ns("crossfilter_input"),
             lookups = encoded_lookups,
+            # "deflate" = the Compression Streams API name for the ZLIB
+            # framing that R's memCompress(type = "gzip") actually emits.
+            compression = if (use_gzip) "deflate" else NULL,
+            levels = enc$levels,
             dim_source = lookup_info$dim_source,
             parent_key = lookup_info$parent_key,
             parent_table = lookup_info$parent_table,
@@ -593,7 +597,24 @@ crossfilter_server <- function(active_dims, filters, range_filters,
       shiny::observeEvent(input$crossfilter_input_ready, {
         if (!is.null(last_send$msg)) {
           message("[js-crossfilter] client re-initialized, re-shipping cached payload")
-          session$sendCustomMessage("js-crossfilter-data", last_send$msg)
+          # The cached msg embeds the filter state AS OF the last lookup
+          # build; filters changed since then traveled on the dedicated
+          # js-crossfilter-filters channel and are NOT in the cache. Refresh
+          # the two filter fields from the live reactives so a recreated
+          # client paints the CURRENT selections instead of snapping back to
+          # (and then re-submitting) the boot-time state. Lookups themselves
+          # are filter-independent, so the cache stays valid.
+          msg <- last_send$msg
+          msg$cat_filters <- lapply(shiny::isolate(r_filters()), function(tbl) {
+            lapply(tbl, function(vals) as.list(as.character(vals)))
+          })
+          msg$rng_filters <- lapply(
+            shiny::isolate(r_range_filters()),
+            function(tbl) {
+              lapply(tbl, function(rng) as.list(as.numeric(unlist(rng))))
+            }
+          )
+          session$sendCustomMessage("js-crossfilter-data", msg)
         }
       })
 

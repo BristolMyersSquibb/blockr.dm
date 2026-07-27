@@ -105,11 +105,13 @@ test_that("crossfilter JS state mirrors dm::dm_filter row counts", {
         // when ARM is filtered would equal the all-but-ARM-filtered total —
         // not adsl. Restricting to selected values gives an invariant that
         // matches R's dm_filter(adsl=ARM==...) row count in every state.
+        // Group keys are dictionary CODES for encoded dims; filters hold
+        // label strings — decode before comparing.
         const groups = window.__cfDebug.groups.ARM.all();
         const sel = window.__cfDebug.filters.ARM;
         const selSet = sel ? new Set(sel) : null;
         return groups
-          .filter(d => !selSet || selSet.has(String(d.key)))
+          .filter(d => !selSet || selSet.has(window.__cfDebug._decodeStr('ARM', d.key)))
           .reduce((a, d) => a + window.__cfDebug._getGroupValue(d), 0);
       })()
     })")

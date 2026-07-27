@@ -32,6 +32,19 @@
   }
 
   // Pivot columnar object {col: [...]} to array of row objects [{col: val}, ...]
+  // Inflate a base64(zlib(JSON)) lookup shipped by R (see
+  // compress_crossfilter_lookups). R's memCompress(type = "gzip") actually
+  // emits ZLIB (RFC 1950, 0x78 0x9C header), which the Compression Streams
+  // API calls 'deflate' -- 'gzip' here fails on the header. Native
+  // DecompressionStream: no vendored inflate library. Async by nature --
+  // setData serializes its ingests.
+  async function inflateBase64(b64) {
+    const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+    const stream = new Blob([bytes]).stream()
+      .pipeThrough(new DecompressionStream('deflate'));
+    return JSON.parse(await new Response(stream).text());
+  }
+
   function columnsToRows(cols) {
     const keys = Object.keys(cols);
     if (keys.length === 0) return [];
@@ -100,6 +113,10 @@
   // `col >= lo & col <= hi` drops NA rows).
   function toEpochDay(v) {
     if (v == null || v === '') return NaN;
+    // Date columns ship as epoch-day numbers (R: as.integer(unclass(date)));
+    // ISO strings still parse below so old cached payloads and POSIXct
+    // datetimes keep working.
+    if (typeof v === 'number') return v;
     const t = new Date(v).getTime();
     return Number.isNaN(t) ? NaN : t / 86400000;
   }
@@ -128,6 +145,8 @@
       this.childFkCols = {};
       this.keyDims = {};
       this.filters = {};
+      this.levels = {};       // col -> [label, ...] (dictionary-encoded cols)
+      this._levelIndex = {};  // col -> Map(label -> code), built lazily
       this.columnInfo = {};
       this.allColumns = {};   // full catalog for search
       this.activeDims = {};   // table -> [dim, ...]
@@ -426,8 +445,29 @@
     // -- Receive data from R ------------------------------------------------
 
     setData(msg) {
+      // Serialize ingests: setData is async (gzip inflate) and a `_ready`
+      // re-ship arriving during an in-flight decode must not interleave its
+      // teardown/build with ours.
+      this._setDataChain = (this._setDataChain || Promise.resolve())
+        .then(() => this._setDataImpl(msg))
+        .catch(e => console.error('[js-crossfilter] setData failed:', e));
+      return this._setDataChain;
+    }
+
+    async _setDataImpl(msg) {
       const t0 = performance.now();
       this._teardown();
+
+      // Dictionary levels for encoded (char/factor) columns: rows carry
+      // 0-based int codes; `this.levels[col][code]` is the label. Decoding
+      // happens per received message and never mutates the payload, so the
+      // server's cached re-ship (`_ready` handshake) is idempotent. An
+      // absent entry means the column is not encoded (numeric / logical /
+      // date) and takes the legacy String(v) paths.
+      const lv = msg.levels;
+      this.levels = typeof lv === 'string' ? JSON.parse(lv) : (lv || {});
+      if (Array.isArray(this.levels)) this.levels = {};
+      this._levelIndex = {};
 
       this.dimSource = msg.dim_source || {};
       this.parentKey = msg.parent_key;
@@ -443,7 +483,9 @@
       // Shiny delivers pre-serialized json verbatim as parsed objects
       for (const [childTable, colsOrRows] of Object.entries(msg.lookups || {})) {
         let rows;
-        if (typeof colsOrRows === 'string') {
+        if (msg.compression === 'deflate' && typeof colsOrRows === 'string') {
+          rows = columnsToRows(await inflateBase64(colsOrRows));
+        } else if (typeof colsOrRows === 'string') {
           rows = columnsToRows(JSON.parse(colsOrRows));
         } else if (Array.isArray(colsOrRows)) {
           rows = colsOrRows;
@@ -597,6 +639,8 @@
       this.dimChild = {};
       this.keyDims = {};
       this.filters = {};
+      this.levels = {};
+      this._levelIndex = {};
       this.panels = {};
     }
 
@@ -659,6 +703,46 @@
       if (v == null) return 0;
       if (typeof v === 'object') return v.value ?? v.count ?? 0;
       return v;
+    }
+
+    // -- Dictionary decode (codes <-> labels) -------------------------------
+    // Crossfilter rows, dimensions, group keys and predicates all hold int
+    // codes for encoded columns; labels exist only at the edges: DOM text,
+    // dataset.value, `this.filters`, and the R contract (getValue /
+    // setExternalFilters are label-string shaped on both sides).
+
+    _decodeStr(col, key) {
+      const lv = this.levels[col];
+      return lv ? lv[key] : String(key);
+    }
+
+    _levelIndexFor(col) {
+      let idx = this._levelIndex[col];
+      if (!idx) {
+        idx = new Map();
+        this.levels[col].forEach((label, code) => idx.set(label, code));
+        this._levelIndex[col] = idx;
+      }
+      return idx;
+    }
+
+    // Categorical filter predicate over row values, from label strings.
+    // Encoded dim: labels map to a numeric code Set (labels unknown to this
+    // payload -- e.g. a board saved against older data -- are dropped and
+    // match nothing, same as today's stale-filter behavior). Non-encoded
+    // dim (logical / low-cardinality numeric): legacy String(v) matching.
+    _makeCatPredicate(dim, labels) {
+      if (this.levels[dim]) {
+        const idx = this._levelIndexFor(dim);
+        const set = new Set();
+        for (const l of labels) {
+          const code = idx.get(String(l));
+          if (code !== undefined) set.add(code);
+        }
+        return v => set.has(v);
+      }
+      const set = new Set(labels.map(String));
+      return v => set.has(String(v));
     }
 
     // -- Panel building (grouped by table) ----------------------------------
@@ -827,7 +911,12 @@
       const sorted = filtered.sort((a, b) => {
         let cmp;
         if (sortCol === 'value') {
-          cmp = String(a.key).localeCompare(String(b.key));
+          // Decode BEFORE comparing: group keys are int codes for encoded
+          // dims, and comparing codes (or stringified codes: "10" < "2")
+          // would change the visible order. Decoded localeCompare keeps
+          // today's exact ordering.
+          cmp = this._decodeStr(dim, a.key)
+            .localeCompare(this._decodeStr(dim, b.key));
         } else {
           cmp = gv(a) - gv(b);
         }
@@ -842,17 +931,22 @@
       tbody.innerHTML = '';
       for (const item of sorted) {
         const count = gv(item);
-        const isSelected = selectedSet && selectedSet.has(String(item.key));
+        // Decode once: item.key is an int code for encoded dims. The label
+        // is what selection state, dataset.value, the sentinel display test
+        // and the click handler all operate on -- comparing item.key against
+        // the '__NA__'/'__EMPTY__' STRINGS would silently never match.
+        const valLabel = this._decodeStr(dim, item.key);
+        const isSelected = selectedSet && selectedSet.has(valLabel);
         const isDimmed = hasFilter && !isSelected;
 
         const tr = el('tr', 'dm-cf-tw-row' + (isDimmed ? ' dimmed' : ''));
-        tr.dataset.value = String(item.key);
+        tr.dataset.value = valLabel;
 
         // Value cell
         const tdVal = el('td');
-        const displayKey = item.key === '__NA__' ? '(NA)'
-          : item.key === '__EMPTY__' ? '(empty)' : String(item.key);
-        if (item.key === '__NA__' || item.key === '__EMPTY__') {
+        const displayKey = valLabel === '__NA__' ? '(NA)'
+          : valLabel === '__EMPTY__' ? '(empty)' : valLabel;
+        if (valLabel === '__NA__' || valLabel === '__EMPTY__') {
           tdVal.innerHTML = `<em style="color:#9ca3af">${displayKey}</em>`;
         } else {
           tdVal.textContent = displayKey;
@@ -874,7 +968,7 @@
         tr.appendChild(tdBar);
 
         tr.addEventListener('click', () => {
-          this._toggleCategorical(dim, String(item.key));
+          this._toggleCategorical(dim, valLabel);
         });
 
         tbody.appendChild(tr);
@@ -882,8 +976,10 @@
     }
 
     _isSelected(dim, key) {
+      // `key` is a group key (int code for encoded dims); `this.filters`
+      // holds labels.
       const sel = this.filters[dim];
-      return sel && sel.includes(String(key));
+      return sel && sel.includes(this._decodeStr(dim, key));
     }
 
     _toggleCategorical(dim, value) {
@@ -1100,8 +1196,7 @@
       if (value === undefined || value === null) return;
       const cfDim = this.dimensions[dim];
       if (Array.isArray(value)) {
-        const set = new Set(value);
-        cfDim.filterFunction(v => set.has(String(v)));
+        cfDim.filterFunction(this._makeCatPredicate(dim, value));
       } else if (value && value.min !== undefined) {
         if (value.isDate) {
           // Date dim values are epoch-days (see the dimension accessor); NaN
@@ -1229,8 +1324,9 @@
         this.dimensions[dim].filterAll();
         delete this.filters[dim];
       } else if (Array.isArray(value)) {
-        const set = new Set(value);
-        this.dimensions[dim].filterFunction(v => set.has(String(v)));
+        // `value` is label strings (from clicks, R pushes, or the debug
+        // API); the predicate maps them to row codes for encoded dims.
+        this.dimensions[dim].filterFunction(this._makeCatPredicate(dim, value));
         this.filters[dim] = value;
       } else if (value.min !== undefined) {
         if (value.isDate) {
@@ -1415,6 +1511,12 @@
     // -- Shiny communication ------------------------------------------------
 
     getValue() {
+      // CONTRACT EDGE: everything published to R is label STRINGS (incl.
+      // the __NA__/__EMPTY__ sentinels) and numeric ranges -- never the
+      // dictionary codes. R state (r_filters) drives the dm-filter mirror
+      // and is persisted in saved boards; `this.filters` already holds
+      // labels, so no decode is needed here.
+      //
       // Until setData() has run at least once, `this.filters` is the
       // empty default `{}` — not the user's intent, not the R-shipped
       // initial state. Returning null here keeps Shiny from posting an
