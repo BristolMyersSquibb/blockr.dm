@@ -149,6 +149,50 @@ new_value_filter_block <- function(
           }
         })
 
+        # The other half of the same observer discipline: `enforce_single_rule()`
+        # above derives the COLUMN SELECTION from `data()` and parks it in
+        # `r_state`; this derives the expression SHAPE (dm vs data frame, plus
+        # the per-column types that drive the value cast) and parks it here.
+        # Between them, `expr` below reads only reactiveVals and never `data()`.
+        #
+        # Why it matters: blockr.core skips re-evaluating a block only when the
+        # expression it is handed is the SAME OBJECT as last time (`same_ref()`,
+        # see blockr.core/R/block-server.R). `make_filter_block_expr()` builds
+        # with `bquote()`, which allocates a fresh call tree on every read, so
+        # an `expr` that depended on `data()` re-ran -- and re-evaluated this
+        # block plus everything downstream -- on every spurious upstream
+        # invalidation (blockr.dock's view switches churn the chain with
+        # byte-for-byte identical data). Keyed on a reactiveVal that only
+        # changes when the shape actually changes, `expr` is not invalidated by
+        # that churn and hands back its cached object. See
+        # blockr.cdex/dev/profiling-plan.md, "Settled" item 8.
+        #
+        # A deliberately SEPARATE reactiveVal from `r_state`: `r_state` is the
+        # JS-synced blob that round-trips to the client (sendCustomMessage /
+        # `self_write`), and this is a purely server-side derived decision.
+        #
+        # The failure branch MUST write an explicit "not ready" marker rather
+        # than skip the write: silently leaving the last good shape in place
+        # would make `expr` serve a STALE expression exactly where it has to
+        # propagate the upstream's silent stop, which blockr.core reads as
+        # "this block is waiting" (not "this block has output").
+        shape_rv <- shiny::reactiveVal(NULL)
+
+        shiny::observe({
+          shape_rv(
+            tryCatch(
+              # NB: a NULL / not-yet-ready upstream is a VALID shape, not a
+              # failure -- it builds the data-frame branch, which is the
+              # documented restore behaviour (see the note on `expr`).
+              list(ok = TRUE, shape = filter_input_shape(data())),
+              # An upstream `req()` / error must keep reaching blockr.core; it
+              # is captured here (an erroring observer would kill the session)
+              # and re-raised from `expr` below, unchanged.
+              error = function(e) list(ok = FALSE, cond = e)
+            )
+          )
+        })
+
         # JS -> R: lazy value request for one column (fires on dropdown-open).
         # `key` is the qualified key ("table.column" for a dm, bare column
         # name otherwise); only that single column's values are computed.
@@ -221,15 +265,23 @@ new_value_filter_block <- function(
         list(
           # NB: the expression *shape* depends on the input type — a data frame
           # yields `dplyr::filter()`, a `dm` yields `dm::dm_filter()`, and value
-          # casting reads the column's type. So `expr` must track `data()`, NOT
+          # casting reads the column's type. So `expr` must track the input, NOT
           # isolate it: on restore the upstream is often not ready yet (NULL), in
           # which case the df branch is built; if the real input turns out to be
           # a `dm`, evaluating that wrong-shaped expression errors until the
-          # value is re-edited. Depending on `data()` rebuilds on the real input.
+          # value is re-edited. It tracks it through `shape_rv()` (see the
+          # observer above), never by reading `data()` here — that is what keeps
+          # the expression object stable across spurious upstream
+          # invalidations, so blockr.core's `same_ref()` skip check succeeds.
           expr = shiny::reactive({
-            make_filter_block_expr(
+            derived <- shape_rv()
+            shiny::req(derived)
+            # The upstream failed: re-raise its condition verbatim (a `req()`
+            # silent stop stays a silent stop, i.e. "waiting").
+            if (!isTRUE(derived$ok)) stop(derived$cond)
+            make_filter_expr_from_shape(
               r_state()$columns %||% list(),
-              data(),
+              derived$shape,
               operator = r_state()$operator %||% "&",
               flag_groups = fg
             )
@@ -607,6 +659,40 @@ enforce_single_rule <- function(state, data, flag_groups = list()) {
   list(columns = cols, operator = op)
 }
 
+#' Everything the expression builder needs to know about the input.
+#'
+#' The builder reads exactly two things off the live data: the BRANCH (a `dm`
+#' yields `dm::dm_filter()` calls, anything else `dplyr::filter()`) and, per
+#' table, the column names and types that drive the per-column value cast in
+#' `column_condition_expr()`. Both are captured here as a plain list of 0-row
+#' column templates, so the block server can derive the decision once per data
+#' change (in an observer) instead of re-reading `data()` from `expr` — see the
+#' note on the observer in [new_value_filter_block()].
+#'
+#' Two equal-but-freshly-built inputs produce an `identical()` shape, which is
+#' what lets the `reactiveVal` holding it treat a spurious re-derivation as a
+#' no-op. A 0-row template also keeps a remote (lazy) dm table from being
+#' collected just to read its column types, the same trick `table_head0()` is
+#' already used for in `build_column_meta_dm()`.
+#'
+#' @noRd
+filter_input_shape <- function(data) {
+  if (inherits(data, "dm")) {
+    if (!requireNamespace("dm", quietly = TRUE)) {
+      stop("Package 'dm' is required for dm input. ",
+           "Install with install.packages('dm').")
+    }
+    return(list(
+      is_dm  = TRUE,
+      tables = lapply(dm::dm_get_tables(data), table_head0)
+    ))
+  }
+  list(
+    is_dm = FALSE,
+    df    = if (is.data.frame(data)) data[0L, , drop = FALSE] else NULL
+  )
+}
+
 #' Build the filter expression — branches on input type.
 #'
 #' Data frame: `dplyr::filter(data, <combined-cond>)`, with the per-column
@@ -622,14 +708,28 @@ enforce_single_rule <- function(state, data, flag_groups = list()) {
 #' @noRd
 make_filter_block_expr <- function(columns, data, operator = "&",
                                    flag_groups = list()) {
+  make_filter_expr_from_shape(
+    columns, filter_input_shape(data),
+    operator = operator, flag_groups = flag_groups
+  )
+}
+
+#' `make_filter_block_expr()` against a pre-derived `filter_input_shape()`.
+#'
+#' This is the form the block server uses: the shape is computed once per data
+#' change in an observer, so building the expression touches no live data.
+#' @noRd
+make_filter_expr_from_shape <- function(columns, shape, operator = "&",
+                                        flag_groups = list()) {
+  if (is.null(shape)) shape <- list(is_dm = FALSE, df = NULL)
   if (length(columns) == 0L) {
-    if (inherits(data, "dm")) return(bquote(dm::dm_filter(data)))
+    if (isTRUE(shape$is_dm)) return(bquote(dm::dm_filter(data)))
     return(bquote(dplyr::filter(data, TRUE)))
   }
-  if (inherits(data, "dm")) {
-    make_dm_filter_expr(columns, data)
+  if (isTRUE(shape$is_dm)) {
+    make_dm_filter_expr(columns, shape$tables)
   } else {
-    make_df_filter_expr(columns, data, operator = operator,
+    make_df_filter_expr(columns, shape$df, operator = operator,
                         flag_groups = flag_groups)
   }
 }
@@ -671,18 +771,15 @@ make_df_filter_expr <- function(columns, df, operator = "&",
   as.call(list(quote(dplyr::filter), quote(data), combined))
 }
 
+#' @param tbls_dm Named list of 0-row column templates, one per dm table (the
+#'   `tables` element of a `filter_input_shape()`).
 #' @noRd
-make_dm_filter_expr <- function(columns, dm_obj) {
-  if (!requireNamespace("dm", quietly = TRUE)) {
-    stop("Package 'dm' is required for dm input. ",
-         "Install with install.packages('dm').")
-  }
-  tbls_dm <- dm::dm_get_tables(dm_obj)
+make_dm_filter_expr <- function(columns, tbls_dm) {
   by_table <- list()
   for (entry in columns) {
     tbl <- entry$table %||% ""
     if (!nzchar(tbl) || !tbl %in% names(tbls_dm)) next
-    src_tbl <- as.data.frame(tbls_dm[[tbl]])
+    src_tbl <- tbls_dm[[tbl]]
     cond <- column_condition_expr(entry, src_tbl)
     if (is.null(cond)) next
     by_table[[tbl]] <- c(by_table[[tbl]], list(cond))

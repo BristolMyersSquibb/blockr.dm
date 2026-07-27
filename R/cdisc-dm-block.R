@@ -65,6 +65,58 @@ find_duplicated_cols <- function(dm_obj, parent_name) {
   result
 }
 
+#' Everything the CDISC expression needs to know about the input dm
+#'
+#' Reduces a `dm` to the plain, comparable description the expression builder
+#' reads from it: the parent table, the child tables carrying USUBJID, the
+#' existing keys to strip, and the duplicated columns to drop. Deliberately
+#' returns base vectors and lists (not the `dm_get_all_*()` tibbles) so two
+#' equal-but-freshly-built inputs produce an `identical()` result — that is
+#' what lets the `reactiveVal` holding it treat a spurious re-derivation as a
+#' no-op. See the note on the observer in [new_cdisc_dm_block()].
+#'
+#' @param dm_obj A dm object
+#' @return A list with `parent` (`NULL` when no CDISC parent was found),
+#'   `child_tables`, `fks`, `pk_tables` and `dedup_info`
+#' @keywords internal
+cdisc_dm_shape <- function(dm_obj) {
+  parent_name <- find_cdisc_parent(dm_obj)
+
+  if (is.null(parent_name)) {
+    return(list(parent = NULL))
+  }
+
+  # Child tables with USUBJID
+  child_tables <- character(0)
+  for (tbl_name in setdiff(names(dm_obj), parent_name)) {
+    if ("USUBJID" %in% names(dm_obj[[tbl_name]])) {
+      child_tables <- c(child_tables, tbl_name)
+    }
+  }
+
+  # Existing FKs. Each key names its columns and ref_columns: an
+  # underspecified dm_rm_fk() makes dm emit a disambiguation message.
+  existing_fks <- dm::dm_get_all_fks(dm_obj)
+  fks <- lapply(seq_len(nrow(existing_fks)), function(i) {
+    list(
+      child_table  = as.character(existing_fks$child_table[i]),
+      parent_table = as.character(existing_fks$parent_table[i]),
+      child_cols   = unlist(existing_fks$child_fk_cols[[i]]),
+      parent_cols  = unlist(existing_fks$parent_key_cols[[i]])
+    )
+  })
+
+  existing_pks <- dm::dm_get_all_pks(dm_obj)
+
+  list(
+    parent       = parent_name,
+    child_tables = child_tables,
+    fks          = fks,
+    pk_tables    = as.character(existing_pks$table),
+    dedup_info   = find_duplicated_cols(dm_obj, parent_name)
+  )
+}
+
 #' Create CDISC DM Block
 #'
 #' Transforms a dm object by detecting the CDISC parent table (ADSL or DM)
@@ -107,6 +159,51 @@ new_cdisc_dm_block <- function(set_keys = TRUE, dedup_cols = TRUE, ...) {
           input$dedup_cols, dedup_rv(input$dedup_cols),
           ignoreInit = TRUE
         )
+
+        # Everything `expr` needs from the upstream `dm` is derived HERE, in an
+        # observer keyed on `data()`, and parked in a reactiveVal. `expr` reads
+        # that reactiveVal and never touches `data()` itself.
+        #
+        # Why: blockr.core skips re-evaluating a block only when the expression
+        # it is handed is the SAME OBJECT as last time (`same_ref()`, see
+        # blockr.core/R/block-server.R). `expr` builds its call tree with
+        # `bquote()`, which allocates afresh on every read, so an `expr` that
+        # depended on `data()` re-ran -- and re-evaluated this block plus
+        # everything downstream of it -- on every spurious upstream
+        # invalidation (blockr.dock's view switches churn the chain with
+        # byte-for-byte identical data). Reading a reactiveVal that only
+        # changes when the DECISION changes, `expr` is not invalidated by that
+        # churn at all and hands back its cached object. This is the same
+        # observer discipline the value filter block uses for
+        # `enforce_single_rule()`. See blockr.cdex/dev/profiling-plan.md,
+        # "Settled" item 8.
+        #
+        # The invalid branch MUST write an explicit "not ready" marker rather
+        # than skip the write: silently leaving the last good decision in place
+        # would make `expr` serve a STALE expression exactly where it has to
+        # propagate `req()`'s silent stop, which blockr.core reads as "this
+        # block is waiting" (not "this block has output").
+        dm_shape <- shiny::reactiveVal(NULL)
+
+        shiny::observe({
+          dm_shape(
+            tryCatch(
+              {
+                dm_input <- data()
+                if (inherits(dm_input, "dm")) {
+                  list(ok = TRUE, shape = cdisc_dm_shape(dm_input))
+                } else {
+                  # Mirrors the former `req(inherits(dm_input, "dm"))`.
+                  list(ok = FALSE, cond = NULL)
+                }
+              },
+              # An upstream `req()` / error must keep reaching blockr.core; it
+              # is captured here (an erroring observer would kill the session)
+              # and re-raised from `expr` below, unchanged.
+              error = function(e) list(ok = FALSE, cond = e)
+            )
+          )
+        })
 
         output$cdisc_badge <- shiny::renderUI({
           dm_input <- data()
@@ -166,11 +263,22 @@ new_cdisc_dm_block <- function(set_keys = TRUE, dedup_cols = TRUE, ...) {
         })
 
         list(
+          # Reads `dm_shape()` (see the observer above) and the two state
+          # reactiveVals -- never `data()`. That is what keeps the expression
+          # object stable across spurious upstream invalidations, so
+          # blockr.core's `same_ref()` skip check succeeds.
           expr = shiny::reactive({
-            dm_input <- data()
-            shiny::req(inherits(dm_input, "dm"))
+            derived <- dm_shape()
+            shiny::req(derived)
+            if (!isTRUE(derived$ok)) {
+              # Not a dm (silent stop, as the former `req()` did), or the
+              # upstream itself failed (re-raise its condition verbatim).
+              if (is.null(derived$cond)) shiny::req(FALSE)
+              stop(derived$cond)
+            }
+            shape <- derived$shape
 
-            parent_name <- find_cdisc_parent(dm_input)
+            parent_name <- shape$parent
 
             if (is.null(parent_name)) {
               warning(
@@ -183,13 +291,8 @@ new_cdisc_dm_block <- function(set_keys = TRUE, dedup_cols = TRUE, ...) {
             do_keys <- set_keys_rv()
             do_dedup <- dedup_rv()
 
-            # Find child tables with USUBJID
-            child_tables <- character(0)
-            for (tbl_name in setdiff(names(dm_input), parent_name)) {
-              if ("USUBJID" %in% names(dm_input[[tbl_name]])) {
-                child_tables <- c(child_tables, tbl_name)
-              }
-            }
+            # Child tables with USUBJID (derived in the observer)
+            child_tables <- shape$child_tables
 
             # Build expression body as list of calls
             body_exprs <- list()
@@ -202,33 +305,27 @@ new_cdisc_dm_block <- function(set_keys = TRUE, dedup_cols = TRUE, ...) {
             # Strip existing FKs (hardcoded at build time). Each key names its
             # columns and ref_columns: an underspecified dm_rm_fk() makes dm
             # emit a disambiguation message.
-            existing_fks <- dm::dm_get_all_fks(dm_input)
-            if (nrow(existing_fks) > 0) {
-              for (i in seq_len(nrow(existing_fks))) {
-                cs <- as.name(existing_fks$child_table[i])
-                ps <- as.name(existing_fks$parent_table[i])
-                cc <- key_cols_expr(existing_fks$child_fk_cols[[i]])
-                pc <- key_cols_expr(existing_fks$parent_key_cols[[i]])
-                body_exprs <- c(body_exprs, list(
-                  bquote(result <- dm::dm_rm_fk(
-                    result, .(cs), columns = .(cc),
-                    ref_table = .(ps), ref_columns = .(pc)
-                  ))
+            for (fk in shape$fks) {
+              cs <- as.name(fk$child_table)
+              ps <- as.name(fk$parent_table)
+              cc <- key_cols_expr(fk$child_cols)
+              pc <- key_cols_expr(fk$parent_cols)
+              body_exprs <- c(body_exprs, list(
+                bquote(result <- dm::dm_rm_fk(
+                  result, .(cs), columns = .(cc),
+                  ref_table = .(ps), ref_columns = .(pc)
                 ))
-              }
+              ))
             }
 
             # Strip existing PKs
-            existing_pks <- dm::dm_get_all_pks(dm_input)
-            if (nrow(existing_pks) > 0) {
-              for (i in seq_len(nrow(existing_pks))) {
-                ts <- as.name(existing_pks$table[i])
-                body_exprs <- c(body_exprs, list(
-                  bquote(result <- dm::dm_rm_pk(
-                    result, .(ts)
-                  ))
+            for (pk_table in shape$pk_tables) {
+              ts <- as.name(pk_table)
+              body_exprs <- c(body_exprs, list(
+                bquote(result <- dm::dm_rm_pk(
+                  result, .(ts)
                 ))
-              }
+              ))
             }
 
             # Add PK/FK only when keys checkbox is on
@@ -252,7 +349,7 @@ new_cdisc_dm_block <- function(set_keys = TRUE, dedup_cols = TRUE, ...) {
 
             # Dedup columns if enabled
             if (do_dedup) {
-              dedup_info <- find_duplicated_cols(dm_input, parent_name)
+              dedup_info <- shape$dedup_info
               for (tbl_name in names(dedup_info)) {
                 cols <- dedup_info[[tbl_name]]
                 tbl_sym <- as.name(tbl_name)

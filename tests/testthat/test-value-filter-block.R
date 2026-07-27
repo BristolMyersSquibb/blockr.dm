@@ -801,3 +801,317 @@ test_that("flag_groups survives the board JSON round-trip", {
     args = list(x = blk2, data = list(data = function() fg_df()))
   )
 })
+
+# Expression reference stability ----------------------------------------------
+#
+# This block's `expr` deliberately tracks `data()` (the expression SHAPE depends
+# on whether the input is a data frame or a dm -- see the comment on the `expr`
+# member). Tracking it must not cost a re-evaluation on every spurious upstream
+# invalidation: blockr.core's block-server.R only skips a block when its
+# expression compares equal BY OBJECT IDENTITY (`same_ref()`), and
+# `make_filter_block_expr()` builds with `bquote()`, which allocates a fresh
+# call tree on every read. See blockr.cdex/dev/profiling-plan.md, "Settled"
+# item 8, where this block re-evaluated on every dock view switch.
+
+# A data frame rebuilt from scratch: equal in value, different object.
+vf_ref_df <- function() {
+  data.frame(
+    Species = c("setosa", "versicolor", "virginica"),
+    Width   = c(1.4, 4.5, 5.5),
+    stringsAsFactors = FALSE
+  )
+}
+
+test_that("expr keeps its object identity on an equal-but-fresh data frame", {
+  testthat::skip_if_not_installed("blockr.core")
+  d1 <- vf_ref_df()
+  d2 <- vf_ref_df()
+  expect_false(identical(rlang::obj_address(d1), rlang::obj_address(d2)))
+  expect_identical(d1, d2)
+
+  blk <- new_value_filter_block(state = list(columns = list(
+    list(name = "Species", mode = "single", values = "setosa")
+  )))
+
+  box <- new.env(parent = emptyenv())
+  box$d <- d1
+  tick <- shiny::reactiveVal(0L)
+  data_fn <- shiny::reactive({
+    tick()
+    box$d
+  })
+
+  shiny::testServer(
+    blockr.core:::get_s3_method("block_server", blk),
+    {
+      session$flushReact()
+      e1 <- session$returned$expr()
+      expect_equal(
+        paste(deparse(e1), collapse = " "),
+        "dplyr::filter(data, Species %in% \"setosa\")"
+      )
+
+      box$d <- d2
+      tick(1L)
+      session$flushReact()
+      e2 <- session$returned$expr()
+
+      expect_identical(rlang::obj_address(e1), rlang::obj_address(e2))
+    },
+    args = list(x = blk, data = list(data = data_fn))
+  )
+})
+
+test_that("expr keeps its object identity on an equal-but-fresh dm", {
+  skip_if_no_dm()
+  testthat::skip_if_not_installed("blockr.core")
+  d1 <- mk_demo_dm()
+  d2 <- mk_demo_dm()
+  expect_false(identical(rlang::obj_address(d1), rlang::obj_address(d2)))
+  expect_equal(dm::dm_get_tables(d1), dm::dm_get_tables(d2))
+
+  blk <- new_value_filter_block(state = list(columns = list(
+    list(name = "policy_id", table = "policies", mode = "single",
+         values = "P001")
+  )))
+
+  box <- new.env(parent = emptyenv())
+  box$d <- d1
+  tick <- shiny::reactiveVal(0L)
+  data_fn <- shiny::reactive({
+    tick()
+    box$d
+  })
+
+  shiny::testServer(
+    blockr.core:::get_s3_method("block_server", blk),
+    {
+      session$flushReact()
+      e1 <- session$returned$expr()
+      expect_equal(
+        paste(deparse(e1), collapse = " "),
+        "dm::dm_filter(data, policies = policy_id %in% \"P001\")"
+      )
+
+      box$d <- d2
+      tick(1L)
+      session$flushReact()
+      e2 <- session$returned$expr()
+
+      expect_identical(rlang::obj_address(e1), rlang::obj_address(e2))
+    },
+    args = list(x = blk, data = list(data = data_fn))
+  )
+})
+
+test_that("a real selection change yields a new, correct expression", {
+  testthat::skip_if_not_installed("blockr.core")
+  d <- vf_ref_df()
+  blk <- new_value_filter_block(state = list(columns = list(
+    list(name = "Species", mode = "single", values = "setosa")
+  )))
+
+  shiny::testServer(
+    blockr.core:::get_s3_method("block_server", blk),
+    {
+      session$flushReact()
+      e1 <- session$returned$expr()
+
+      # The block's own inputs live under blockr.core's "expr" module scope.
+      session$setInputs("expr-filter_input" = list(
+        columns = list(
+          list(name = "Species", mode = "single", values = "versicolor")
+        ),
+        operator = "&"
+      ))
+      session$flushReact()
+      e2 <- session$returned$expr()
+
+      expect_false(identical(rlang::obj_address(e1), rlang::obj_address(e2)))
+      expect_equal(
+        paste(deparse(e2), collapse = " "),
+        "dplyr::filter(data, Species %in% \"versicolor\")"
+      )
+      out <- eval(e2, list(data = d))
+      expect_equal(nrow(out), 1L)
+      expect_equal(out$Species, "versicolor")
+    },
+    args = list(x = blk, data = list(data = function() d))
+  )
+})
+
+test_that("a data frame -> dm shape flip still reshapes the expression", {
+  # The `expr` member tracks `data()` precisely so a df-shaped expression is
+  # not left behind when the real input turns out to be a dm. Reference
+  # stability must not break that.
+  skip_if_no_dm()
+  testthat::skip_if_not_installed("blockr.core")
+  blk <- new_value_filter_block(state = list(columns = list(
+    list(name = "policy_id", table = "policies", mode = "single",
+         values = "P001")
+  )))
+
+  box <- new.env(parent = emptyenv())
+  box$d <- NULL
+  tick <- shiny::reactiveVal(0L)
+  data_fn <- shiny::reactive({
+    tick()
+    box$d
+  })
+
+  shiny::testServer(
+    blockr.core:::get_s3_method("block_server", blk),
+    {
+      session$flushReact()
+      e1 <- session$returned$expr()
+      # No dm yet: the data-frame branch is built (the documented behaviour).
+      expect_match(paste(deparse(e1), collapse = " "), "dplyr::filter", fixed = TRUE)
+
+      box$d <- mk_demo_dm()
+      tick(1L)
+      session$flushReact()
+      e2 <- session$returned$expr()
+
+      expect_false(identical(rlang::obj_address(e1), rlang::obj_address(e2)))
+      expect_equal(
+        paste(deparse(e2), collapse = " "),
+        "dm::dm_filter(data, policies = policy_id %in% \"P001\")"
+      )
+    },
+    args = list(x = blk, data = list(data = data_fn))
+  )
+})
+
+test_that("the shape decision lands within a single flush", {
+  # The shape `expr` reads is derived in an observer keyed on `data()`, which
+  # raises the question whether a consumer can see the PREVIOUS shape for one
+  # extra flush. It cannot: Shiny's flush loop drains cascading invalidations
+  # within one `flushReact()`, so one flush after a data change is enough for
+  # both the expression AND blockr.core's evaluated result.
+  testthat::skip_if_not_installed("blockr.core")
+  # The column type is exactly the piece of the shape decision that used to be
+  # re-read off live `data()`: character values cast to integer when the
+  # upstream column is integer.
+  d_chr <- data.frame(year = c("2024", "2026"), stringsAsFactors = FALSE)
+  d_int <- data.frame(year = c(2024L, 2026L))
+
+  blk <- new_value_filter_block(state = list(columns = list(
+    list(name = "year", mode = "multi", values = c("2024", "2026"))
+  )))
+
+  box <- new.env(parent = emptyenv())
+  box$d <- d_chr
+  tick <- shiny::reactiveVal(0L)
+  data_fn <- shiny::reactive({
+    tick()
+    box$d
+  })
+
+  shiny::testServer(
+    blockr.core:::get_s3_method("block_server", blk),
+    {
+      session$flushReact()
+      expect_equal(
+        paste(deparse(session$returned$expr()), collapse = " "),
+        "dplyr::filter(data, year %in% c(\"2024\", \"2026\"))"
+      )
+      expect_equal(nrow(session$returned$result()), 2L)
+
+      box$d <- d_int
+      tick(1L)
+      session$flushReact()          # ONE flush only
+
+      e <- session$returned$expr()
+      expect_equal(
+        paste(deparse(e), collapse = " "),
+        "dplyr::filter(data, year %in% c(2024L, 2026L))"
+      )
+      res <- session$returned$result()
+      expect_equal(nrow(res), 2L)
+      expect_type(res$year, "integer")
+
+      # A second flush must be a no-op -- if it were not, the first flush had
+      # served a lagging shape.
+      session$flushReact()
+      expect_identical(
+        rlang::obj_address(e), rlang::obj_address(session$returned$expr())
+      )
+    },
+    args = list(x = blk, data = list(data = data_fn))
+  )
+})
+
+test_that("an upstream that stops propagates the stop, it does not go stale", {
+  # The failure mode a naive observer implementation has: on an invalid read it
+  # silently skips the write, the reactiveVal keeps its last good shape, and
+  # `expr` -- which no longer reads `data()` -- happily serves that STALE
+  # expression instead of propagating the upstream's silent stop (which
+  # blockr.core reads as "this block is waiting").
+  testthat::skip_if_not_installed("blockr.core")
+  d <- vf_ref_df()
+  ok <- shiny::reactiveVal(TRUE)
+  data_fn <- shiny::reactive({
+    shiny::req(ok())
+    d
+  })
+
+  blk <- new_value_filter_block(state = list(columns = list(
+    list(name = "Species", mode = "single", values = "setosa")
+  )))
+
+  shiny::testServer(
+    blockr.core:::get_s3_method("block_server", blk),
+    {
+      session$flushReact()
+      expect_equal(
+        paste(deparse(session$returned$expr()), collapse = " "),
+        "dplyr::filter(data, Species %in% \"setosa\")"
+      )
+
+      ok(FALSE)
+      session$flushReact()
+      expect_error(session$returned$expr(), class = "shiny.silent.error")
+
+      # ... and it recovers.
+      ok(TRUE)
+      session$flushReact()
+      expect_equal(
+        paste(deparse(session$returned$expr()), collapse = " "),
+        "dplyr::filter(data, Species %in% \"setosa\")"
+      )
+    },
+    args = list(x = blk, data = list(data = data_fn))
+  )
+})
+
+test_that("filter_input_shape is identical across equal-but-fresh inputs", {
+  # The reactiveVal only absorbs a re-derivation as a no-op when the derived
+  # value compares `identical()`.
+  expect_identical(filter_input_shape(vf_ref_df()),
+                   filter_input_shape(vf_ref_df()))
+  expect_false(identical(filter_input_shape(iris),
+                         filter_input_shape(vf_ref_df())))
+  # NULL / not-yet-ready upstream is a VALID shape (the data-frame branch),
+  # not a failure -- that is the documented restore behaviour.
+  expect_false(filter_input_shape(NULL)$is_dm)
+  expect_null(filter_input_shape(NULL)$df)
+})
+
+test_that("filter_input_shape keeps the dm branch and column types", {
+  skip_if_no_dm()
+  expect_identical(filter_input_shape(mk_demo_dm()),
+                   filter_input_shape(mk_demo_dm()))
+  sh <- filter_input_shape(mk_demo_dm())
+  expect_true(sh$is_dm)
+  expect_setequal(names(sh$tables), c("policies", "claims"))
+  # 0 rows, but the types that drive the value cast are intact.
+  expect_equal(nrow(sh$tables$claims), 0L)
+  expect_type(sh$tables$claims$claim_year, "integer")
+  # ... so the shaped builder produces exactly what the data-taking one does.
+  cols <- list(list(name = "claim_year", table = "claims",
+                    mode = "multi", values = c("2024", "2025")))
+  expect_identical(
+    make_filter_expr_from_shape(cols, sh),
+    make_filter_block_expr(cols, mk_demo_dm())
+  )
+})
