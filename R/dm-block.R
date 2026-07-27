@@ -37,6 +37,132 @@ dot_arg_values <- function(x) {
   stats::setNames(vals, unname(dot_arg_refs(x)))
 }
 
+#' Everything the dm-block expression needs to know about its inputs
+#'
+#' Reduces the realized variadic inputs to the plain, comparable description
+#' the expression builder reads: the eval-env symbol and display name per
+#' slot, the dm-vs-data-frame classification, and the inferred key
+#' relationships. Deliberately returns base vectors and lists (never the
+#' input data itself) so two equal-but-freshly-pulled inputs produce an
+#' `identical()` result — that is what lets the `reactiveVal` holding it
+#' treat a spurious re-derivation as a no-op. See the note on the observer
+#' in [new_dm_block()].
+#'
+#' @param refs Named character vector from `dot_arg_refs()`: eval-env symbols
+#'   keyed by display (link) name.
+#' @param vals List of realized slot values, in slot order.
+#' @param do_infer Logical, whether to infer PK/FK relationships.
+#' @return A list with `nms` (eval-env symbols), `display_nms`, `is_dm`,
+#'   `pks` and `fks`
+#' @keywords internal
+dm_block_shape <- function(refs, vals, do_infer) {
+
+  eval_syms <- unname(refs)
+  link_nms <- names(refs)
+
+  # Human-facing table names: a descriptive link name when present, else
+  # "table_<i>". Numeric-only and unnamed (DAG-UI) slots both get the
+  # positional fallback, matching the block's legacy naming.
+  synthetic <- !nzchar(link_nms) | grepl("^[1-9][0-9]*$", link_nms)
+  display_nms <- ifelse(
+    synthetic, paste0("table_", seq_along(refs)), link_nms
+  )
+
+  # Classify each input and collect its tables (only consulted for key
+  # inference below — the data is NOT part of the returned shape).
+  is_dm <- logical(length(vals))
+  all_tables <- list()
+
+  for (i in seq_along(vals)) {
+    arg <- vals[[i]]
+    if (inherits(arg, "dm")) {
+      is_dm[i] <- TRUE
+      for (tbl_name in names(dm::dm_get_tables(arg))) {
+        all_tables[[tbl_name]] <- arg[[tbl_name]]
+      }
+    } else {
+      all_tables[[display_nms[i]]] <- arg
+    }
+  }
+
+  keys <- if (isTRUE(do_infer) && length(all_tables) >= 2) {
+    infer_key_relations(all_tables)
+  } else {
+    list(pks = list(), fks = list())
+  }
+
+  list(
+    nms = eval_syms,
+    display_nms = as.character(display_nms),
+    is_dm = is_dm,
+    pks = keys$pks,
+    fks = keys$fks
+  )
+}
+
+#' Infer PK/FK relationships from a named list of tables
+#'
+#' For each column name shared by two or more tables: a table where the
+#' column is complete and unique is a PK candidate, one where it is not is
+#' an FK candidate. The first PK candidate wins and every FK candidate is
+#' linked to it.
+#'
+#' @param all_tables Named list of data frames
+#' @return A list with `pks` (each `list(table, column)`) and `fks` (each
+#'   `list(child_table, child_column, parent_table)`)
+#' @keywords internal
+infer_key_relations <- function(all_tables) {
+
+  table_names <- names(all_tables)
+  all_cols <- lapply(table_names, function(tbl) {
+    names(all_tables[[tbl]])
+  })
+  names(all_cols) <- table_names
+
+  # Find shared columns
+  all_col_names <- unlist(all_cols)
+  col_counts <- table(all_col_names)
+  shared_cols <- names(col_counts[col_counts > 1])
+
+  pks <- list()
+  fks <- list()
+
+  for (col in shared_cols) {
+    has_col <- vapply(
+      all_cols,
+      function(cols) col %in% cols, logical(1)
+    )
+    tables_with_col <- table_names[has_col]
+    if (length(tables_with_col) < 2) next
+
+    # Check uniqueness
+    uniqueness <- vapply(tables_with_col, function(tbl) {
+      vals <- all_tables[[tbl]][[col]]
+      !anyNA(vals) && !anyDuplicated(vals)
+    }, logical(1))
+
+    pk_tables <- tables_with_col[uniqueness]
+    fk_tables <- tables_with_col[!uniqueness]
+
+    # If one table has unique values and others
+    # don't, establish relationship
+    if (length(pk_tables) >= 1 && length(fk_tables) >= 1) {
+      pk_table <- pk_tables[1]
+      pks <- c(pks, list(list(table = pk_table, column = col)))
+
+      for (fk_table in fk_tables) {
+        fks <- c(fks, list(list(
+          child_table = fk_table,
+          child_column = col,
+          parent_table = pk_table
+        )))
+      }
+    }
+  }
+
+  list(pks = pks, fks = fks)
+}
+
 #' Infer primary and foreign keys from column name equality
 #'
 #' For each pair of tables, finds columns with matching names. If one table
@@ -192,117 +318,71 @@ new_dm_block <- function(infer_keys = TRUE, ...) {
             infer_keys_rv(input$infer_keys)
           }, ignoreInit = TRUE)
 
-          # Analyze inputs to classify as dm or data.frame, and pre-compute keys
-          input_info <- shiny::reactive({
-            # Eval-env symbols the generated expression binds each input under
-            # (get(nms[i]) below), plus positional-safe values. Unnamed DAG-UI
-            # slots resolve to .arg1, .arg2, ...; a raw names() lookup would
-            # miss them and silently drop the connected input.
-            refs <- dot_arg_refs(...args)
-            eval_syms <- unname(refs)
-            link_nms <- names(refs)
-            arg_vals <- dot_arg_values(...args)
+          # Everything `expr` needs from the variadic inputs is derived HERE,
+          # in an observer, and parked in a reactiveVal as a plain shape list
+          # (`dm_block_shape()`). `expr` reads that reactiveVal and never
+          # touches `...args` itself.
+          #
+          # Why: blockr.core skips re-evaluating a block only when the
+          # expression it is handed is the SAME OBJECT as last time
+          # (`same_ref()`, see blockr.core/R/block-server.R). The old
+          # `input_info()` reactive realized every input on each read and
+          # rebuilt the expression with `bquote()` (a fresh call tree every
+          # run), so any spurious upstream invalidation re-evaluated this
+          # block and everything downstream. Keyed on a reactiveVal that only
+          # changes when the DECISION changes, `expr` is untouched by that
+          # churn and hands back its cached object. Same discipline as
+          # new_cdisc_dm_block / new_value_filter_block.
+          #
+          # Reading `dot_arg_refs()` / `dot_arg_values()` here registers a
+          # dependency on the slot SET (the reactives container's keys are a
+          # reactiveVal) as well as on every slot's value, so DAG-UI edge
+          # adds/removes re-derive the shape just like data changes do.
+          #
+          # The failure branch MUST write an explicit "not ready" marker
+          # rather than skip the write: silently leaving the last good shape
+          # in place would make `expr` serve a STALE expression exactly where
+          # it has to propagate the upstream's silent stop, which blockr.core
+          # reads as "this block is waiting".
+          shape_rv <- shiny::reactiveVal(NULL)
 
-            # Human-facing table names: a descriptive link name when present,
-            # else "table_<i>". Numeric-only and unnamed (DAG-UI) slots both get
-            # the positional fallback, matching the block's legacy naming.
-            synthetic <- !nzchar(link_nms) | grepl("^[1-9][0-9]*$", link_nms)
-            display_nms <- ifelse(
-              synthetic, paste0("table_", seq_along(refs)), link_nms
-            )
-
-            # Classify each input and collect data
-            is_dm <- logical(length(eval_syms))
-            all_tables <- list()
-
-            for (i in seq_along(eval_syms)) {
-              arg <- arg_vals[[i]]
-              if (shiny::is.reactive(arg)) arg <- arg()
-
-              if (inherits(arg, "dm")) {
-                is_dm[i] <- TRUE
-                # Extract tables from dm
-                for (tbl_name in names(dm::dm_get_tables(arg))) {
-                  all_tables[[tbl_name]] <- arg[[tbl_name]]
-                }
-              } else {
-                is_dm[i] <- FALSE
-                all_tables[[display_nms[i]]] <- arg
-              }
-            }
-
-            list(
-              nms = eval_syms,
-              display_nms = display_nms,
-              is_dm = is_dm,
-              all_tables = all_tables
-            )
-          })
-
-          # Compute inferred keys based on current data
-          inferred_keys <- shiny::reactive({
-            info <- input_info()
-            do_infer <- infer_keys_rv()
-
-            if (!do_infer || length(info$all_tables) < 2) {
-              return(list(pks = list(), fks = list()))
-            }
-
-            # Analyze tables for key relationships
-            table_names <- names(info$all_tables)
-            all_cols <- lapply(table_names, function(tbl) {
-              names(info$all_tables[[tbl]])
-            })
-            names(all_cols) <- table_names
-
-            # Find shared columns
-            all_col_names <- unlist(all_cols)
-            col_counts <- table(all_col_names)
-            shared_cols <- names(col_counts[col_counts > 1])
-
-            pks <- list()
-            fks <- list()
-
-            for (col in shared_cols) {
-              has_col <- vapply(
-                all_cols,
-                function(cols) col %in% cols, logical(1)
+          shiny::observe({
+            shape_rv(
+              tryCatch(
+                {
+                  # Eval-env symbols the generated expression binds each input
+                  # under (get(nms[i]) below), plus positional-safe values.
+                  # Unnamed DAG-UI slots resolve to .arg1, .arg2, ...; a raw
+                  # names() lookup would miss them and silently drop the
+                  # connected input.
+                  refs <- dot_arg_refs(...args)
+                  vals <- lapply(dot_arg_values(...args), function(arg) {
+                    if (shiny::is.reactive(arg)) arg() else arg
+                  })
+                  list(
+                    ok = TRUE,
+                    shape = dm_block_shape(refs, vals, infer_keys_rv())
+                  )
+                },
+                # An upstream `req()` / error must keep reaching blockr.core;
+                # it is captured here (an erroring observer would kill the
+                # session) and re-raised from `expr` below, unchanged.
+                error = function(e) list(ok = FALSE, cond = e)
               )
-              tables_with_col <- table_names[has_col]
-              if (length(tables_with_col) < 2) next
-
-              # Check uniqueness
-              uniqueness <- vapply(tables_with_col, function(tbl) {
-                vals <- info$all_tables[[tbl]][[col]]
-                !anyNA(vals) && !anyDuplicated(vals)
-              }, logical(1))
-
-              pk_tables <- tables_with_col[uniqueness]
-              fk_tables <- tables_with_col[!uniqueness]
-
-              # If one table has unique values and others
-              # don't, establish relationship
-              if (length(pk_tables) >= 1 && length(fk_tables) >= 1) {
-                pk_table <- pk_tables[1]
-                pks <- c(pks, list(list(table = pk_table, column = col)))
-
-                for (fk_table in fk_tables) {
-                  fks <- c(fks, list(list(
-                    child_table = fk_table,
-                    child_column = col,
-                    parent_table = pk_table
-                  )))
-                }
-              }
-            }
-
-            list(pks = pks, fks = fks)
+            )
           })
 
           list(
             expr = shiny::reactive({
-              info <- input_info()
-              keys <- inferred_keys()
+              derived <- shape_rv()
+              shiny::req(derived)
+              if (!isTRUE(derived$ok)) {
+                # The upstream failed: re-raise its condition verbatim (a
+                # `req()` silent stop stays a silent stop, i.e. "waiting").
+                stop(derived$cond)
+              }
+              info <- derived$shape
+              keys <- list(pks = info$pks, fks = info$fks)
 
               shiny::req(length(info$nms) > 0)
 
