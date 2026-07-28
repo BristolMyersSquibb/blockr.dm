@@ -68,6 +68,52 @@ test_that("external write to r_filters updates expr and pushes to JS", {
   )
 })
 
+test_that("a client announcing itself gets the cached payload re-shipped", {
+  # Deferred dock panels ship crossfilter-block.js WITH the panel, so the boot
+  # push reaches a client with no registered handler and Shiny drops it
+  # silently -- the block then sat blank for the whole session, even after the
+  # user switched to its view. The binding announces itself on bind and R
+  # answers with its cached payload (filters refreshed from the live
+  # reactives, no lookup rebuild).
+  blk <- new_crossfilter_block(
+    active_dims = list(.tbl = "Species"),
+    filters = list(.tbl = list(Species = "setosa"))
+  )
+
+  testServer(
+    blockr.core:::get_s3_method("block_server", blk),
+    args = list(x = blk, data = list(data = function() iris)),
+    {
+      # Proxy sessions forbid assignment; the root MockShinySession allows it.
+      sent <- list()
+      root <- session$rootScope()
+      root$sendCustomMessage <- function(type, message) {
+        sent[[length(sent) + 1L]] <<- list(type = type, message = message)
+        invisible()
+      }
+
+      session$flushReact()
+      n_boot <- length(sent)
+      expect_gte(n_boot, 1L)
+
+      # The block's own inputs live one module level down (`expr_server()`).
+      session$setInputs(`expr-crossfilter_input_ready` = 1)
+      session$flushReact()
+
+      expect_gt(length(sent), n_boot)
+      re_ship <- sent[[length(sent)]]
+      expect_identical(re_ship$type, "js-crossfilter-data")
+      expect_true(length(re_ship$message$lookups) > 0)
+      # The re-ship carries the CURRENT filter state, not the boot-time one.
+      expect_identical(
+        re_ship$message$cat_filters,
+        list(.tbl = list(Species = list("setosa")))
+      )
+      expect_identical(re_ship$message$active_dims, list(.tbl = list("Species")))
+    }
+  )
+})
+
 test_that("lookup builders include measure when table name starts with dot", {
   # data.frame inputs are wrapped as `dm(.tbl = df)` — the table name is
   # `.tbl` (leading dot). The measure spec is then `.tbl.<column>`, and a

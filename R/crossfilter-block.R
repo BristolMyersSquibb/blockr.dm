@@ -585,15 +585,23 @@ crossfilter_server <- function(active_dims, filters, range_filters,
         }
       })
 
-      # --- Client re-init handshake ---
+      # --- Client ready handshake ---
       # The widget's data lives on the DOM element (el._block) and survives
       # dockview re-parenting, so the guard above never starves a live client.
-      # If the element is ever genuinely RECREATED (fresh bind, JS state gone),
-      # the binding announces itself and gets the cached payload re-shipped --
-      # no lookup rebuild. At cold start the announcement typically arrives
-      # before the first payload exists (data evals take longer than binding
-      # init), so the NULL check makes it a no-op there; the data observe
-      # handles the initial ship.
+      # The binding announces itself on EVERY bind that did not already find a
+      # parked payload, and gets the cached payload re-shipped -- no lookup
+      # rebuild. Two cases need it:
+      #   * the element was genuinely RECREATED (fresh bind, JS state gone);
+      #   * the block sits in a DEFERRED dock panel, so crossfilter-block.js
+      #     shipped with that panel and the boot push above reached a client
+      #     with no registered handler -- Shiny drops such messages silently,
+      #     and no client-side queue can catch a message that arrived before
+      #     the queue's own script. Without the re-ship the block stays blank
+      #     for the whole session, even once the user visits its view.
+      # At cold start the announcement arrives before the first payload exists
+      # (the binding initializes before the server's first flush), so the NULL
+      # check makes it a no-op there; the data observe handles the initial
+      # ship.
       shiny::observeEvent(input$crossfilter_input_ready, {
         if (!is.null(last_send$msg)) {
           message("[js-crossfilter] client re-initialized, re-shipping cached payload")

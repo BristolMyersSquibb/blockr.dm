@@ -445,6 +445,10 @@
     // -- Receive data from R ------------------------------------------------
 
     setData(msg) {
+      // Set before the async chain: the first-bind rescue in initialize()
+      // asks "did R's regular push reach me?", and a payload that is still
+      // inflating counts as reached.
+      this._dataSeen = true;
       // Serialize ingests: setData is async (gzip inflate) and a `_ready`
       // re-ship arriving during an in-flight decode must not interleave its
       // teardown/build with ours.
@@ -1570,20 +1574,45 @@
     unsubscribe: (el) => { $(el).off('.jscf'); },
     initialize: (el) => {
       el._block = new CrossfilterBlock(el);
-      // Re-init handshake: announce ONLY on a RE-bind -- an id this page has
-      // bound before means the element was recreated and its JS state
-      // (el._block data) is gone, so R re-ships its cached payload without a
-      // rebuild. The FIRST bind stays silent: R's regular data push covers the
-      // initial ship (announcing there would double-ship the multi-MB payload
-      // at boot, since deferred UIs bind after the first push). A full page
-      // reload resets this registry AND starts a fresh Shiny session, whose
-      // normal push path applies again.
-      window._blockrCfBound = window._blockrCfBound || {};
-      if (window._blockrCfBound[el.id] && window.Shiny && Shiny.setInputValue) {
+
+      const announce = () => {
+        if (!window.Shiny || !Shiny.setInputValue) return;
         readyCounter += 1;
         Shiny.setInputValue(el.id + '_ready', readyCounter, { priority: 'event' });
-      }
+      };
+
+      window._blockrCfBound = window._blockrCfBound || {};
+      const rebind = !!window._blockrCfBound[el.id];
       window._blockrCfBound[el.id] = true;
+
+      // Re-bind: an id this page has bound before means the element was
+      // recreated and its JS state (el._block data) is gone, so ask R to
+      // re-ship its CACHED payload (no lookup rebuild) right away. A full page
+      // reload resets this registry AND starts a fresh Shiny session, whose
+      // normal push path applies again.
+      if (rebind) {
+        announce();
+        return;
+      }
+
+      // First bind. R's regular data push normally covers the initial ship,
+      // and announcing here would double-ship the payload at boot -- so this
+      // is a RESCUE that cancels itself once that push lands.
+      //
+      // It has to exist because of the deferred dock panel: this script ships
+      // WITH the panel, so a block whose view is not active at startup has no
+      // registered handler when R pushes at boot, and Shiny drops such
+      // messages silently. No client-side queue can catch a message that
+      // arrived before the queue's own script, so the block stayed blank for
+      // the rest of the session -- even after the user switched to its view.
+      // In that case nothing ever arrives here, the timer fires, and R
+      // re-ships. Cost when the push is merely slow: none, because R only
+      // answers the announce if it already has a payload cached.
+      setTimeout(() => {
+        if (el._block && !el._block._dataSeen && document.contains(el)) {
+          announce();
+        }
+      }, 1000);
     }
   });
 
@@ -1598,6 +1627,9 @@
     if (el && el._block) {
       el._block.setData(msg);
     } else {
+      // Element not bound yet: wait for it briefly. Past the give-up the
+      // binding's own rescue announce takes over, and R answers that one with
+      // the filter state refreshed from its live reactives.
       let attempts = 0;
       const t = setInterval(() => {
         attempts++;
