@@ -62,7 +62,7 @@ test_that("external write to r_filters updates expr and pushes to JS", {
       txt <- paste(deparse(expr_after), collapse = " ")
       expect_match(txt, "dplyr::filter")
       expect_match(txt, "setosa")
-      result <- eval(expr_after, list(data = iris))
+      result <- eval(expr_after, list(data = iris, . = identity))
       expect_true(all(as.character(result$Species) == "setosa"))
     }
   )

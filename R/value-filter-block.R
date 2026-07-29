@@ -714,6 +714,21 @@ make_filter_block_expr <- function(columns, data, operator = "&",
   )
 }
 
+# The data SLOT, as blockr.core's `.()` placeholder.
+#
+# These blocks are expr_type = "bquoted", where blockr.core substitutes
+# `.()` placeholders and NOTHING else. A bare `data` symbol therefore
+# resolves at RUNTIME (the block's eval env binds it) and looks perfectly
+# fine in the app, while the EXPORTED code keeps the bare name: in a
+# generated script or a report chunk it falls through to utils::data, the
+# chunk "succeeds" holding a function, and every dependent dies with "no
+# applicable method for 'filter' applied to an object of class \"function\"".
+# Built by hand rather than through bbquote, which walks the expression and
+# cannot be given one that defines a function.
+data_slot <- function() {
+  call(".", as.name("data"))
+}
+
 #' `make_filter_block_expr()` against a pre-derived `filter_input_shape()`.
 #'
 #' This is the form the block server uses: the shape is computed once per data
@@ -723,8 +738,10 @@ make_filter_expr_from_shape <- function(columns, shape, operator = "&",
                                         flag_groups = list()) {
   if (is.null(shape)) shape <- list(is_dm = FALSE, df = NULL)
   if (length(columns) == 0L) {
-    if (isTRUE(shape$is_dm)) return(bquote(dm::dm_filter(data)))
-    return(bquote(dplyr::filter(data, TRUE)))
+    if (isTRUE(shape$is_dm)) {
+      return(bquote(dm::dm_filter(.(d)), list(d = data_slot())))
+    }
+    return(bquote(dplyr::filter(.(d), TRUE), list(d = data_slot())))
   }
   if (isTRUE(shape$is_dm)) {
     make_dm_filter_expr(columns, shape$tables)
@@ -765,10 +782,10 @@ make_df_filter_expr <- function(columns, df, operator = "&",
     if (!is.null(cond)) exprs[[length(exprs) + 1L]] <- cond
   }
   if (length(exprs) == 0L) {
-    return(bquote(dplyr::filter(data, TRUE)))
+    return(bquote(dplyr::filter(.(d), TRUE), list(d = data_slot())))
   }
   combined <- combine_conds(exprs, operator)
-  as.call(list(quote(dplyr::filter), quote(data), combined))
+  as.call(list(quote(dplyr::filter), data_slot(), combined))
 }
 
 #' @param tbls_dm Named list of 0-row column templates, one per dm table (the
@@ -785,11 +802,11 @@ make_dm_filter_expr <- function(columns, tbls_dm) {
     by_table[[tbl]] <- c(by_table[[tbl]], list(cond))
   }
   if (length(by_table) == 0L) {
-    return(bquote(dm::dm_filter(data)))
+    return(bquote(dm::dm_filter(.(d)), list(d = data_slot())))
   }
   # Build nested dm::dm_filter() calls. Table name becomes a named argument
   # — this is how dm::dm_filter() targets a table via tidy-eval.
-  result <- quote(data)
+  result <- data_slot()
   for (tbl in names(by_table)) {
     cond <- combine_conds(by_table[[tbl]], "&")
     cl <- call("dm_filter", result)

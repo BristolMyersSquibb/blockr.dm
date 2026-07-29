@@ -106,7 +106,7 @@ new_dm_filter_by_data_block <- function(
             key <- r_key()
             # Empty state: pass dm through unchanged.
             if (!nzchar(tbl) || !nzchar(key)) {
-              return(bquote(dm::dm_filter(data)))
+              return(bquote(dm::dm_filter(.(d)), list(d = data_slot())))
             }
             key_sym <- as.name(key)
             inner <- if (isTRUE(r_distinct())) {
@@ -114,7 +114,7 @@ new_dm_filter_by_data_block <- function(
             } else {
               bquote(.(key_sym) %in% by[[.(key)]])
             }
-            call <- call("dm_filter", quote(data))
+            call <- call("dm_filter", data_slot())
             call[[tbl]] <- inner
             call[[1L]] <- quote(dm::dm_filter)
             call

@@ -147,7 +147,7 @@ new_dm_filter_block <- function(
             # No table or no conditions: pass dm through unchanged.
             # dm::dm_filter(data) with no filter args returns the dm as-is.
             if (!nzchar(tbl) || length(conds) == 0L) {
-              return(bquote(dm::dm_filter(data)))
+              return(bquote(dm::dm_filter(.(d)), list(d = data_slot())))
             }
             cond_filter <- blockr.dplyr::make_filter_expr(
               conds,
@@ -158,7 +158,7 @@ new_dm_filter_block <- function(
             # Extract just the <cond> and wrap it in
             # dm::dm_filter(data, <tbl> = <cond>).
             cond_inner <- cond_filter[[3L]]
-            call <- call("dm_filter", quote(data))
+            call <- call("dm_filter", data_slot())
             call[[tbl]] <- cond_inner
             call[[1L]] <- quote(dm::dm_filter)
             call

@@ -61,7 +61,7 @@ test_that("crossfilter JS state mirrors dm::dm_filter row counts", {
     )("xf", data_r)
 
     filtered_dm <- shiny::reactive({
-      eval(res$expr(), envir = list(data = data_r()))
+      eval(res$expr(), envir = list(data = data_r(), . = identity))
     })
 
     output$diag_counts <- shiny::renderText({

@@ -342,7 +342,7 @@ test_that("expr does produce a new, correct expression on a real change", {
       )
 
       # And the new expression actually evaluates to the intended dm.
-      out <- eval(e2, list(data = box$d))
+      out <- eval(e2, list(data = box$d, . = identity))
       fks <- dm::dm_get_all_fks(out)
       expect_setequal(fks$child_table, c("adae", "adlb"))
     },
@@ -374,7 +374,7 @@ test_that("a state change (set_keys off) yields a new, correct expression", {
       expect_false(grepl("dm_add_pk", code2, fixed = TRUE))
       expect_false(grepl("dm_add_fk", code2, fixed = TRUE))
 
-      out <- eval(e2, list(data = d))
+      out <- eval(e2, list(data = d, . = identity))
       expect_equal(nrow(dm::dm_get_all_pks(out)), 0L)
     },
     args = list(x = block, data = list(data = function() d))

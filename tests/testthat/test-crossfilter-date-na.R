@@ -59,7 +59,7 @@ test_that("date dimension with NAs filters correctly (bounds + parity)", {
       range_filters = list(), measure = NULL, agg_func = NULL
     )("xf", data_r)
 
-    filtered_dm <- shiny::reactive(eval(res$expr(), envir = list(data = data_r())))
+    filtered_dm <- shiny::reactive(eval(res$expr(), envir = list(data = data_r(), . = identity)))
 
     output$diag_counts <- shiny::renderText({
       tt <- dm::dm_get_tables(filtered_dm())

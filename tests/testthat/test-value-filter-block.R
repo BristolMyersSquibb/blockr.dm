@@ -68,13 +68,13 @@ test_that("migrate_value_filter_state defaults missing mode to single", {
 
 test_that("empty state produces pass-through expression on data frame", {
   expr <- make_filter_block_expr(list(), iris)
-  expect_identical(expr, bquote(dplyr::filter(data, TRUE)))
+  expect_identical(expr, quote(dplyr::filter(.(data), TRUE)))
 })
 
 test_that("multi-select empty values skip the column", {
   cols <- list(list(name = "Species", mode = "multi", values = character()))
   expr <- make_filter_block_expr(cols, iris)
-  expect_identical(expr, bquote(dplyr::filter(data, TRUE)))
+  expect_identical(expr, quote(dplyr::filter(.(data), TRUE)))
 })
 
 test_that("single-value filter uses %in%", {
@@ -82,7 +82,7 @@ test_that("single-value filter uses %in%", {
   expr <- make_filter_block_expr(cols, iris)
   expected <- as.call(list(
     quote(dplyr::filter),
-    quote(data),
+    call(".", as.name("data")),
     bquote(Species %in% "setosa")
   ))
   expect_identical(expr, expected)
@@ -95,7 +95,7 @@ test_that("multi-value filter uses %in% with vector", {
   vec <- c("setosa", "versicolor")
   expected <- as.call(list(
     quote(dplyr::filter),
-    quote(data),
+    call(".", as.name("data")),
     bquote(Species %in% .(vec))
   ))
   expect_identical(expr, expected)
@@ -107,7 +107,7 @@ test_that("numeric columns coerce string values to numeric", {
   expr <- make_filter_block_expr(cols, df)
   expected <- as.call(list(
     quote(dplyr::filter),
-    quote(data),
+    call(".", as.name("data")),
     bquote(x %in% 2)
   ))
   expect_identical(expr, expected)
@@ -121,7 +121,7 @@ test_that("multiple columns combine with &", {
   expr <- make_filter_block_expr(cols, iris)
   nums <- c(5, 5.1)
   inner <- bquote(Species %in% "setosa" & Sepal.Length %in% .(nums))
-  expected <- as.call(list(quote(dplyr::filter), quote(data), inner))
+  expected <- as.call(list(quote(dplyr::filter), call(".", as.name("data")), inner))
   expect_equal(expr, expected)
 })
 
@@ -132,7 +132,7 @@ test_that("integer-column multi filter coerces to integer", {
   ints <- c(1L, 3L)
   expected <- as.call(list(
     quote(dplyr::filter),
-    quote(data),
+    call(".", as.name("data")),
     bquote(x %in% .(ints))
   ))
   expect_identical(expr, expected)
@@ -163,7 +163,7 @@ test_that("<NA> token filters via is.na(), not %in%", {
   cols <- list(list(name = "flag", mode = "single", values = "<NA>"))
   expr <- make_filter_block_expr(cols, df)
   expect_identical(expr, as.call(list(
-    quote(dplyr::filter), quote(data), bquote(is.na(flag))
+    quote(dplyr::filter), call(".", as.name("data")), bquote(is.na(flag))
   )))
 })
 
@@ -172,7 +172,7 @@ test_that("real value + <NA> token OR together", {
   cols <- list(list(name = "flag", mode = "multi", values = c("Y", "<NA>")))
   expr <- make_filter_block_expr(cols, df)
   expect_identical(expr, as.call(list(
-    quote(dplyr::filter), quote(data),
+    quote(dplyr::filter), call(".", as.name("data")),
     bquote(flag %in% "Y" | is.na(flag))
   )))
 })
@@ -182,7 +182,7 @@ test_that("<empty> token filters via == \"\"", {
   cols <- list(list(name = "arm", mode = "single", values = "<empty>"))
   expr <- make_filter_block_expr(cols, df)
   expect_identical(expr, as.call(list(
-    quote(dplyr::filter), quote(data), bquote(arm == "")
+    quote(dplyr::filter), call(".", as.name("data")), bquote(arm == "")
   )))
 })
 
@@ -198,7 +198,7 @@ test_that("OR-of-tokens nests correctly inside a cross-column AND", {
   expr <- make_filter_block_expr(cols, df)
   # The OR sub-tree groups as a node (no literal `(`); `&` sits above it.
   inner <- call("&", bquote(flag %in% "Y" | is.na(flag)), bquote(sex %in% "M"))
-  expect_identical(expr, as.call(list(quote(dplyr::filter), quote(data), inner)))
+  expect_identical(expr, as.call(list(quote(dplyr::filter), call(".", as.name("data")), inner)))
 })
 
 # make_filter_block_expr: dm path ---------------------------------------------
@@ -226,7 +226,7 @@ mk_demo_dm <- function() {
 test_that("empty state on dm input returns dm::dm_filter(data)", {
   skip_if_no_dm()
   expr <- make_filter_block_expr(list(), mk_demo_dm())
-  expect_identical(expr, bquote(dm::dm_filter(data)))
+  expect_identical(expr, quote(dm::dm_filter(.(data))))
 })
 
 test_that("single dm filter wraps one dm_filter call with named table arg", {
@@ -234,7 +234,7 @@ test_that("single dm filter wraps one dm_filter call with named table arg", {
   cols <- list(list(name = "policy_id", table = "policies",
                     mode = "single", values = "P001"))
   expr <- make_filter_block_expr(cols, mk_demo_dm())
-  expected <- call("dm_filter", quote(data))
+  expected <- call("dm_filter", call(".", as.name("data")))
   expected[["policies"]] <- bquote(policy_id %in% "P001")
   expected[[1L]] <- quote(dm::dm_filter)
   expect_identical(expr, expected)
@@ -266,7 +266,7 @@ test_that("dm filter executes end-to-end against a real dm", {
   cols <- list(list(name = "policy_id", table = "policies",
                     mode = "single", values = "P001"))
   expr <- make_filter_block_expr(cols, d)
-  out <- eval(expr, list(data = d))
+  out <- eval(expr, list(data = d, . = identity))
   # Both tables restrict via FK or named-arg semantics. policies → 1 row.
   pol <- as.data.frame(dm::dm_get_tables(out)$policies)
   expect_equal(nrow(pol), 1L)
@@ -490,7 +490,7 @@ test_that("block server result filters a data frame by single column", {
       session$flushReact()
       # The block's expr should resolve to a filter on Species %in% "setosa".
       e <- session$returned$expr()
-      out <- eval(e, list(data = iris))
+      out <- eval(e, list(data = iris, . = identity))
       expect_true(all(out$Species == "setosa"))
       expect_equal(nrow(out), 50L)
     },
@@ -511,7 +511,7 @@ test_that("block server result filters a dm by FK cascade", {
     {
       session$flushReact()
       e <- session$returned$expr()
-      out <- eval(e, list(data = d))
+      out <- eval(e, list(data = d, . = identity))
       pol <- as.data.frame(dm::dm_get_tables(out)$policies)
       expect_equal(nrow(pol), 1L)
       expect_equal(pol$policy_id, "P001")
@@ -587,8 +587,8 @@ test_that("df expr combines with | when operator is |", {
   )
   e_and <- make_filter_block_expr(cols, iris)
   e_or <- make_filter_block_expr(cols, iris, operator = "|")
-  out_and <- eval(e_and, list(data = iris))
-  out_or <- eval(e_or, list(data = iris))
+  out_and <- eval(e_and, list(data = iris, . = identity))
+  out_or <- eval(e_or, list(data = iris, . = identity))
   expect_true(all(out_and$Species == "setosa" & out_and$Petal.Width == 0.2))
   expect_true(all(out_or$Species == "setosa" | out_or$Petal.Width == 0.2))
   expect_gt(nrow(out_or), nrow(out_and))
@@ -624,7 +624,7 @@ test_that("single-mode logical TRUE filters to TRUE, excluding NA", {
   e <- make_filter_block_expr(
     list(list(name = "flag", mode = "single", values = "TRUE")), df
   )
-  out <- eval(e, list(data = df))
+  out <- eval(e, list(data = df, . = identity))
   expect_equal(nrow(out), 2L)
   expect_true(all(out$flag))
 })
@@ -635,7 +635,7 @@ test_that("legacy single-mode logical FALSE still negates (NA as FALSE)", {
     list(list(name = "flag", mode = "single", values = "FALSE")), df
   )
   expect_identical(e[[3]], bquote(!(flag %in% TRUE)))
-  out <- eval(e, list(data = df))
+  out <- eval(e, list(data = df, . = identity))
   expect_equal(nrow(out), 2L)
   expect_true(all(!out$flag | is.na(out$flag)))
 })
@@ -645,7 +645,7 @@ test_that("multi-mode logical keeps exact %in% semantics (NA excluded)", {
   e <- make_filter_block_expr(
     list(list(name = "flag", mode = "multi", values = "FALSE")), df
   )
-  out <- eval(e, list(data = df))
+  out <- eval(e, list(data = df, . = identity))
   expect_equal(nrow(out), 1L)
   expect_false(out$flag)
 })
@@ -655,7 +655,7 @@ test_that("multi-mode logical <NA> token still selects missings", {
   e <- make_filter_block_expr(
     list(list(name = "flag", mode = "multi", values = c("FALSE", "<NA>"))), df
   )
-  out <- eval(e, list(data = df))
+  out <- eval(e, list(data = df, . = identity))
   expect_equal(nrow(out), 2L)
 })
 
@@ -674,7 +674,7 @@ test_that("empty single-mode logical entry adds no constraint", {
   e <- make_filter_block_expr(
     list(list(name = "flag", mode = "single", values = character())), df
   )
-  expect_identical(e, bquote(dplyr::filter(data, TRUE)))
+  expect_identical(e, quote(dplyr::filter(.(data), TRUE)))
 })
 
 # flag groups ---------------------------------------------------------------
@@ -697,7 +697,7 @@ test_that("one selected group label filters to that flag", {
               values = "During")),
     fg_df(), flag_groups = FG
   )
-  out <- eval(e, list(data = fg_df()))
+  out <- eval(e, list(data = fg_df(), . = identity))
   expect_equal(nrow(out), 1L)
   expect_true(out$TRTEMFL)
 })
@@ -708,7 +708,7 @@ test_that("two selected group labels union", {
               values = c("Before", "During"))),
     fg_df(), flag_groups = FG
   )
-  out <- eval(e, list(data = fg_df()))
+  out <- eval(e, list(data = fg_df(), . = identity))
   expect_equal(nrow(out), 2L)
 })
 
@@ -718,7 +718,7 @@ test_that("empty group selection passes everything through", {
               values = character())),
     fg_df(), flag_groups = FG
   )
-  expect_identical(e, bquote(dplyr::filter(data, TRUE)))
+  expect_identical(e, quote(dplyr::filter(.(data), TRUE)))
 })
 
 test_that("group condition parenthesizes and ANDs with other conditions", {
@@ -730,7 +730,7 @@ test_that("group condition parenthesizes and ANDs with other conditions", {
     ),
     fg_df(), flag_groups = FG
   )
-  out <- eval(e, list(data = fg_df()))
+  out <- eval(e, list(data = fg_df(), . = identity))
   expect_equal(nrow(out), 2L)   # rows 1 (Before, F) and 2 (During, F)
 })
 
@@ -794,7 +794,7 @@ test_that("flag_groups survives the board JSON round-trip", {
     {
       session$flushReact()
       e <- session$returned$expr()
-      out <- eval(e, list(data = fg_df()))
+      out <- eval(e, list(data = fg_df(), . = identity))
       expect_equal(nrow(out), 1L)
       expect_true(out$TRTEMFL)
     },
@@ -848,7 +848,7 @@ test_that("expr keeps its object identity on an equal-but-fresh data frame", {
       e1 <- session$returned$expr()
       expect_equal(
         paste(deparse(e1), collapse = " "),
-        "dplyr::filter(data, Species %in% \"setosa\")"
+        "dplyr::filter(.(data), Species %in% \"setosa\")"
       )
 
       box$d <- d2
@@ -890,7 +890,7 @@ test_that("expr keeps its object identity on an equal-but-fresh dm", {
       e1 <- session$returned$expr()
       expect_equal(
         paste(deparse(e1), collapse = " "),
-        "dm::dm_filter(data, policies = policy_id %in% \"P001\")"
+        "dm::dm_filter(.(data), policies = policy_id %in% \"P001\")"
       )
 
       box$d <- d2
@@ -930,9 +930,9 @@ test_that("a real selection change yields a new, correct expression", {
       expect_false(identical(rlang::obj_address(e1), rlang::obj_address(e2)))
       expect_equal(
         paste(deparse(e2), collapse = " "),
-        "dplyr::filter(data, Species %in% \"versicolor\")"
+        "dplyr::filter(.(data), Species %in% \"versicolor\")"
       )
-      out <- eval(e2, list(data = d))
+      out <- eval(e2, list(data = d, . = identity))
       expect_equal(nrow(out), 1L)
       expect_equal(out$Species, "versicolor")
     },
@@ -975,7 +975,7 @@ test_that("a data frame -> dm shape flip still reshapes the expression", {
       expect_false(identical(rlang::obj_address(e1), rlang::obj_address(e2)))
       expect_equal(
         paste(deparse(e2), collapse = " "),
-        "dm::dm_filter(data, policies = policy_id %in% \"P001\")"
+        "dm::dm_filter(.(data), policies = policy_id %in% \"P001\")"
       )
     },
     args = list(x = blk, data = list(data = data_fn))
@@ -1013,7 +1013,7 @@ test_that("the shape decision lands within a single flush", {
       session$flushReact()
       expect_equal(
         paste(deparse(session$returned$expr()), collapse = " "),
-        "dplyr::filter(data, year %in% c(\"2024\", \"2026\"))"
+        "dplyr::filter(.(data), year %in% c(\"2024\", \"2026\"))"
       )
       expect_equal(nrow(session$returned$result()), 2L)
 
@@ -1024,7 +1024,7 @@ test_that("the shape decision lands within a single flush", {
       e <- session$returned$expr()
       expect_equal(
         paste(deparse(e), collapse = " "),
-        "dplyr::filter(data, year %in% c(2024L, 2026L))"
+        "dplyr::filter(.(data), year %in% c(2024L, 2026L))"
       )
       res <- session$returned$result()
       expect_equal(nrow(res), 2L)
@@ -1065,7 +1065,7 @@ test_that("an upstream that stops propagates the stop, it does not go stale", {
       session$flushReact()
       expect_equal(
         paste(deparse(session$returned$expr()), collapse = " "),
-        "dplyr::filter(data, Species %in% \"setosa\")"
+        "dplyr::filter(.(data), Species %in% \"setosa\")"
       )
 
       ok(FALSE)
@@ -1077,7 +1077,7 @@ test_that("an upstream that stops propagates the stop, it does not go stale", {
       session$flushReact()
       expect_equal(
         paste(deparse(session$returned$expr()), collapse = " "),
-        "dplyr::filter(data, Species %in% \"setosa\")"
+        "dplyr::filter(.(data), Species %in% \"setosa\")"
       )
     },
     args = list(x = blk, data = list(data = data_fn))
