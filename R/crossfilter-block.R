@@ -717,29 +717,31 @@ crossfilter_server <- function(active_dims, filters, range_filters,
           table_conditions <- list()
           all_tables <- unique(c(names(cat_filters), names(rng_filters)))
 
+          info <- dm_info()
+
           for (tbl in all_tables) {
             conditions <- list()
+            tbl_df <- info$tables[[tbl]]
+            col_of <- function(dim) {
+              if (is.data.frame(tbl_df) && dim %in% names(tbl_df)) {
+                tbl_df[[dim]]
+              }
+            }
 
             tbl_cat <- cat_filters[[tbl]]
             if (!is.null(tbl_cat)) {
               for (dim in names(tbl_cat)) {
-                val <- tbl_cat[[dim]]
-                if (length(val) == 1) {
-                  conditions <- c(conditions, list(
-                    call("==", as.name(dim), val)
-                  ))
-                } else {
-                  conditions <- c(conditions, list(
-                    call("%in%", as.name(dim), val)
-                  ))
+                cond <- crossfilter_cat_condition(
+                  dim, tbl_cat[[dim]], col_of(dim)
+                )
+                if (!is.null(cond)) {
+                  conditions <- c(conditions, list(cond))
                 }
               }
             }
 
             tbl_rng <- rng_filters[[tbl]]
             if (!is.null(tbl_rng)) {
-              info <- dm_info()
-              tbl_df <- info$tables[[tbl]]
               for (dim in names(tbl_rng)) {
                 rng <- unlist(tbl_rng[[dim]])
                 if (!is.null(rng) && length(rng) == 2) {

@@ -123,6 +123,77 @@ compress_crossfilter_lookups <- function(encoded_lookups) {
 # Shared helpers
 # ============================================================================
 
+#' Build the filter condition for one categorical dimension
+#'
+#' The JS UI publishes selected levels as label STRINGS inside a JSON array,
+#' and Shiny decodes incoming messages with `simplifyVector = FALSE`, so
+#' `["F"]` reaches R as `list("F")` — never an atomic vector. Pasting that
+#' straight into a call produced `SEX == list("F")`: base R coerces the list
+#' when the condition is evaluated on a plain data frame, so it looked like it
+#' worked, but the generated code is wrong to read and a lazy (DuckDB/dbplyr)
+#' backend cannot translate it at all.
+#'
+#' The sentinels get the same treatment: `CROSSFILTER_NA` means "the missings",
+#' which is `is.na(col)`, not a literal `"__NA__"` that matches nothing — the
+#' same reading [apply_crossfilter_filters()] uses for the bar counts, so the
+#' expression mirrors the numbers the UI shows.
+#'
+#' @param dim Column name
+#' @param val Selected levels, as a list or character vector of label strings
+#' @param col The column itself, used to cast the literals back to its type;
+#'   `NULL` when the column is not available
+#' @return A call, or `NULL` when nothing is selected
+#' @keywords internal
+crossfilter_cat_condition <- function(dim, val, col = NULL) {
+  val <- as.character(unlist(val, use.names = FALSE))
+  if (length(val) == 0) return(NULL)
+
+  has_na <- CROSSFILTER_NA %in% val
+  lits <- setdiff(val, CROSSFILTER_NA)
+  lits[lits == CROSSFILTER_EMPTY] <- ""
+  lits <- cast_to_column_type(lits, col)
+
+  sym <- as.name(dim)
+  cond <- if (length(lits) == 1) {
+    call("==", sym, lits)
+  } else if (length(lits) > 1) {
+    call("%in%", sym, lits)
+  }
+
+  if (has_na) {
+    na_cond <- call("is.na", sym)
+    cond <- if (is.null(cond)) na_cond else call("|", cond, na_cond)
+  }
+  cond
+}
+
+#' Cast label strings back to the column's own type
+#'
+#' Low-cardinality numeric columns are dimensions too, and their levels come
+#' back from the browser as strings. `AVISITN == "3"` happens to work in base
+#' R and fails on a database backend, so cast where the column tells us to.
+#' Anything that does not survive the cast (an empty-string level in a numeric
+#' column, say) keeps the character form.
+#'
+#' @param x Character vector of label strings
+#' @param col The target column, or `NULL`
+#' @return `x`, cast to `col`'s type where possible
+#' @keywords internal
+cast_to_column_type <- function(x, col) {
+  if (is.null(col) || is.character(col) || is.factor(col)) return(x)
+  cast <- if (is.logical(col)) {
+    as.logical
+  } else if (is.integer(col)) {
+    as.integer
+  } else if (is.numeric(col)) {
+    as.numeric
+  } else {
+    return(x)
+  }
+  out <- suppressWarnings(cast(x))
+  if (anyNA(out)) x else out
+}
+
 #' Apply categorical + range filters to a data frame (dplyr-compatible)
 #'
 #' Uses `.data[[dim]]` pronoun — works with standard dplyr.

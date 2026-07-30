@@ -68,6 +68,67 @@ test_that("external write to r_filters updates expr and pushes to JS", {
   )
 })
 
+test_that("JS-shaped filter values become atomic literals, not list()", {
+  # Shiny decodes client messages with `simplifyVector = FALSE`, so a
+  # one-level selection lands in r_filters as `list("setosa")`. Dropping that
+  # list into the call produced `Species == list("setosa")` -- base R coerces
+  # it, so a plain data.frame filtered fine and the bug hid behind a working
+  # result, but the code shown to the user is wrong and no database backend
+  # can translate it.
+  blk <- new_crossfilter_block(active_dims = list(.tbl = c("Species")))
+
+  testServer(
+    blockr.core:::get_s3_method("block_server", blk),
+    args = list(x = blk, data = list(data = function() iris)),
+    {
+      session$flushReact()
+      vars <- session$returned$state
+
+      vars$filters(list(.tbl = list(Species = list("setosa"))))
+      session$flushReact()
+      txt <- paste(deparse(session$returned$expr()), collapse = " ")
+      expect_match(txt, 'Species == "setosa"', fixed = TRUE)
+      expect_no_match(txt, "list(", fixed = TRUE)
+
+      vars$filters(list(.tbl = list(Species = list("setosa", "virginica"))))
+      session$flushReact()
+      txt <- paste(deparse(session$returned$expr()), collapse = " ")
+      expect_match(txt, 'Species %in% c("setosa", "virginica")', fixed = TRUE)
+
+      result <- eval(session$returned$expr(), list(data = iris))
+      expect_setequal(as.character(result$Species), c("setosa", "virginica"))
+    }
+  )
+})
+
+test_that("the NA sentinel filters missings, not a literal __NA__", {
+  # `apply_crossfilter_filters()` reads CROSSFILTER_NA as is.na() when it
+  # counts the bars; the expression has to agree or the block reports a row
+  # count it does not deliver.
+  df <- data.frame(
+    GRP = c("A", "B", NA, NA, "A"),
+    stringsAsFactors = FALSE
+  )
+  blk <- new_crossfilter_block(active_dims = list(.tbl = c("GRP")))
+
+  testServer(
+    blockr.core:::get_s3_method("block_server", blk),
+    args = list(x = blk, data = list(data = function() df)),
+    {
+      session$flushReact()
+      vars <- session$returned$state
+
+      vars$filters(list(.tbl = list(GRP = list("__NA__"))))
+      session$flushReact()
+      expect_equal(nrow(eval(session$returned$expr(), list(data = df))), 2L)
+
+      vars$filters(list(.tbl = list(GRP = list("A", "__NA__"))))
+      session$flushReact()
+      expect_equal(nrow(eval(session$returned$expr(), list(data = df))), 4L)
+    }
+  )
+})
+
 test_that("a client announcing itself gets the cached payload re-shipped", {
   # Deferred dock panels ship crossfilter-block.js WITH the panel, so the boot
   # push reaches a client with no registered handler and Shiny drops it
