@@ -436,20 +436,28 @@
   justify-content: flex-end;
   gap: 6px;
 }
+/* Track and fill both round on the RIGHT only: the left end is zero, shared by
+   every row, and rounding it would lift the bar off its baseline. See
+   --blockr-mark-radius in blockr.dock's design-system CSS for the full rule. */
 .dm-cf-tw-bar-track {
   flex: 1;
   max-width: 80px;
   height: 14px;
   background: var(--blockr-grey-100, #f3f4f6);
-  border-radius: 2px;
+  border-radius: 0 var(--blockr-mark-radius, 2px) var(--blockr-mark-radius, 2px) 0;
   overflow: hidden;
   position: relative;
 }
 .dm-cf-tw-bar-fill {
   height: 100%;
-  border-radius: 2px;
+  border-radius: 0 var(--blockr-mark-radius, 2px) var(--blockr-mark-radius, 2px) 0;
   background: var(--blockr-color-primary, #2563eb);
-  opacity: 0.6;
+  /* These bars support a CHOICE (which level to filter to); they are not the
+     answer, so they carry less weight than a summarize-table bar. NOTE: the
+     .dimmed rule below drives the SAME property to 0.2 to mean "this row is
+     excluded". Two unrelated meanings on one property -- it overrides rather
+     than multiplies, and must stay that way. */
+  opacity: var(--blockr-mark-weight-supporting, 0.6);
 }
 .dm-cf-tw-bar-label {
   font-size: var(--blockr-font-size-xs, 0.75rem);
