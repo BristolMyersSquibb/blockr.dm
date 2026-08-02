@@ -94,33 +94,18 @@ new_dm_write_block <- function(
             )
           })
 
-          # Path input module for directory selection
+          # Path input module for directory selection. `value` hands the
+          # module the job of keeping the field in step, which it can do
+          # after a dock panel mounts and a block cannot: the push this used
+          # to make itself went out once, before the widget's script was
+          # loaded, and was dropped. It also strips the data-directory
+          # prefix for display, so the block does not have to.
           dir_path <- blockr.io::path_input_server(
             "dir_path",
             data_dir = data_dir_reactive,
-            mode = "directory"
+            mode = "directory",
+            value = r_directory
           )
-
-          # Populate path text input on restore / init
-          if (nzchar(directory)) {
-            shiny::observe({
-              display_path <- directory
-              dd <- data_dir_reactive()
-              if (nzchar(dd)) {
-                prefix <- paste0(dd, "/")
-                if (startsWith(directory, prefix)) {
-                  display_path <- substr(
-                    directory, nchar(prefix) + 1, nchar(directory)
-                  )
-                }
-              }
-              session$sendCustomMessage("blockr-path-set-value", list(
-                id = session$ns("dir_path-path_text"),
-                value = display_path,
-                silent = TRUE
-              ))
-            }) |> shiny::bindEvent(TRUE, once = TRUE)
-          }
 
           # Handle directory path changes
           shiny::observeEvent(dir_path(), {
@@ -348,8 +333,10 @@ new_dm_write_block <- function(
             }
           )
 
-          # Status badge for directory validation
+          # Status badge for directory validation. Re-sent when the widget
+          # reports it is on screen, for the same reason the value is.
           shiny::observe({
+            input[["dir_path-path_text_ready"]]
             dir <- r_directory()
             existed <- r_dir_existed()
             if (nzchar(dir) && !r_dir_ok()) {
