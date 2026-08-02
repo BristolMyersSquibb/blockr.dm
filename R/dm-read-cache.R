@@ -138,25 +138,31 @@ dm_read_fmt_secs <- function(s) {
 #' its follow-up, "why is blockr so slow" when the answer is that 400 MB of
 #' .sas7bdat is being parsed.
 #'
+#' The time quoted is the time [dm_read_tables()] measured around the reads
+#' themselves, not the gap between two moments in the block's lifecycle: a
+#' block sitting in a dock panel nobody has opened is evaluated long before
+#' its report renders, and a wall clock spanning that reports how long the
+#' tab stayed shut.
+#'
 #' @noRd
-dm_read_status <- function(stems, elapsed = NULL) {
+dm_read_status <- function(stems) {
 
   stats <- dm_read_stats(stems)
   err <- dm_read_state$backend_error
   configured <- nzchar(dm_read_cache_dir()) || !is.null(dm_read_cache_board())
 
-  total <- if (!is.null(elapsed)) dm_read_fmt_secs(elapsed) else ""
   noun <- if (length(stems) == 1L) "table" else "tables"
-  head_txt <- if (nzchar(total)) {
-    sprintf("%d %s in %s", length(stems), noun, total)
-  } else {
+  head_txt <- if (is.null(stats)) {
     sprintf("%d %s", length(stems), noun)
+  } else {
+    sprintf("%d %s in %s", length(stems), noun,
+            dm_read_fmt_secs(sum(stats$seconds)))
   }
 
   if (is.null(stats)) {
-    # No read went through the cache-aware reader: an Excel / ZIP / RDS
-    # source, or no backend configured at all. Say which -- silence here is
-    # what makes people guess.
+    # Nothing went through the reader: an Excel workbook, an RDS or an
+    # RData file, each of which is one call rather than a per-file loop.
+    # Say which -- silence here is what makes people guess.
     detail <- if (configured) {
       "parquet cache not used for this source"
     } else {
@@ -190,6 +196,13 @@ dm_read_status <- function(stems, elapsed = NULL) {
       "%d read directly (%s)", sum(!hit & !conv),
       dm_read_fmt_secs(sum(stats$seconds[!hit & !conv]))
     ))
+  }
+
+  # The question this line exists to answer is "is this deployment using its
+  # cache?", and "no" is an answer, so say it whether or not anything on this
+  # path would have been cacheable.
+  if (!configured) {
+    parts <- c(parts, "no parquet cache configured")
   }
 
   if (!is.null(err) && nzchar(err)) {
@@ -391,72 +404,72 @@ dm_read_table_board <- function(f, board) {
 #'
 #' @noRd
 dm_read_tables_expr <- function(cache = TRUE) {
-  if (cache && !is.null(dm_read_cache_board())) {
+  if (!cache) {
+    return(
+      quote(
+        blockr.dm::dm_read_tables(files, cache_dir = "", cache_board = NULL)
+      )
+    )
+  }
+
+  if (!is.null(dm_read_cache_board())) {
     return(quote(blockr.dm::dm_read_tables(files)))
   }
 
   cache_dir <- dm_read_cache_dir()
 
-  if (cache && nzchar(cache_dir)) {
+  if (nzchar(cache_dir)) {
     return(
       bquote(blockr.dm::dm_read_tables(files, cache_dir = .(cache_dir)))
     )
   }
 
-  bquote(lapply(files, .(dm_read_file_expr())))
+  quote(blockr.dm::dm_read_tables(files))
 }
 
-#' The one reader, as a language object
+#' Read one data file by extension
 #'
-#' Both routes into a file go through this body: the emitted uncached loop
-#' inlines it, and [dm_read_file()] below IS it. Keeping one definition is
-#' not tidiness -- when the two drifted, a `.sas7bdat` came back as a
-#' `data.frame` with the cache off and a `tbl_df` with it on, which made
-#' turning on a cache a semantic change to the data rather than a speedup.
+#' The single way a file becomes a table. Every emitted expression calls
+#' [dm_read_tables()], which calls this, so a `.sas7bdat` cannot come back as
+#' a `data.frame` on one route and a `tbl_df` on another -- turning a cache
+#' on is a speedup, never a change to the data. It also means every read is
+#' measured, which is what the block reports.
 #'
 #' `haven` is called directly rather than behind `requireNamespace()`: the
 #' fallback it used to guard (`rio::import()`) reads these formats through
 #' haven anyway, so the guard bought a worse error message, not a working
-#' read -- and a guard in emitted code is noise for whoever copies it.
+#' read.
 #'
 #' @noRd
-dm_read_file_expr <- function() {
-  quote(
-    function(f) {
-      ext <- tolower(tools::file_ext(f))
-      if (ext %in% c("csv", "tsv")) {
-        readr::read_csv(f, show_col_types = FALSE)
-      } else if (ext %in% c("xlsx", "xls")) {
-        readxl::read_excel(f)
-      } else if (ext == "parquet") {
-        if (requireNamespace("arrow", quietly = TRUE)) {
-          arrow::read_parquet(f)
-        } else {
-          nanoparquet::read_parquet(f)
-        }
-      } else if (ext == "feather") {
-        arrow::read_feather(f)
-      } else if (ext == "rds") {
-        readRDS(f)
-      } else if (ext == "rda") {
-        e <- new.env()
-        load(f, envir = e)
-        as.list(e)[[1]]
-      } else if (ext == "sas7bdat") {
-        haven::read_sas(f)
-      } else if (ext == "xpt") {
-        haven::read_xpt(f)
-      } else if (ext %in% c("sav", "zsav", "por")) {
-        haven::read_spss(f)
-      } else if (ext == "dta") {
-        haven::read_dta(f)
-      } else {
-        rio::import(f)
-      }
+dm_read_file <- function(f) {
+  ext <- tolower(tools::file_ext(f))
+  if (ext %in% c("csv", "tsv")) {
+    readr::read_csv(f, show_col_types = FALSE)
+  } else if (ext %in% c("xlsx", "xls")) {
+    readxl::read_excel(f)
+  } else if (ext == "parquet") {
+    if (requireNamespace("arrow", quietly = TRUE)) {
+      arrow::read_parquet(f)
+    } else {
+      nanoparquet::read_parquet(f)
     }
-  )
+  } else if (ext == "feather") {
+    arrow::read_feather(f)
+  } else if (ext == "rds") {
+    readRDS(f)
+  } else if (ext == "rda") {
+    e <- new.env()
+    load(f, envir = e)
+    as.list(e)[[1]]
+  } else if (ext == "sas7bdat") {
+    haven::read_sas(f)
+  } else if (ext == "xpt") {
+    haven::read_xpt(f)
+  } else if (ext %in% c("sav", "zsav", "por")) {
+    haven::read_spss(f)
+  } else if (ext == "dta") {
+    haven::read_dta(f)
+  } else {
+    rio::import(f)
+  }
 }
-
-#' Read one data file by extension
-#' @noRd
-dm_read_file <- eval(dm_read_file_expr())

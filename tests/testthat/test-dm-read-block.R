@@ -231,13 +231,12 @@ test_that("a widget mounting late does not wipe the restored state", {
   )
 })
 
-test_that("an empty report from a choice-less widget is not a decision", {
+test_that("an unreachable path keeps the selection it was saved with", {
 
-  # A board restored while its data is not reachable -- an unmounted drive, a
-  # study directory that has not synced yet -- has a selection but nothing to
-  # offer in the picker. The empty value that widget reports is the widget
-  # describing itself, and honouring it would throw away the selection the
-  # board was saved with, so that fixing the path later reads nothing.
+  # A board restored while its data is not there -- an unmounted drive, a
+  # study directory that has not synced yet -- has a selection and nothing to
+  # put in the picker. No picker is mounted, so nothing reports back, and the
+  # saved selection is still there when the path comes good.
   missing <- file.path(withr::local_tempdir(), "not-there")
 
   block <- new_dm_read_block(path = missing, selected_tables = "adsl")
@@ -246,8 +245,6 @@ test_that("an empty report from a choice-less widget is not a decision", {
     blockr.core:::get_s3_method("block_server", block),
     {
       session$flushReact()
-      session$setInputs(`expr-table_select` = character())
-      session$flushReact()
 
       expect_identical(session$returned$state$selected_tables(), "adsl")
     },
@@ -255,48 +252,44 @@ test_that("an empty report from a choice-less widget is not a decision", {
   )
 })
 
-test_that("the picker is rendered with its choices and its selection", {
+test_that("the picker is mounted by message, selection included", {
 
-  # Rendered, not pushed: an `updateSelectizeInput()` aimed at an element
-  # that is not in the DOM yet is dropped on the floor, which is why a
-  # lazily mounted block used to show an empty picker over a full read.
-  dir <- make_study_dir(list(adsl = data.frame(x = 1:2),
-                             adae = data.frame(y = 3:4),
-                             adlb = data.frame(z = 5:6)))
-
-  block <- new_dm_read_block(path = dir, selected_tables = "adae")
-
-  shiny::testServer(
-    blockr.core:::get_s3_method("block_server", block),
-    {
-      session$flushReact()
-
-      html <- as.character(output[["expr-table_select_ui"]]$html)
-
-      expect_match(html, "<option value=\"adae\" selected>")
-      expect_match(html, "adsl")
-      expect_no_match(html, "<option value=\"adsl\" selected>")
-
-      # An external write reaches the widget the same way, because the
-      # widget is re-rendered rather than messaged.
-      session$returned$state$selected_tables(c("adsl", "adlb"))
-      session$flushReact()
-
-      html <- as.character(output[["expr-table_select_ui"]]$html)
-
-      expect_match(html, "<option value=\"adsl\" selected>")
-      expect_match(html, "<option value=\"adlb\" selected>")
-      expect_no_match(html, "<option value=\"adae\" selected>")
-    },
-    args = list(x = block, data = list())
+  # The widget is put on screen by `dm-table-picker`, the queued custom
+  # message every table picker in this package uses -- not by an
+  # `update*Input()` aimed at an element that may not be in the DOM yet.
+  sent <- list()
+  fake_session <- list(
+    ns = function(x) paste0("blk-", x),
+    sendCustomMessage = function(type, message) {
+      sent[[length(sent) + 1L]] <<- list(type = type, message = message)
+    }
   )
+
+  blockr.dm:::dm_picker_mount(
+    fake_session, "table_select",
+    list(list(value = "adsl", label = "CSV 30 B")),
+    "adsl", "multi", placeholder = "Select tables to load..."
+  )
+
+  expect_length(sent, 1L)
+  expect_identical(sent[[1]]$type, "dm-table-picker")
+
+  msg <- sent[[1]]$message
+
+  expect_identical(msg$id, "blk-table_select")
+  expect_identical(msg$mode, "multi")
+  expect_identical(msg$placeholder, "Select tables to load...")
+  # A lone table has to stay an array of one: auto_unbox would otherwise
+  # hand JS a bare string and the picker would show nothing.
+  expect_identical(msg$selected, list("adsl"))
+  expect_identical(msg$options[[1]]$value, "adsl")
 })
 
 test_that("the user can still empty the selection", {
 
-  # The guard above says an empty value from a choice-less widget is noise.
-  # It must not also swallow the None link, which is the same empty value
-  # from a widget that does have choices.
+  # What the None link and removing the last tag both come down to. The
+  # picker reports an empty list, which -- unlike a stock input's bind-time
+  # announcement -- really is somebody's decision.
   dir <- make_study_dir(list(adsl = data.frame(x = 1:2),
                              adae = data.frame(y = 3:4)))
 
@@ -306,9 +299,35 @@ test_that("the user can still empty the selection", {
     blockr.core:::get_s3_method("block_server", block),
     {
       session$flushReact()
-      session$setInputs(`expr-table_select` = character())
+      session$setInputs(`expr-table_select` = list())
       session$flushReact()
 
+      expect_null(session$returned$state$selected_tables())
+    },
+    args = list(x = block, data = list())
+  )
+})
+
+test_that("All and None drive the selection", {
+
+  dir <- make_study_dir(list(adsl = data.frame(x = 1:2),
+                             adae = data.frame(y = 3:4)))
+
+  block <- new_dm_read_block(path = dir)
+
+  shiny::testServer(
+    blockr.core:::get_s3_method("block_server", block),
+    {
+      session$flushReact()
+
+      session$setInputs(`expr-select_all_tables` = 1)
+      session$flushReact()
+      expect_setequal(
+        session$returned$state$selected_tables(), c("adsl", "adae")
+      )
+
+      session$setInputs(`expr-select_none_tables` = 1)
+      session$flushReact()
       expect_null(session$returned$state$selected_tables())
     },
     args = list(x = block, data = list())

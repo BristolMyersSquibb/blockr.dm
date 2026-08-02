@@ -106,18 +106,24 @@ new_dm_read_block <- function(
           # NULL / empty = no table chosen yet, which holds the read back.
           r_selected_tables <- shiny::reactiveVal(selected_tables)
 
-          # Bumped whenever the selection is written by anyone other than
-          # the table widget itself (a restore, a path change, a board
-          # update). It is what makes the widget re-render, see
-          # `output$table_select_ui` below.
-          r_ext_epoch <- shiny::reactiveVal(0L)
-
           # Set by the input observers just before they write the state they
           # own, so the observers that mirror that state back into the widgets
           # can tell "the user did this" from "someone else did this" and skip
           # the echo. Same guard blockr.dplyr's `js_block_state()` uses.
           self_write <- new.env(parent = emptyenv())
           self_write$tables <- FALSE
+
+          set_selected <- function(val) {
+            if (!length(val)) {
+              val <- NULL
+            }
+            if (identical(val, shiny::isolate(r_selected_tables()))) {
+              return(invisible(FALSE))
+            }
+            self_write$tables <- TRUE
+            r_selected_tables(val)
+            invisible(TRUE)
+          }
 
           # The file-access policy applies to user-chosen filesystem paths, not
           # to the app's own sandboxes: uploads land under upload_path, so a
@@ -277,70 +283,66 @@ new_dm_read_block <- function(
             discover_dm_tables(resolved, input_type())
           })
 
-          # The widget is RENDERED with its choices and its selection rather
-          # than created empty and filled in by `updateSelectizeInput()`.
-          # Shiny drops an input message aimed at an element that is not in
-          # the DOM yet, and inside a dock a block's UI mounts only when its
-          # panel is first shown -- long after the server flushed the state a
-          # restore handed it. The push was lost, and the freshly bound
-          # selectize then reported its own empty value back, which wiped the
-          # restored selection and left the block (and everything downstream
-          # of it) with no data at all. An output survives that: while
-          # unbound it is suspended, it runs when the panel appears, and the
-          # value the widget reports back is by then the right one.
-          output$table_select_ui <- shiny::renderUI({
-            # Re-render on an external write; a write from the widget itself
-            # is already on screen and must not recreate it under the user.
-            r_ext_epoch()
+          # Whether the tables section has anything to show. The picker is
+          # mounted by a message, so an empty container is all there is until
+          # a path resolves.
+          output$has_tables <- shiny::reactive({
+            nrow(available_tables()) > 0
+          })
+          shiny::outputOptions(output, "has_tables", suspendWhenHidden = FALSE)
 
+          # The picker's option list: one entry per discovered file, with the
+          # format and size as the grey secondary label `Blockr.Select`
+          # renders next to the name.
+          table_options <- shiny::reactive({
             tbl_info <- available_tables()
-
-            if (!nrow(tbl_info)) {
-              return(NULL)
-            }
-
-            labels <- paste(tbl_info$name, tbl_info$ext, tbl_info$size,
-                            sep = "|||")
-
-            table_select_section(
-              ns = session$ns,
-              choices = stats::setNames(tbl_info$name, labels),
-              # What still exists at the new path stays selected, the rest
-              # drops (and with it, the read of it).
-              selected = intersect(
-                shiny::isolate(r_selected_tables()), tbl_info$name
+            lapply(seq_len(nrow(tbl_info)), function(i) {
+              list(
+                value = tbl_info$name[[i]],
+                label = trimws(paste(tbl_info$ext[[i]], tbl_info$size[[i]]))
               )
-            )
+            })
           })
 
-          # JS -> R
-          shiny::observeEvent(input$table_select, {
-            val <- input$table_select
+          push_picker <- function(selected) {
+            dm_picker_mount(
+              session, "table_select", table_options(), selected, "multi",
+              placeholder = "Select tables to load..."
+            )
+          }
 
-            if (!length(val)) {
-              val <- NULL
-            }
+          # R -> JS. One entry point for every write, whoever made it: the
+          # message handler mounts the picker on first receipt, reconciles it
+          # on later ones, and queues by element id, so a block in a dock
+          # panel that has not been opened yet is served when it opens. That
+          # is the whole reason blocks push at a container rather than
+          # `update*Input()` at a widget.
+          shiny::observeEvent(available_tables(), {
+            tbl_info <- available_tables()
+            shiny::req(nrow(tbl_info) > 0)
 
-            # An empty value from a widget that has no choices is the widget
-            # announcing itself -- Shiny reports every input's value when it
-            # binds -- not a user emptying the selection. Taking it at face
-            # value is what used to wipe a restored board.
-            if (is.null(val) && !nrow(available_tables())) {
-              return()
-            }
+            # What still exists at the new path stays selected, the rest
+            # drops (and with it, the read of it).
+            keep <- intersect(shiny::isolate(r_selected_tables()),
+                              tbl_info$name)
 
-            if (identical(val, r_selected_tables())) {
-              return()
-            }
+            push_picker(keep)
+            set_selected(keep)
+          })
 
-            self_write$tables <- TRUE
-            r_selected_tables(val)
-          }, ignoreInit = TRUE, ignoreNULL = FALSE)
+          # The container announcing that it is on screen. A data block
+          # discovers its tables once, at boot, and a block in a dock panel
+          # nobody has opened yet has not even loaded the picker's script by
+          # then -- so that one push was dropped by a Shiny with no handler
+          # for it, out of reach of any client-side queue. This is the
+          # answer to the question the widget asks on arrival.
+          shiny::observeEvent(input$table_select_ready, {
+            tbl_info <- available_tables()
+            shiny::req(nrow(tbl_info) > 0)
 
-          # Anything that is not the widget writing to itself has to reach
-          # the widget, which may not exist yet. Bumping the epoch renders
-          # the selection into the next copy of the widget instead of
-          # pushing it at the current one.
+            push_picker(intersect(r_selected_tables(), tbl_info$name))
+          })
+
           shiny::observeEvent(r_selected_tables(), {
 
             if (self_write$tables) {
@@ -348,8 +350,38 @@ new_dm_read_block <- function(
               return()
             }
 
-            r_ext_epoch(shiny::isolate(r_ext_epoch()) + 1L)
+            shiny::req(nrow(available_tables()) > 0)
+
+            push_picker(
+              intersect(r_selected_tables(), available_tables()$name)
+            )
           }, ignoreInit = TRUE, ignoreNULL = FALSE)
+
+          # JS -> R. The picker reports only what a user did to it: it is
+          # mounted with its selection already in it and does not announce
+          # itself the way a stock Shiny input does, so there is no bind-time
+          # empty value here to mistake for someone clearing the field.
+          shiny::observeEvent(input$table_select, {
+            val <- input$table_select
+
+            if (is.null(val)) {
+              return()
+            }
+
+            set_selected(unlist(val, use.names = FALSE))
+          }, ignoreNULL = FALSE)
+
+          # Written straight to the state rather than through `set_selected()`
+          # so the mirror above picks them up and moves the picker.
+          shiny::observeEvent(input$select_all_tables, {
+            tbl_info <- available_tables()
+            shiny::req(nrow(tbl_info) > 0)
+            r_selected_tables(tbl_info$name)
+          }, ignoreInit = TRUE)
+
+          shiny::observeEvent(input$select_none_tables, {
+            r_selected_tables(NULL)
+          }, ignoreInit = TRUE)
 
           # Status badge for file type
           shiny::observe({
@@ -432,19 +464,6 @@ new_dm_read_block <- function(
               selected <- r_selected_tables()
               shiny::req(length(selected) > 0)
 
-              # Stamped here, read in `block_output()`: the read itself
-              # happens between the two, in blockr.core's evaluation, so this
-              # is the only pair of points the block can time it from. Total
-              # wall time is the number the user is actually asking about --
-              # per-file read times (below it) explain where it went, and the
-              # gap between the two says how much was NOT the read.
-              #
-              # Keyed on the block's namespace, not this one: the expression
-              # server lives one level down (blockr.core mounts it under
-              # "expr"), while `block_output()` runs at block level, and both
-              # ends have to name the same slot.
-              session$userData[[dm_read_t0_key(session$ns(""))]] <- Sys.time()
-
               dm_read_expr(resolved, type, selected)
             }),
             state = list(
@@ -460,6 +479,7 @@ new_dm_read_block <- function(
       shiny::tagList(
         shinyjs::useShinyjs(),
         block_responsive_css(),
+        dm_table_picker_deps(),
         shiny::div(
           class = "block-container dm-read-block-container",
           shiny::tags$style(shiny::HTML("
@@ -467,18 +487,6 @@ new_dm_read_block <- function(
               width: 100% !important;
             }
 
-            /* Table selector */
-            .blockr-table-selector {
-              display: flex;
-              align-items: stretch;
-            }
-            .blockr-table-selector .shiny-input-container {
-              margin-bottom: 0 !important;
-            }
-            .blockr-table-selector .selectize-control {
-              flex: 1;
-              min-width: 0;
-            }
             /* Read report: muted by default, coloured only when it carries
                news (a conversion happened, or the cache is unreachable). */
             .dm-read-status {
@@ -498,24 +506,6 @@ new_dm_read_block <- function(
             .blockr-select-all-link a:hover {
               color: #2563eb;
               text-decoration: underline;
-            }
-
-            /* Dropdown item styling */
-            .blockr-table-item {
-              display: flex; align-items: center; gap: 8px;
-              padding: 4px 8px;
-            }
-            .blockr-table-name {
-              flex: 1; min-width: 0;
-              overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-            }
-            .blockr-table-badge {
-              flex-shrink: 0; font-size: 0.7rem;
-              padding: 1px 6px; border-radius: 4px;
-              background: #f3f4f6; color: #6b7280; border: 1px solid #e5e7eb;
-            }
-            .blockr-table-size {
-              flex-shrink: 0; font-size: 0.75rem; color: #999;
             }
           ")),
 
@@ -544,50 +534,38 @@ new_dm_read_block <- function(
             )
           ),
 
-          # Tables section: empty until the server has something to put in
-          # it, and rendered whole (choices and selection together) so that a
-          # block whose panel mounts late still shows what it is reading.
-          shiny::uiOutput(ns("table_select_ui")),
-
-          # Selectize conveniences only: opening the dropdown when there is
-          # nothing selected yet, and the All / None shortcuts. Selecting is
-          # what triggers the read, so neither of these needs to talk to R --
-          # they drive the same input the user would. Keyed on the section's
-          # output so it re-attaches to each new copy of the widget.
-          shiny::tags$script(shiny::HTML(sprintf(
-            "
-            $(document).on('shiny:value', function(e) {
-              if (e.name !== '%s') return;
-              setTimeout(function() {
-                var sel = $('#%s')[0];
-                if (!sel || !sel.selectize) return;
-                var sz = sel.selectize;
-                var noItems = sz.items.length === 0;
-                var hasOpts = Object.keys(sz.options).length > 0;
-                if (noItems && hasOpts) {
-                  sz.open();
-                }
-                // All / None links
-                var allSel = '#%s';
-                $(allSel).off('click.selall').on(
-                  'click.selall', function(e) {
-                  e.preventDefault();
-                  sz.setValue(Object.keys(sz.options));
-                });
-                var noneSel = '#%s';
-                $(noneSel).off('click.selnone').on(
-                  'click.selnone', function(e) {
-                  e.preventDefault();
-                  sz.clear();
-                });
-              }, 100);
-            });
-            ",
-            ns("table_select_ui"),
-            ns("table_select"),
-            ns("select_all_tables"),
-            ns("select_none_tables")
-          )))
+          # Tables section. The picker is an empty container here and is
+          # mounted by the server's `dm-table-picker` message, the same way
+          # every other table picker in this package works.
+          shiny::conditionalPanel(
+            condition = "output.has_tables",
+            ns = ns,
+            shiny::div(
+              class = "block-section",
+              shiny::tags$label(
+                class = "control-label",
+                style = paste0(
+                  "display: flex; align-items: baseline;",
+                  " justify-content: space-between;",
+                  " margin-top: 16px; width: 100%;"
+                ),
+                `for` = ns("table_select"),
+                shiny::span("Tables to include"),
+                shiny::span(
+                  class = "blockr-select-all-link",
+                  shiny::actionLink(ns("select_all_tables"), "All"),
+                  shiny::actionLink(ns("select_none_tables"), "None")
+                )
+              ),
+              shiny::div(
+                id = ns("table_select"),
+                class = "dm-read-tables-picker",
+                # Opts this container into the picker's arrival announce;
+                # the server answers on `table_select_ready`.
+                `data-dm-picker` = "true"
+              )
+            )
+          )
         )
       )
     },
@@ -599,18 +577,6 @@ new_dm_read_block <- function(
 }
 
 
-#' Shared slot name for the read stopwatch
-#'
-#' Takes any namespace prefix inside the block and returns the block-level
-#' one, so the expression server (mounted under `expr`) and `block_output()`
-#' (block level) address the same `session$userData` entry.
-#'
-#' @noRd
-dm_read_t0_key <- function(ns_prefix) {
-  paste0("dm_read_t0_", sub("expr-$", "", ns_prefix))
-}
-
-
 #' The "no tables here" answer from [discover_dm_tables()]
 #'
 #' @return A zero-row data frame with the columns table discovery returns.
@@ -619,73 +585,6 @@ empty_table_info <- function() {
   data.frame(
     name = character(), ext = character(), size = character(),
     stringsAsFactors = FALSE
-  )
-}
-
-
-#' The table picker, choices and selection included
-#'
-#' Built here rather than in the block UI because it is rendered from the
-#' server: the widget only ever reaches the browser knowing what it holds,
-#' which is what makes it survive a panel that mounts late.
-#'
-#' @param ns Namespace function (`session$ns`).
-#' @param choices Named character vector, names carrying the `|||`-separated
-#'   display fields the selectize renderer splits.
-#' @param selected Character vector of table names to preselect.
-#' @noRd
-table_select_section <- function(ns, choices, selected) {
-  shiny::div(
-    class = "block-section",
-    shiny::tags$label(
-      class = "control-label",
-      style = paste0(
-        "display: flex; align-items: baseline;",
-        " justify-content: space-between;",
-        " margin-top: 16px; width: 100%;"
-      ),
-      `for` = ns("table_select"),
-      shiny::span("Tables to include"),
-      shiny::span(
-        class = "blockr-select-all-link",
-        shiny::tags$a(id = ns("select_all_tables"), href = "#", "All"),
-        shiny::tags$a(id = ns("select_none_tables"), href = "#", "None")
-      )
-    ),
-    shiny::div(
-      class = "blockr-table-selector",
-      shiny::selectizeInput(
-        ns("table_select"),
-        label = NULL,
-        choices = choices,
-        selected = selected,
-        multiple = TRUE,
-        width = "100%",
-        options = list(
-          placeholder = "Select tables to load...",
-          render = I("{
-  option: function(data, escape) {
-    var p = data.label.split('|||');
-    var nm = p[0] || '';
-    var ext = p[1] || '';
-    var sz = p[2] || '';
-    return '<div class=\"blockr-table-item\">' +
-      '<span class=\"blockr-table-name\">' +
-      escape(nm) + '</span>' +
-      (ext ? '<span class=\"blockr-table-badge\">' +
-      escape(ext) + '</span>' : '') +
-      (sz ? '<span class=\"blockr-table-size\">' +
-      escape(sz) + '</span>' : '') +
-      '</div>';
-  },
-  item: function(data, escape) {
-    var nm = data.label.split('|||')[0];
-    return '<div>' + escape(nm) + '</div>';
-  }
-}")
-        )
-      )
-    )
   )
 }
 
@@ -1026,14 +925,7 @@ block_output.dm_read_block <- function(x, result, session) {
       return(NULL)
     }
 
-    t0 <- session$userData[[dm_read_t0_key(session$ns(""))]]
-    elapsed <- if (is.null(t0)) {
-      NULL
-    } else {
-      as.numeric(difftime(Sys.time(), t0, units = "secs"))
-    }
-
-    status <- dm_read_status(names(dm::dm_get_tables(result)), elapsed)
+    status <- dm_read_status(names(dm::dm_get_tables(result)))
 
     shiny::tags$p(
       class = paste0("blockr-path-hint dm-read-status dm-read-status--",

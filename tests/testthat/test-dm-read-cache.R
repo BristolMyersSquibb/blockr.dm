@@ -207,24 +207,32 @@ test_that("a non-board value in the option counts as unset", {
   expect_null(blockr.dm:::dm_read_cache_board())
 })
 
-test_that("dm_read_tables_expr stays generic R unless caching is active", {
+test_that("every route into a file goes through the one reader", {
+
+  # The emitted code names `dm_read_tables()` whether or not a cache is
+  # configured. It used to inline an anonymous reader when there was no
+  # backend, which meant those reads were never measured -- so the block had
+  # nothing honest to say about how long they took -- and put a fifteen-line
+  # lambda in the exported script.
   withr::local_options(
     blockr.dm_read_cache_dir = NULL,
     blockr.dm_read_cache_board = NULL
   )
   plain <- dm_read_tables_expr()
-  expect_identical(plain[[1]], as.name("lapply"))
+  expect_identical(plain[[1]], quote(blockr.dm::dm_read_tables))
+  expect_null(plain$cache_dir)
 
   withr::local_options(blockr.dm_read_cache_dir = "/some/cache")
   cached <- dm_read_tables_expr()
-  expect_identical(
-    cached[[1]],
-    quote(blockr.dm::dm_read_tables)
-  )
+  expect_identical(cached[[1]], quote(blockr.dm::dm_read_tables))
   expect_identical(cached$cache_dir, "/some/cache")
 
-  # zip path opts out even when the option is set
-  expect_identical(dm_read_tables_expr(cache = FALSE)[[1]], as.name("lapply"))
+  # The zip path opts out of caching even when the option is set -- its
+  # files live in a temp dir -- but it is still the same reader.
+  uncached <- dm_read_tables_expr(cache = FALSE)
+  expect_identical(uncached[[1]], quote(blockr.dm::dm_read_tables))
+  expect_identical(uncached$cache_dir, "")
+  expect_null(uncached$cache_board)
 })
 
 test_that("the block routes a directory of SAS files through the cache", {
@@ -312,13 +320,13 @@ test_that("the read report says which route the data took", {
   withr::local_options(blockr.dm_read_cache_dir = cache_dir)
 
   dm_read_tables(f, cache_dir = cache_dir)
-  cold <- blockr.dm:::dm_read_status("adxx", elapsed = 12.5)
+  cold <- blockr.dm:::dm_read_status("adxx")
   expect_identical(cold$state, "converted")
-  expect_match(cold$text, "1 table in 12.5 s")
+  expect_match(cold$text, "^1 table in ")
   expect_match(cold$text, "converted from source")
 
   dm_read_tables(f, cache_dir = cache_dir)
-  warm <- blockr.dm:::dm_read_status("adxx", elapsed = 0.4)
+  warm <- blockr.dm:::dm_read_status("adxx")
   expect_identical(warm$state, "cached")
   expect_match(warm$text, "from parquet cache")
 })
@@ -333,10 +341,14 @@ test_that("the read report names the missing cache rather than staying quiet", {
   )
   blockr.dm:::dm_read_stats_record(list())
 
-  status <- blockr.dm:::dm_read_status(c("adsl", "adae"), elapsed = 125)
+  # Nothing measured, so no duration is quoted: an Excel workbook or an RDS
+  # file is one call, not a per-file loop, and inventing a number for it is
+  # how the report ends up reporting how long a dock tab stayed shut.
+  status <- blockr.dm:::dm_read_status(c("adsl", "adae"))
   expect_identical(status$state, "plain")
   expect_match(status$text, "no parquet cache configured")
-  expect_match(status$text, "2.1 min")
+  expect_match(status$text, "^2 tables ")
+  expect_no_match(status$text, " in ")
 })
 
 test_that("an unreachable board is reported, not swallowed", {
@@ -368,5 +380,8 @@ test_that("dm_read_tables_expr emits a bare call for a board backend", {
   expect_identical(ex, quote(blockr.dm::dm_read_tables(files)))
 
   # zip path still opts out
-  expect_identical(dm_read_tables_expr(cache = FALSE)[[1]], as.name("lapply"))
+  expect_identical(
+    dm_read_tables_expr(cache = FALSE),
+    quote(blockr.dm::dm_read_tables(files, cache_dir = "", cache_board = NULL))
+  )
 })

@@ -44,8 +44,21 @@ test_that("dm read block reaches idle and reads without a confirm step", {
   # reports how many tables are in it, which is what changes below.
   expect_match(app$get_text("body"), "1 independent tables")
 
-  # And picking a second table in the widget is the whole interaction.
-  app$set_inputs(`board-block_rd-expr-table_select` = c("adsl", "adae"))
+  # The picker is mounted by a message rather than rendered as HTML, so
+  # "did it arrive at all" is a browser question. It is also the one that
+  # broke: a block whose dependencies load with a dock panel never sees a
+  # message the server sent before that.
+  expect_match(
+    app$get_html("#board-block_rd-expr-table_select"), "blockr-select"
+  )
+
+  # And picking a second table in the widget is the whole interaction. Driven
+  # through the input the picker writes to, since `set_inputs()` cannot reach
+  # a widget Shiny has no binding for.
+  app$run_js(
+    "Shiny.setInputValue('board-block_rd-expr-table_select',
+       ['adsl', 'adae'], {priority: 'event'});"
+  )
   app$wait_for_idle()
 
   expect_match(app$get_text("body"), "2 independent tables")

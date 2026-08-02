@@ -61,6 +61,28 @@
     }
   };
 
+  // The queue above only helps a message this script was there to receive.
+  // A block in a dockview panel loads its dependencies WITH the panel, on
+  // first visit, so anything the server flushed at boot reached a Shiny that
+  // had no handler for this message and dropped it outright -- before the
+  // queue could ever see it. Nothing client-side can replay that, so the
+  // container asks instead: it announces itself once, and the block answers
+  // by pushing a fresh mount message. Blocks opt in with `data-dm-picker`
+  // and an observer on `<id>_ready`.
+  const announce = () => {
+    // Shiny is not necessarily up when this first runs, and `_dmAnnounced`
+    // is only set once the message is actually away: flagging a container
+    // that then failed to announce would silence it for the rest of the
+    // session, which is the very failure this exists to prevent.
+    if (typeof Shiny === 'undefined' || !Shiny.setInputValue) return;
+
+    document.querySelectorAll('[data-dm-picker]').forEach((el) => {
+      if (el._dmPicker || el._dmAnnounced || !el.id) return;
+      Shiny.setInputValue(el.id + '_ready', Date.now(), { priority: 'event' });
+      el._dmAnnounced = true;
+    });
+  };
+
   // Shiny may not be ready when this IIFE runs; defer until it is.
   const register = () => {
     if (typeof Shiny === 'undefined' || !Shiny.addCustomMessageHandler) {
@@ -71,8 +93,12 @@
     // Dockview panels enter the DOM after the fact; every render/bind pass
     // is a chance that a pending picker's container now exists.
     $(document).on('shiny:value shiny:bound', () => {
-      setTimeout(replayPending, 100);
+      setTimeout(() => {
+        replayPending();
+        announce();
+      }, 100);
     });
+    setTimeout(announce, 0);
   };
   register();
 })();
