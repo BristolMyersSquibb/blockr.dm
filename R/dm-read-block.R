@@ -11,9 +11,21 @@
 #'   - A directory path: All data files in directory become dm tables
 #'   - An RDS file (.rds): Can contain a dm, data.frame, or list of data.frames
 #'   - An RData file (.rdata, .rda): All data.frames become dm tables
-#' @param selected_tables Character vector. Optional subset of tables to include
-#'   in the output dm. Default is NULL (all tables).
+#' @param selected_tables Character vector naming the tables to read. `NULL`
+#'   (the default) means nothing has been chosen yet and the block waits:
+#'   pointing it at a directory of study data must not read all of it before
+#'   a table is asked for.
 #' @param ... Forwarded to [blockr.core::new_data_block()]
+#'
+#' @section External control:
+#' `path` and `selected_tables` are externally controllable (see
+#' [blockr.core::external_ctrl_vars()]), so a board update, the assistant or
+#' any other controller can point the block at a different dataset with a
+#' `mod` delta instead of replacing the block. This works because the block's
+#' expression is a pure function of those two state variables, the way
+#' [blockr.io::new_read_block()]'s is: whoever writes them, the read follows
+#' on the next flush. There is no separate confirm step that could leave the
+#' reported path and the data on screen disagreeing.
 #'
 #' @details
 #' ## File Handling
@@ -68,32 +80,29 @@ new_dm_read_block <- function(
       shiny::moduleServer(
         id,
         function(input, output, session) {
-          # Path storage
-          if (length(path) > 0 && (file.exists(path) || dir.exists(path))) {
-            initial_path <- stats::setNames(path, basename(path))
+          # The block's two state variables, and the only two things anything
+          # writes: everything else below is derived from them. The path is
+          # kept as given, whether or not it resolves in this session -- a
+          # board can be restored before its data lands, and an external
+          # controller may point the block at a path that is not there yet.
+          # Unreadable is reported (badge, block error), never silently
+          # swallowed by dropping the path.
+          initial_path <- if (length(path) > 0 && nzchar(path[[1]])) {
+            stats::setNames(path, basename(path))
           } else {
-            initial_path <- character()
+            character()
           }
           r_path <- shiny::reactiveVal(initial_path)
-          r_file_path <- shiny::reactiveVal(initial_path)
 
-          # Detected input type
-          initial_type <- if (length(path) > 0) {
-            detect_dm_input_type(path)
-          } else {
-            "unknown"
-          }
-          r_input_type <- shiny::reactiveVal(initial_type)
-
-          # Selected tables (NULL = all)
+          # NULL / empty = no table chosen yet, which holds the read back.
           r_selected_tables <- shiny::reactiveVal(selected_tables)
 
-          # Load button gating: armed expression
-          r_expr_armed <- shiny::reactiveVal(NULL)
-
-          # Non-empty when the deployment's file-access policy rejected the
-          # current path; surfaced as an error on the path-status badge.
-          r_path_blocked <- shiny::reactiveVal("")
+          # Set by the input observers just before they write the state they
+          # own, so the observers that mirror that state back into the widgets
+          # can tell "the user did this" from "someone else did this" and skip
+          # the echo. Same guard blockr.dplyr's `js_block_state()` uses.
+          self_write <- new.env(parent = emptyenv())
+          self_write$tables <- FALSE
 
           # The file-access policy applies to user-chosen filesystem paths, not
           # to the app's own sandboxes: uploads land under upload_path, so a
@@ -114,6 +123,55 @@ new_dm_read_block <- function(
             )
           })
 
+          # The path as it will actually be read: relative paths resolve
+          # against the board's data directory, absolute ones are left alone.
+          resolved_path <- shiny::reactive({
+            p <- r_path()
+
+            if (!length(p) || !nzchar(p[[1]])) {
+              return(character())
+            }
+
+            path_val <- unname(p[[1]])
+            data_dir <- data_dir_reactive()
+
+            if (nzchar(data_dir) && !grepl("^(/|~|[A-Za-z]:)", path_val)) {
+              path_val <- file.path(data_dir, path_val)
+            }
+
+            path_val
+          })
+
+          # Non-empty when the deployment's file-access policy rejects the
+          # current path. Derived rather than checked in the path observer, so
+          # a restored board and an externally set path are policed on exactly
+          # the same terms as a typed one.
+          policy_error <- shiny::reactive({
+            p <- resolved_path()
+
+            if (!length(p) || !is_policed_path(p)) {
+              return("")
+            }
+
+            tryCatch(
+              {
+                blockr.io::resolve_and_check(p, "read")
+                ""
+              },
+              error = function(e) conditionMessage(e)
+            )
+          })
+
+          input_type <- shiny::reactive({
+            p <- resolved_path()
+
+            if (!length(p) || nzchar(policy_error())) {
+              return("unknown")
+            }
+
+            detect_dm_input_type(p)
+          })
+
           # Path input module
           file_path <- blockr.io::path_input_server(
             "file_path",
@@ -121,61 +179,30 @@ new_dm_read_block <- function(
             mode = "file"
           )
 
-          # Populate path text input on restore / init
-          if (length(path) > 0 && nzchar(path[[1]])) {
-            shiny::observe({
-              session$sendCustomMessage("blockr-path-set-value", list(
-                id = session$ns("file_path-path_text"),
-                value = unname(path[1]),
-                silent = TRUE
-              ))
-            }) |> shiny::bindEvent(TRUE, once = TRUE)
-          }
+          # R -> JS: the field shows the block's path, whoever set it --
+          # constructor, board restore, upload, or an external controller.
+          # `silent` suppresses the change event, so this cannot loop back
+          # through `file_path()`, and the handler queues the message when the
+          # element has not bound yet (a block in a deferred dock panel).
+          shiny::observe({
+            p <- r_path()
+            session$sendCustomMessage("blockr-path-set-value", list(
+              id = session$ns("file_path-path_text"),
+              value = if (length(p)) unname(p[[1]]) else "",
+              silent = TRUE
+            ))
+          })
 
-          # Handle path input changes
+          # JS -> R: the field commits on Enter, blur and browse, so this is
+          # one write per user decision, not one per keystroke. Validation is
+          # not this observer's job any more -- it records what was asked for
+          # and the derived reactives above say what came of it.
           shiny::observeEvent(file_path(), {
             path_val <- file_path()
             shiny::req(nzchar(path_val))
 
             r_selected_tables(NULL)
-            r_expr_armed(NULL)
-
-            # Resolve relative paths against data directory
-            resolved <- path_val
-            data_dir <- data_dir_reactive()
-            if (
-              nzchar(data_dir) &&
-                !grepl("^(/|~|[A-Za-z]:)", path_val)
-            ) {
-              resolved <- file.path(data_dir, path_val)
-            }
-
-            # Deployment file-access policy: reject paths outside the allowed
-            # roots before the path can be read. tryCatch so a stop() from the
-            # verifier becomes a block error, not an uncaught observer crash.
-            blocked <- tryCatch(
-              {
-                blockr.io::resolve_and_check(resolved, "read")
-                ""
-              },
-              error = function(e) conditionMessage(e)
-            )
-
-            if (nzchar(blocked)) {
-              r_path_blocked(blocked)
-              r_file_path(character())
-              r_input_type("unknown")
-            } else if (file.exists(resolved) || dir.exists(resolved)) {
-              r_path_blocked("")
-              named_path <- stats::setNames(path_val, basename(resolved))
-              r_path(named_path)
-              r_file_path(named_path)
-              r_input_type(detect_dm_input_type(resolved))
-            } else {
-              r_path_blocked("")
-              r_file_path(character())
-              r_input_type("unknown")
-            }
+            r_path(stats::setNames(path_val, basename(path_val)))
           }, ignoreInit = TRUE)
 
           # Handle file upload with persistence
@@ -183,7 +210,6 @@ new_dm_read_block <- function(
             shiny::req(input$file_upload)
 
             r_selected_tables(NULL)
-            r_expr_armed(NULL)
 
             # Create upload directory if it doesn't exist
             upload_dir <- upload_path
@@ -206,45 +232,17 @@ new_dm_read_block <- function(
 
             names(permanent_path) <- original_name
 
+            # The `r_path()` observer above mirrors this into the text field.
             r_path(permanent_path)
-            r_file_path(permanent_path)
-            r_input_type(detect_dm_input_type(permanent_path))
-
-            # Show uploaded file path in the text input
-            session$sendCustomMessage("blockr-path-set-value", list(
-              id = session$ns("file_path-path_text"),
-              value = unname(permanent_path),
-              silent = TRUE
-            ))
           })
 
-          # Cheap table discovery (no full data read)
+          # Cheap table discovery (no full data read). Never lists files
+          # outside the allowed roots.
           available_tables <- shiny::reactive({
-            shiny::req(length(r_file_path()) > 0)
-            path_val <- r_file_path()[1]
+            resolved <- resolved_path()
+            shiny::req(length(resolved) > 0, !nzchar(policy_error()))
 
-            # Resolve relative path
-            data_dir <- data_dir_reactive()
-            resolved <- path_val
-            if (
-              nzchar(data_dir) &&
-                !grepl("^(/|~|[A-Za-z]:)", path_val)
-            ) {
-              resolved <- file.path(data_dir, path_val)
-            }
-
-            # Don't list files outside the allowed roots (covers a restored
-            # board whose path skipped the path observer).
-            ok <- !is_policed_path(resolved) || tryCatch(
-              {
-                blockr.io::resolve_and_check(resolved, "read")
-                TRUE
-              },
-              error = function(e) FALSE
-            )
-            shiny::req(ok)
-
-            discover_dm_tables(resolved, r_input_type())
+            discover_dm_tables(resolved, input_type())
           })
 
           # Output for conditional panel
@@ -253,7 +251,9 @@ new_dm_read_block <- function(
           })
           shiny::outputOptions(output, "has_tables", suspendWhenHidden = FALSE)
 
-          # Update table selection UI when tables change
+          # Update table selection UI when tables change. Carries the current
+          # selection across a path change: what still exists at the new path
+          # stays selected, the rest drops (and with it, the read of it).
           shiny::observeEvent(available_tables(), {
             tbl_info <- available_tables()
             shiny::req(nrow(tbl_info) > 0)
@@ -271,111 +271,71 @@ new_dm_read_block <- function(
             )
           })
 
+          # JS -> R
           shiny::observeEvent(input$table_select, {
-            r_selected_tables(input$table_select)
-          }, ignoreInit = TRUE)
+            val <- input$table_select
 
-          # Load button handler
-          shiny::observeEvent(input$load_data, {
-            shiny::req(length(r_file_path()) > 0)
-            path_val <- r_file_path()[1]
-            input_type <- r_input_type()
-            selected <- r_selected_tables()
-            shiny::req(!is.null(selected), length(selected) > 0)
-
-            # Resolve relative path
-            data_dir <- data_dir_reactive()
-            resolved <- path_val
-            if (
-              nzchar(data_dir) &&
-                !grepl("^(/|~|[A-Za-z]:)", path_val)
-            ) {
-              resolved <- file.path(data_dir, path_val)
+            if (!length(val)) {
+              val <- NULL
             }
 
-            # Deployment file-access policy: reject before arming the read.
-            blocked <- if (!is_policed_path(resolved)) {
-              ""
-            } else {
-              tryCatch(
-                {
-                  blockr.io::resolve_and_check(resolved, "read")
-                  ""
-                },
-                error = function(e) conditionMessage(e)
-              )
-            }
-            if (nzchar(blocked)) {
-              r_path_blocked(blocked)
+            if (identical(val, r_selected_tables())) {
               return()
             }
-            r_path_blocked("")
 
-            r_expr_armed(
-              dm_read_expr(resolved, input_type, selected)
+            self_write$tables <- TRUE
+            r_selected_tables(val)
+          }, ignoreInit = TRUE, ignoreNULL = FALSE)
+
+          # R -> JS: mirror an externally set selection into the widget, so
+          # what the block reads and what the block shows cannot drift apart.
+          shiny::observeEvent(r_selected_tables(), {
+
+            if (self_write$tables) {
+              self_write$tables <- FALSE
+              return()
+            }
+
+            # Only mirror once the widget has choices: a selection pushed at a
+            # choice-less selectize is silently dropped, and the empty input
+            # coming back would wipe the very state we are displaying. Until
+            # then the choices observer above carries it.
+            tbl_info <- available_tables()
+            shiny::req(nrow(tbl_info) > 0)
+
+            shiny::updateSelectizeInput(
+              session, "table_select",
+              selected = intersect(r_selected_tables(), tbl_info$name)
             )
-          })
-
-          # Auto-arm on restore so block produces output immediately
-          if (length(path) > 0 && !is.null(selected_tables)) {
-            shiny::observe({
-              resolved <- path[1]
-              data_dir <- data_dir_reactive()
-              if (
-                nzchar(data_dir) &&
-                  !grepl("^(/|~|[A-Za-z]:)", resolved)
-              ) {
-                resolved <- file.path(data_dir, resolved)
-              }
-              # Restored boards bypass the path observer, so re-check the
-              # deployment file-access policy here before arming the read.
-              ok <- !is_policed_path(resolved) || tryCatch(
-                {
-                  blockr.io::resolve_and_check(resolved, "read")
-                  TRUE
-                },
-                error = function(e) {
-                  r_path_blocked(conditionMessage(e))
-                  FALSE
-                }
-              )
-              if (ok) {
-                r_expr_armed(dm_read_expr(
-                  resolved,
-                  detect_dm_input_type(resolved),
-                  selected_tables
-                ))
-              }
-            }) |> shiny::bindEvent(TRUE, once = TRUE)
-          }
+          }, ignoreInit = TRUE, ignoreNULL = FALSE)
 
           # Status badge for file type
           shiny::observe({
-            input_type <- r_input_type()
-            paths <- r_file_path()
+            type <- input_type()
+            resolved <- resolved_path()
 
             type_labels <- c(
               excel = "Excel", zip = "ZIP", directory = "Directory",
               serialized = "R data", rdata = "RData"
             )
 
-            if (nzchar(r_path_blocked())) {
+            if (nzchar(policy_error())) {
               session$sendCustomMessage("blockr-path-status", list(
                 id = session$ns("file_path-path_text"),
                 text = "Blocked",
                 state = "error"
               ))
-            } else if (length(paths) > 0 && input_type != "unknown") {
-              label <- unname(type_labels[input_type]) %||% "File"
+            } else if (length(resolved) > 0 && type != "unknown") {
+              label <- unname(type_labels[type]) %||% "File"
               session$sendCustomMessage("blockr-path-status", list(
                 id = session$ns("file_path-path_text"),
                 text = label,
                 state = "success"
               ))
-            } else if (length(paths) == 0 && nzchar(file_path())) {
+            } else if (length(resolved) > 0) {
               session$sendCustomMessage("blockr-path-status", list(
                 id = session$ns("file_path-path_text"),
-                text = "Not found",
+                text = if (file.exists(resolved)) "Unsupported" else "Not found",
                 state = "error"
               ))
             } else {
@@ -388,8 +348,49 @@ new_dm_read_block <- function(
           })
 
           list(
+            # The read is a function of the block's state, not of a button
+            # press: whatever sets `path` / `selected_tables` -- the user, a
+            # restored board, or an external controller -- gets a new
+            # expression on the next flush. A path that cannot be read becomes
+            # a `stop()` INSIDE the expression (as blockr.io's read block
+            # does), so it lands in blockr.core's per-block error boundary
+            # instead of throwing out of this reactive.
             expr = shiny::reactive({
-              r_expr_armed()
+              resolved <- resolved_path()
+              shiny::req(length(resolved) > 0)
+
+              blocked <- policy_error()
+
+              if (nzchar(blocked)) {
+                return(bquote(stop(.(blocked), call. = FALSE)))
+              }
+
+              type <- input_type()
+
+              if (identical(type, "unknown")) {
+                # Two different failures, and the difference is the whole
+                # message: browsing to a single CSV is a normal mis-click (the
+                # path autocomplete lists those files), not a missing path.
+                msg <- if (file.exists(resolved)) {
+                  paste0(
+                    "'", basename(resolved), "' is not a dm source. Pick the ",
+                    "directory that contains the data files, or an Excel / ",
+                    "ZIP / RDS / RData file."
+                  )
+                } else {
+                  paste0("No such file or directory: '", resolved, "'.")
+                }
+
+                return(bquote(stop(.(msg), call. = FALSE)))
+              }
+
+              # No table chosen yet is "not ready", not "read everything":
+              # pointing the block at a directory of study data must not read
+              # all of it before anyone asks for a table.
+              selected <- r_selected_tables()
+              shiny::req(length(selected) > 0)
+
+              dm_read_expr(resolved, type, selected)
             }),
             state = list(
               path = r_path,
@@ -411,7 +412,7 @@ new_dm_read_block <- function(
               width: 100% !important;
             }
 
-            /* Table selector: integrated field with confirm button */
+            /* Table selector */
             .blockr-table-selector {
               display: flex;
               align-items: stretch;
@@ -422,49 +423,6 @@ new_dm_read_block <- function(
             .blockr-table-selector .selectize-control {
               flex: 1;
               min-width: 0;
-            }
-            .blockr-table-confirm-btn {
-              flex-shrink: 0;
-              align-self: stretch;
-              display: none;
-              align-items: center;
-              justify-content: center;
-              width: 36px;
-              border: 1px solid var(--blockr-color-border, #e5e7eb);
-              border-radius: 0 8px 8px 0;
-              background: var(--blockr-color-bg-input, #f9fafb);
-              color: #6c757d;
-              cursor: pointer;
-              padding: 0;
-              transition: color 0.15s, background-color 0.15s;
-            }
-            .blockr-table-confirm-btn.has-selection {
-              display: flex;
-              background-color: #0d6efd;
-              color: #fff;
-              border-color: #0d6efd;
-            }
-            .blockr-table-confirm-btn.has-selection:hover {
-              background-color: #0b5ed7;
-              border-color: #0a58ca;
-            }
-            .blockr-table-confirm-btn.has-selection + .dummy,
-            .blockr-table-selector:has(
-              .blockr-table-confirm-btn.has-selection
-            ) .selectize-input {
-              border-right: none !important;
-              border-top-right-radius: 0 !important;
-              border-bottom-right-radius: 0 !important;
-            }
-            .blockr-table-selector:has(
-              .blockr-table-confirm-btn.has-selection
-            ) .selectize-dropdown {
-              border-top-right-radius: 0;
-            }
-            .blockr-table-confirm-btn.confirmed {
-              background-color: var(--blockr-color-bg-input, #f9fafb);
-              color: #6c757d;
-              border-color: var(--blockr-color-border, #e5e7eb);
             }
             .blockr-select-all-link a {
               margin-left: 6px;
@@ -579,23 +537,12 @@ new_dm_read_block <- function(
   }
 }")
                   )
-                ),
-                shiny::tags$button(
-                  id = ns("load_data"),
-                  class = "blockr-table-confirm-btn action-button",
-                  type = "button",
-                  title = "Confirm selection",
-                  `aria-label` = "Confirm table selection and load",
-                  shiny::HTML(paste0(
-                    '<svg xmlns="http://www.w3.org/2000/svg" width="16" ',
-                    'height="16" viewBox="0 0 24 24" fill="none" ',
-                    'stroke="currentColor" stroke-width="2.5" ',
-                    'stroke-linecap="round" stroke-linejoin="round">',
-                    '<line x1="5" y1="12" x2="19" y2="12"></line>',
-                    '<polyline points="12 5 19 12 12 19"></polyline></svg>'
-                  ))
                 )
               ),
+              # Selectize conveniences only: opening the dropdown when there is
+              # nothing selected yet, and the All / None shortcuts. Selecting
+              # is what triggers the read, so neither of these needs to talk
+              # to R -- they drive the same input the user would.
               shiny::tags$script(shiny::HTML(sprintf(
                 "
                 $(document).on('shiny:value', function(e) {
@@ -604,46 +551,11 @@ new_dm_read_block <- function(
                     var sel = $('#%s')[0];
                     if (!sel || !sel.selectize) return;
                     var sz = sel.selectize;
-                    var btn = document.getElementById('%s');
-                    var svgA = '<svg xmlns=\"http://www.w3.org/2000/svg\"';
-                    var svgB = ' width=\"16\" height=\"16\"';
-                    var svgC = ' viewBox=\"0 0 24 24\" fill=\"none\"';
-                    var svgD = ' stroke=\"currentColor\"';
-                    var svgE = ' stroke-width=\"2.5\"';
-                    var svgF = ' stroke-linecap=\"round\"';
-                    var svgG = ' stroke-linejoin=\"round\">';
-                    var svgH = svgA+svgB+svgC+svgD+svgE+svgF+svgG;
-                    var arrowIcon = svgH +
-                      '<line x1=\"5\" y1=\"12\" x2=\"19\"' +
-                      ' y2=\"12\"></line>' +
-                      '<polyline points=\"12 5 19 12' +
-                      ' 12 19\"></polyline></svg>';
-                    var checkIcon = svgH +
-                      '<polyline points=\"20 6 9 17' +
-                      ' 4 12\"></polyline></svg>';
-                    function syncBtn() {
-                      if (!btn) return;
-                      btn.classList.remove('confirmed');
-                      btn.innerHTML = arrowIcon;
-                      if (sz.items.length > 0) {
-                        btn.classList.add('has-selection');
-                      } else {
-                        btn.classList.remove('has-selection');
-                      }
-                    }
-                    // If already selected, show confirmed
-                    if (btn && sz.items.length > 0) {
-                      btn.classList.add('has-selection');
-                      btn.classList.add('confirmed');
-                      btn.innerHTML = checkIcon;
-                    }
                     var noItems = sz.items.length === 0;
                     var hasOpts = Object.keys(sz.options).length > 0;
                     if (noItems && hasOpts) {
                       sz.open();
                     }
-                    // User-driven changes: show blue (needs confirmation)
-                    sz.on('change', syncBtn);
                     // All / None links
                     var allSel = '#%s';
                     $(allSel).off('click.selall').on(
@@ -659,31 +571,11 @@ new_dm_read_block <- function(
                     });
                   }, 100);
                 });
-                $('#%s').on('click', function() {
-                  var sel = $('#%s')[0];
-                  var ok = sel && sel.selectize;
-                  if (ok && sel.selectize.items.length > 0) {
-                    this.classList.add('confirmed');
-                    var s = '<svg xmlns=\"http://www.w3.org/';
-                    s += '2000/svg\" width=\"16\" height=';
-                    s += '\"16\" viewBox=\"0 0 24 24\"';
-                    s += ' fill=\"none\" stroke=';
-                    s += '\"currentColor\" stroke-width=';
-                    s += '\"2.5\" stroke-linecap=\"round\"';
-                    s += ' stroke-linejoin=\"round\">';
-                    s += '<polyline points=\"20 6 9 17';
-                    s += ' 4 12\"></polyline></svg>';
-                    this.innerHTML = s;
-                  }
-                });
                 ",
                 ns("has_tables"),
                 ns("table_select"),
-                ns("load_data"),
                 ns("select_all_tables"),
-                ns("select_none_tables"),
-                ns("load_data"),
-                ns("table_select")
+                ns("select_none_tables")
               )))
             )
           )
@@ -692,6 +584,7 @@ new_dm_read_block <- function(
     },
     class = "dm_read_block",
     allow_empty_state = TRUE,
+    external_ctrl = c("path", "selected_tables"),
     ...
   )
 }

@@ -16,8 +16,10 @@ new_dm_read_block(path = character(), selected_tables = NULL, ...)
 \item An RData file (.rdata, .rda): All data.frames become dm tables
 }}
 
-\item{selected_tables}{Character vector. Optional subset of tables to include
-in the output dm. Default is NULL (all tables).}
+\item{selected_tables}{Character vector naming the tables to read. \code{NULL}
+(the default) means nothing has been chosen yet and the block waits:
+pointing it at a directory of study data must not read all of it before
+a table is asked for.}
 
 \item{...}{Forwarded to \code{\link[blockr.core:new_data_block]{blockr.core::new_data_block()}}}
 }
@@ -66,6 +68,18 @@ serialization formats (RDS, QS, RData).
 }
 }
 }
+\section{External control}{
+
+\code{path} and \code{selected_tables} are externally controllable (see
+\code{\link[blockr.core:block_name]{blockr.core::external_ctrl_vars()}}), so a board update, the assistant or
+any other controller can point the block at a different dataset with a
+\code{mod} delta instead of replacing the block. This works because the block's
+expression is a pure function of those two state variables, the way
+\code{\link[blockr.io:read]{blockr.io::new_read_block()}}'s is: whoever writes them, the read follows
+on the next flush. There is no separate confirm step that could leave the
+reported path and the data on screen disagreeing.
+}
+
 \examples{
 # Create a dm read block (interactive mode)
 if (interactive()) {
