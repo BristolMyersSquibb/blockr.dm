@@ -98,6 +98,40 @@ test_that("SDTM key setup - DM table as parent", {
   )
 })
 
+test_that("Deduplication is opt-in, so the tables arrive as they were read", {
+
+  # Dropping columns is a decision about someone's data. Doing it unasked
+  # makes the tables downstream disagree with the tables on disk, which is a
+  # bad surprise in a regulated setting; the collisions it avoids are the
+  # smaller problem, so they are the ones you opt into.
+  block <- new_cdisc_dm_block()
+
+  adsl <- data.frame(
+    USUBJID = c("S1", "S2"),
+    AGE = c(30, 40),
+    stringsAsFactors = FALSE
+  )
+  adae <- data.frame(
+    USUBJID = c("S1", "S2"),
+    AGE = c(30, 40),
+    AEDECOD = c("Headache", "Nausea"),
+    stringsAsFactors = FALSE
+  )
+
+  testServer(
+    blockr.core:::get_s3_method("block_server", block),
+    {
+      session$flushReact()
+      adae_result <- dm::pull_tbl(session$returned$result(), adae)
+      expect_true("AGE" %in% names(adae_result))
+    },
+    args = list(
+      x = block,
+      data = list(data = function() dm::dm(adsl = adsl, adae = adae))
+    )
+  )
+})
+
 test_that("Column deduplication removes shared columns from children", {
   block <- new_cdisc_dm_block(dedup_cols = TRUE)
 

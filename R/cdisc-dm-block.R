@@ -126,7 +126,11 @@ cdisc_dm_shape <- function(dm_obj) {
 #' @param set_keys Logical, whether to set USUBJID as PK on the parent table
 #'   and FK on child tables. Default is `TRUE`.
 #' @param dedup_cols Logical, whether to remove duplicated subject columns
-#'   from child tables. Default is `TRUE`.
+#'   from child tables. Default is `FALSE`: dropping columns is a decision
+#'   about someone's data, and a block that reshapes what it was handed
+#'   before anyone asks makes the tables downstream disagree with the tables
+#'   on disk. Opt in when the collisions in a downstream join are the bigger
+#'   problem.
 #' @param ... Forwarded to [blockr.core::new_transform_block()]
 #'
 #' @return A block object of class `dm_block`
@@ -149,7 +153,7 @@ cdisc_dm_shape <- function(dm_obj) {
 #' dm is passed through unchanged.
 #'
 #' @export
-new_cdisc_dm_block <- function(set_keys = TRUE, dedup_cols = TRUE, ...) {
+new_cdisc_dm_block <- function(set_keys = TRUE, dedup_cols = FALSE, ...) {
 
   # Read inside the server closure, i.e. after this call returns: left as
   # promises they carry the caller's environment, and any harness that revives

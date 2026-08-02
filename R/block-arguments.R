@@ -93,11 +93,12 @@ cdisc_dm_arguments <- function() {
     ),
     dedup_cols = new_arg_spec(
       paste0(
-        "Logical. TRUE (default) removes duplicated subject-level columns ",
-        "(AGE, SEX, ARM, etc.) from non-ADSL tables so they live only on ",
-        "ADSL. Avoids column-name collisions in downstream joins."
+        "Logical. TRUE removes duplicated subject-level columns (AGE, SEX, ",
+        "ARM, etc.) from non-ADSL tables so they live only on ADSL, which ",
+        "avoids column-name collisions in downstream joins. FALSE (the ",
+        "default) leaves every table as it was read."
       ),
-      example = TRUE,
+      example = FALSE,
       type = arg_boolean()
     )
   )

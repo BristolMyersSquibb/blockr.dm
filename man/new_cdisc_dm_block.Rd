@@ -4,14 +4,18 @@
 \alias{new_cdisc_dm_block}
 \title{Create CDISC DM Block}
 \usage{
-new_cdisc_dm_block(set_keys = TRUE, dedup_cols = TRUE, ...)
+new_cdisc_dm_block(set_keys = TRUE, dedup_cols = FALSE, ...)
 }
 \arguments{
 \item{set_keys}{Logical, whether to set USUBJID as PK on the parent table
 and FK on child tables. Default is \code{TRUE}.}
 
 \item{dedup_cols}{Logical, whether to remove duplicated subject columns
-from child tables. Default is \code{TRUE}.}
+from child tables. Default is \code{FALSE}: dropping columns is a decision
+about someone's data, and a block that reshapes what it was handed
+before anyone asks makes the tables downstream disagree with the tables
+on disk. Opt in when the collisions in a downstream join are the bigger
+problem.}
 
 \item{...}{Forwarded to \code{\link[blockr.core:new_transform_block]{blockr.core::new_transform_block()}}}
 }
