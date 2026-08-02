@@ -69,6 +69,15 @@ new_dm_read_block <- function(
   selected_tables = NULL,
   ...
 ) {
+  # Both arguments are read inside the server closure, i.e. long after this
+  # call returns. Left as promises they carry the caller's environment with
+  # them, and any route that revives the app object in a FRESH R process
+  # (shinytest2's AppDriver, a callr worker, a serialized app) forces them
+  # there, where the caller's local variables no longer exist: the block dies
+  # with "object 'x' not found" before it ever reaches its first flush.
+  force(path)
+  force(selected_tables)
+
   upload_path <- blockr.core::blockr_option(
     "upload_path",
     tools::R_user_dir("blockr", "data")
