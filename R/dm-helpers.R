@@ -21,6 +21,51 @@ build_dm_table_options <- function(dm_obj) {
   })
 }
 
+#' Push a table selection into a dm table picker
+#'
+#' The picker is a JS widget, so R has to tell it what to show: its options
+#' come from the upstream dm and its selection from the block's state. Every
+#' write to that state goes through here, whoever made it -- the user, a board
+#' restore, or an external controller -- so what the block reads and what the
+#' block shows cannot drift apart.
+#'
+#' `selected` is wrapped in `as.list()` for a multi picker: a length-one
+#' character vector would otherwise reach JS as a bare string rather than an
+#' array of one (jsonlite's `auto_unbox`), and the widget would show nothing.
+#'
+#' @param session Shiny session.
+#' @param id Input id inside the module namespace.
+#' @param dm_obj Upstream dm, for the option list.
+#' @param selected Table name(s) to select.
+#' @param mode `"single"` or `"multi"`.
+#'
+#' @noRd
+dm_picker_push <- function(session, id, dm_obj, selected,
+                           mode = c("single", "multi")) {
+
+  mode <- match.arg(mode)
+  opts <- build_dm_table_options(dm_obj)
+
+  if (!length(opts)) {
+    return(invisible(NULL))
+  }
+
+  msg <- list(
+    id = session$ns(id),
+    mode = mode,
+    options = opts,
+    selected = if (identical(mode, "multi")) as.list(selected) else selected
+  )
+
+  if (identical(mode, "multi")) {
+    msg$placeholder <- "Select tables…"
+  }
+
+  session$sendCustomMessage("dm-table-picker", msg)
+
+  invisible(NULL)
+}
+
 #' Build column summary for one table inside a dm object
 #'
 #' Thin wrapper that extracts a named table from a dm, coerces to a plain

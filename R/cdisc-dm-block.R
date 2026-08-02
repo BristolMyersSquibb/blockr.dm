@@ -131,6 +131,11 @@ cdisc_dm_shape <- function(dm_obj) {
 #'
 #' @return A block object of class `dm_block`
 #'
+#' @section External control:
+#' `set_keys` and `dedup_cols` are externally controllable (see
+#' [blockr.core::external_ctrl_vars()]): a board update or an assistant can
+#' flip either with a `mod` delta, and the checkboxes follow.
+#'
 #' @details
 #' The block expects a single dm input containing CDISC tables. It:
 #' \enumerate{
@@ -145,20 +150,69 @@ cdisc_dm_shape <- function(dm_obj) {
 #'
 #' @export
 new_cdisc_dm_block <- function(set_keys = TRUE, dedup_cols = TRUE, ...) {
+
+  # Read inside the server closure, i.e. after this call returns: left as
+  # promises they carry the caller's environment, and any harness that revives
+  # the block in a fresh R process forces them there, where the caller's
+  # locals are gone.
+  force(set_keys)
+  force(dedup_cols)
+
   blockr.core::new_transform_block(
     server = function(id, data) {
       shiny::moduleServer(id, function(input, output, session) {
         set_keys_rv <- shiny::reactiveVal(set_keys)
         dedup_rv <- shiny::reactiveVal(dedup_cols)
 
+        # Set by the input observers, so the mirrors below can tell the
+        # user's own click from an external write and skip the echo.
+        self_write <- new.env(parent = emptyenv())
+        self_write$set_keys <- FALSE
+        self_write$dedup <- FALSE
+
         shiny::observeEvent(
-          input$set_keys, set_keys_rv(input$set_keys),
+          input$set_keys,
+          {
+            if (identical(input$set_keys, set_keys_rv())) {
+              return()
+            }
+            self_write$set_keys <- TRUE
+            set_keys_rv(input$set_keys)
+          },
           ignoreInit = TRUE
         )
         shiny::observeEvent(
-          input$dedup_cols, dedup_rv(input$dedup_cols),
+          input$dedup_cols,
+          {
+            if (identical(input$dedup_cols, dedup_rv())) {
+              return()
+            }
+            self_write$dedup <- TRUE
+            dedup_rv(input$dedup_cols)
+          },
           ignoreInit = TRUE
         )
+
+        # R -> JS: an externally set switch has to show on the switch.
+        shiny::observeEvent(set_keys_rv(), {
+          if (self_write$set_keys) {
+            self_write$set_keys <- FALSE
+            return()
+          }
+          shiny::updateCheckboxInput(
+            session, "set_keys", value = isTRUE(set_keys_rv())
+          )
+        }, ignoreInit = TRUE)
+
+        shiny::observeEvent(dedup_rv(), {
+          if (self_write$dedup) {
+            self_write$dedup <- FALSE
+            return()
+          }
+          shiny::updateCheckboxInput(
+            session, "dedup_cols", value = isTRUE(dedup_rv())
+          )
+        }, ignoreInit = TRUE)
 
         # Everything `expr` needs from the upstream `dm` is derived HERE, in an
         # observer keyed on `data()`, and parked in a reactiveVal. `expr` reads
@@ -448,6 +502,7 @@ new_cdisc_dm_block <- function(set_keys = TRUE, dedup_cols = TRUE, ...) {
     },
     allow_empty_state = TRUE,
     class = c("cdisc_dm_block", "dm_block"),
+    external_ctrl = TRUE,
     ...
   )
 }

@@ -35,3 +35,10 @@ The block expects a single dm input containing CDISC tables. It:
 If no parent table (ADSL or DM) is found, a warning is issued and the
 dm is passed through unchanged.
 }
+\section{External control}{
+
+\code{set_keys} and \code{dedup_cols} are externally controllable (see
+\code{\link[blockr.core:block_name]{blockr.core::external_ctrl_vars()}}): a board update or an assistant can
+flip either with a \code{mod} delta, and the checkboxes follow.
+}
+

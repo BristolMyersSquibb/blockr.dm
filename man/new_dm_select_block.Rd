@@ -19,6 +19,13 @@ A blockr transform block that filters tables from a dm object
 A block for selecting a subset of tables from a dm (data model) object.
 Uses \code{dm::dm_select_tbl()} to keep only the specified tables.
 }
+\section{External control}{
+
+\code{tables} is externally controllable (see
+\code{\link[blockr.core:block_name]{blockr.core::external_ctrl_vars()}}): a board update or an assistant can
+change the kept set with a \code{mod} delta, and the picker follows.
+}
+
 \examples{
 if (interactive()) {
   library(blockr.core)

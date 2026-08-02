@@ -19,6 +19,13 @@ This block extracts a single table from a dm object as a regular data
 frame. Use this after filtering to get a specific table for further
 analysis or visualization.
 }
+\section{External control}{
+
+\code{table} is externally controllable (see
+\code{\link[blockr.core:block_name]{blockr.core::external_ctrl_vars()}}): a board update or an assistant can
+switch the pulled table with a \code{mod} delta, and the picker follows.
+}
+
 \examples{
 new_dm_pull_block(table = "flights")
 

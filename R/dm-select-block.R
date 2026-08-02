@@ -9,6 +9,11 @@
 #'
 #' @return A blockr transform block that filters tables from a dm object
 #'
+#' @section External control:
+#' `tables` is externally controllable (see
+#' [blockr.core::external_ctrl_vars()]): a board update or an assistant can
+#' change the kept set with a `mod` delta, and the picker follows.
+#'
 #' @examples
 #' if (interactive()) {
 #'   library(blockr.core)
@@ -21,13 +26,33 @@
 #'
 #' @export
 new_dm_select_block <- function(tables = character(), ...) {
+
+  # Read inside the server closure, i.e. after this call returns: left as a
+  # promise it carries the caller's environment, and any harness that revives
+  # the block in a fresh R process forces it there, where the caller's locals
+  # are gone.
+  force(tables)
+
   blockr.core::new_transform_block(
     server = function(id, data) {
       shiny::moduleServer(
         id,
         function(input, output, session) {
-          ns <- session$ns
           r_tables <- reactiveVal(tables)
+
+          # Set by the observers that own a write, so the mirror below can
+          # tell the user's own edit from someone else's and skip the echo.
+          self_write <- new.env(parent = emptyenv())
+          self_write$tables <- FALSE
+
+          set_tables <- function(val) {
+            if (identical(val, isolate(r_tables()))) {
+              return(invisible(FALSE))
+            }
+            self_write$tables <- TRUE
+            r_tables(val)
+            invisible(TRUE)
+          }
 
           available_tables <- reactive({
             dm_obj <- data()
@@ -45,24 +70,26 @@ new_dm_select_block <- function(tables = character(), ...) {
             } else {
               choices
             }
-            session$sendCustomMessage(
-              "dm-table-picker",
-              list(
-                id = ns("tables"),
-                mode = "multi",
-                options = opts,
-                selected = selected,
-                placeholder = "Select tables\u2026"
-              )
-            )
-            r_tables(selected)
+            dm_picker_push(session, "tables", data(), selected, "multi")
+            set_tables(selected)
           })
 
           observeEvent(input$tables, {
             val <- input$tables
             if (is.null(val)) return()
-            r_tables(val)
+            set_tables(unlist(val, use.names = FALSE))
           })
+
+          # R -> JS: mirror an externally set selection into the picker, so
+          # the widget cannot show one set of tables while the block keeps
+          # another.
+          observeEvent(r_tables(), {
+            if (self_write$tables) {
+              self_write$tables <- FALSE
+              return()
+            }
+            dm_picker_push(session, "tables", data(), r_tables(), "multi")
+          }, ignoreInit = TRUE, ignoreNULL = FALSE)
 
           list(
             expr = reactive({
@@ -111,6 +138,7 @@ new_dm_select_block <- function(tables = character(), ...) {
     },
     allow_empty_state = TRUE,
     class = "dm_select_block",
+    external_ctrl = TRUE,
     ...
   )
 }
