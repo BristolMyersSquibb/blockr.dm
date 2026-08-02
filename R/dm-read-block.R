@@ -153,14 +153,9 @@ new_dm_read_block <- function(
               return(character())
             }
 
-            path_val <- unname(p[[1]])
-            data_dir <- data_dir_reactive()
-
-            if (nzchar(data_dir) && !grepl("^(/|~|[A-Za-z]:)", path_val)) {
-              path_val <- file.path(data_dir, path_val)
-            }
-
-            path_val
+            blockr.io::resolve_data_dir(
+              unname(p[[1]]), data_dir_reactive()
+            )
           })
 
           # Non-empty when the deployment's file-access policy rejects the

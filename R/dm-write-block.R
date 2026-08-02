@@ -112,17 +112,9 @@ new_dm_write_block <- function(
             path_val <- dir_path()
             shiny::req(nzchar(path_val))
 
-            # Resolve relative paths against data directory
-            resolved <- path_val
-            data_dir <- data_dir_reactive()
-            if (
-              nzchar(data_dir) &&
-                !grepl("^(/|~|[A-Za-z]:)", path_val)
-            ) {
-              resolved <- file.path(data_dir, path_val)
-            }
-
-            r_directory(resolved)
+            r_directory(
+              blockr.io::resolve_data_dir(path_val, data_dir_reactive())
+            )
           }, ignoreInit = TRUE)
 
           # Update state from inputs
