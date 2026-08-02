@@ -197,6 +197,124 @@ test_that("a board update points the block at another study", {
   )
 })
 
+test_that("a widget mounting late does not wipe the restored state", {
+
+  # What a dock does to a block that is not in the active view: the UI enters
+  # the DOM only when the panel is first shown, and every input in it then
+  # reports its value to the server for the first time. The path field
+  # reports the path the block itself had written into it, so the first thing
+  # a lazily mounted block hears is its own path coming back. Read as a user
+  # picking a new path, that cleared the table selection, and the restored
+  # board came up with no data at all.
+  dir <- make_study_dir(list(adsl = data.frame(x = 1:2),
+                             adae = data.frame(y = 3:4)))
+
+  block <- new_dm_read_block(path = dir, selected_tables = c("adsl", "adae"))
+
+  shiny::testServer(
+    blockr.core:::get_s3_method("block_server", block),
+    {
+      session$flushReact()
+
+      session$setInputs(`expr-file_path-path_text` = dir)
+      session$flushReact()
+
+      expect_identical(
+        session$returned$state$selected_tables(), c("adsl", "adae")
+      )
+      expect_setequal(
+        names(dm::dm_get_tables(session$returned$result())),
+        c("adsl", "adae")
+      )
+    },
+    args = list(x = block, data = list())
+  )
+})
+
+test_that("an empty report from a choice-less widget is not a decision", {
+
+  # A board restored while its data is not reachable -- an unmounted drive, a
+  # study directory that has not synced yet -- has a selection but nothing to
+  # offer in the picker. The empty value that widget reports is the widget
+  # describing itself, and honouring it would throw away the selection the
+  # board was saved with, so that fixing the path later reads nothing.
+  missing <- file.path(withr::local_tempdir(), "not-there")
+
+  block <- new_dm_read_block(path = missing, selected_tables = "adsl")
+
+  shiny::testServer(
+    blockr.core:::get_s3_method("block_server", block),
+    {
+      session$flushReact()
+      session$setInputs(`expr-table_select` = character())
+      session$flushReact()
+
+      expect_identical(session$returned$state$selected_tables(), "adsl")
+    },
+    args = list(x = block, data = list())
+  )
+})
+
+test_that("the picker is rendered with its choices and its selection", {
+
+  # Rendered, not pushed: an `updateSelectizeInput()` aimed at an element
+  # that is not in the DOM yet is dropped on the floor, which is why a
+  # lazily mounted block used to show an empty picker over a full read.
+  dir <- make_study_dir(list(adsl = data.frame(x = 1:2),
+                             adae = data.frame(y = 3:4),
+                             adlb = data.frame(z = 5:6)))
+
+  block <- new_dm_read_block(path = dir, selected_tables = "adae")
+
+  shiny::testServer(
+    blockr.core:::get_s3_method("block_server", block),
+    {
+      session$flushReact()
+
+      html <- as.character(output[["expr-table_select_ui"]]$html)
+
+      expect_match(html, "<option value=\"adae\" selected>")
+      expect_match(html, "adsl")
+      expect_no_match(html, "<option value=\"adsl\" selected>")
+
+      # An external write reaches the widget the same way, because the
+      # widget is re-rendered rather than messaged.
+      session$returned$state$selected_tables(c("adsl", "adlb"))
+      session$flushReact()
+
+      html <- as.character(output[["expr-table_select_ui"]]$html)
+
+      expect_match(html, "<option value=\"adsl\" selected>")
+      expect_match(html, "<option value=\"adlb\" selected>")
+      expect_no_match(html, "<option value=\"adae\" selected>")
+    },
+    args = list(x = block, data = list())
+  )
+})
+
+test_that("the user can still empty the selection", {
+
+  # The guard above says an empty value from a choice-less widget is noise.
+  # It must not also swallow the None link, which is the same empty value
+  # from a widget that does have choices.
+  dir <- make_study_dir(list(adsl = data.frame(x = 1:2),
+                             adae = data.frame(y = 3:4)))
+
+  block <- new_dm_read_block(path = dir, selected_tables = "adsl")
+
+  shiny::testServer(
+    blockr.core:::get_s3_method("block_server", block),
+    {
+      session$flushReact()
+      session$setInputs(`expr-table_select` = character())
+      session$flushReact()
+
+      expect_null(session$returned$state$selected_tables())
+    },
+    args = list(x = block, data = list())
+  )
+})
+
 test_that("an unreadable path becomes a stop() inside the expression", {
 
   missing <- file.path(withr::local_tempdir(), "not-there")

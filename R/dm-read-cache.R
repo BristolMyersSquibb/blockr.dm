@@ -146,10 +146,11 @@ dm_read_status <- function(stems, elapsed = NULL) {
   configured <- nzchar(dm_read_cache_dir()) || !is.null(dm_read_cache_board())
 
   total <- if (!is.null(elapsed)) dm_read_fmt_secs(elapsed) else ""
+  noun <- if (length(stems) == 1L) "table" else "tables"
   head_txt <- if (nzchar(total)) {
-    sprintf("%d tables in %s", length(stems), total)
+    sprintf("%d %s in %s", length(stems), noun, total)
   } else {
-    sprintf("%d tables", length(stems))
+    sprintf("%d %s", length(stems), noun)
   }
 
   if (is.null(stats)) {

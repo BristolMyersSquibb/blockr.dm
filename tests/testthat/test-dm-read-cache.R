@@ -314,7 +314,7 @@ test_that("the read report says which route the data took", {
   dm_read_tables(f, cache_dir = cache_dir)
   cold <- blockr.dm:::dm_read_status("adxx", elapsed = 12.5)
   expect_identical(cold$state, "converted")
-  expect_match(cold$text, "1 tables in 12.5 s")
+  expect_match(cold$text, "1 table in 12.5 s")
   expect_match(cold$text, "converted from source")
 
   dm_read_tables(f, cache_dir = cache_dir)
