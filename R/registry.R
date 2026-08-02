@@ -38,7 +38,7 @@ register_dm_blocks <- function() {
       "Temporal join",
       "dm Temporal join",
       "Crossfilter",
-      "DM Example",
+      "Example data model",
       "Value filter"
     ),
     description = c(
@@ -84,9 +84,13 @@ register_dm_blocks <- function() {
       )
     ),
     category = c(
-      # A block that fetches data is "input", whatever shape it hands back:
-      # that is the shelf people look on for "how do I get my files in".
+      # A block that fetches data is "input", whatever shape it hands back,
+      # and one that writes it is "output": those are the shelves people
+      # look on for "how do I get my files in" and "how do I get them out".
+      # "structured" is where you look for things that reshape a dm you
+      # already have.
       "input",
+      "output",
       "structured",
       "structured",
       "structured",
@@ -98,8 +102,7 @@ register_dm_blocks <- function() {
       "structured",
       "structured",
       "structured",
-      "structured",
-      "structured",
+      "input",
       "structured"
     ),
     icon = c(
