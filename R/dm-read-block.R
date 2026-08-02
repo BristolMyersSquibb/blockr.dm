@@ -399,6 +399,19 @@ new_dm_read_block <- function(
               selected <- r_selected_tables()
               shiny::req(length(selected) > 0)
 
+              # Stamped here, read in `block_output()`: the read itself
+              # happens between the two, in blockr.core's evaluation, so this
+              # is the only pair of points the block can time it from. Total
+              # wall time is the number the user is actually asking about --
+              # per-file read times (below it) explain where it went, and the
+              # gap between the two says how much was NOT the read.
+              #
+              # Keyed on the block's namespace, not this one: the expression
+              # server lives one level down (blockr.core mounts it under
+              # "expr"), while `block_output()` runs at block level, and both
+              # ends have to name the same slot.
+              session$userData[[dm_read_t0_key(session$ns(""))]] <- Sys.time()
+
               dm_read_expr(resolved, type, selected)
             }),
             state = list(
@@ -433,6 +446,16 @@ new_dm_read_block <- function(
               flex: 1;
               min-width: 0;
             }
+            /* Read report: muted by default, coloured only when it carries
+               news (a conversion happened, or the cache is unreachable). */
+            .dm-read-status {
+              margin-top: 8px;
+              font-size: 0.75rem;
+            }
+            .dm-read-status--cached { color: #047857; }
+            .dm-read-status--converted { color: #b45309; }
+            .dm-read-status--error { color: #b91c1c; }
+
             .blockr-select-all-link a {
               margin-left: 6px;
               color: #9ca3af;
@@ -596,6 +619,18 @@ new_dm_read_block <- function(
     external_ctrl = c("path", "selected_tables"),
     ...
   )
+}
+
+
+#' Shared slot name for the read stopwatch
+#'
+#' Takes any namespace prefix inside the block and returns the block-level
+#' one, so the expression server (mounted under `expr`) and `block_output()`
+#' (block level) address the same `session$userData` entry.
+#'
+#' @noRd
+dm_read_t0_key <- function(ns_prefix) {
+  paste0("dm_read_t0_", sub("expr-$", "", ns_prefix))
 }
 
 
@@ -926,16 +961,51 @@ dm_read_expr_rdata <- function(path, selected = NULL) {
 #' @method block_output dm_read_block
 #' @export
 block_output.dm_read_block <- function(x, result, session) {
+
+  # Rendered from here rather than from the block server because this is the
+  # one place that runs AFTER the read: blockr.core calls `block_output()`
+  # with each new result, so the report lands with the data it describes.
+  session$output$read_status <- shiny::renderUI({
+
+    if (!inherits(result, "dm")) {
+      return(NULL)
+    }
+
+    t0 <- session$userData[[dm_read_t0_key(session$ns(""))]]
+    elapsed <- if (is.null(t0)) {
+      NULL
+    } else {
+      as.numeric(difftime(Sys.time(), t0, units = "secs"))
+    }
+
+    status <- dm_read_status(names(dm::dm_get_tables(result)), elapsed)
+
+    shiny::tags$p(
+      class = paste0("blockr-path-hint dm-read-status dm-read-status--",
+                     status$state),
+      status$text
+    )
+  })
+
   block_output.dm_block(x, result, session)
 }
 
 
 #' Custom UI for dm_read_block
+#'
+#' The read report belongs to the block, not to the expression UI: it is
+#' written by `block_output()`, which runs in the block's own namespace (the
+#' same one `dm_table_preview` lives in), and it describes the result rather
+#' than the controls.
+#'
 #' @inheritParams block_ui.dm_block
 #' @method block_ui dm_read_block
 #' @export
 block_ui.dm_read_block <- function(id, x, ...) {
-  block_ui.dm_block(id, x, ...)
+  shiny::tagList(
+    shiny::uiOutput(shiny::NS(id, "read_status")),
+    block_ui.dm_block(id, x, ...)
+  )
 }
 
 

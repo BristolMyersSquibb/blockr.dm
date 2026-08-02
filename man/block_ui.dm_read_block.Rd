@@ -14,5 +14,8 @@
 \item{...}{Additional arguments}
 }
 \description{
-Custom UI for dm_read_block
+The read report belongs to the block, not to the expression UI: it is
+written by \code{block_output()}, which runs in the block's own namespace (the
+same one \code{dm_table_preview} lives in), and it describes the result rather
+than the controls.
 }

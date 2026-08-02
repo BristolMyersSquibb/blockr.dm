@@ -227,6 +227,136 @@ test_that("dm_read_tables_expr stays generic R unless caching is active", {
   expect_identical(dm_read_tables_expr(cache = FALSE)[[1]], as.name("lapply"))
 })
 
+test_that("the block routes a directory of SAS files through the cache", {
+  skip_if_not_installed("haven")
+  skip_if_not_installed("arrow")
+
+  # The layer every other test in this file skips: the helpers were always
+  # right, but nothing checked that the BLOCK reaches them.
+  src_dir <- withr::local_tempdir()
+  cache_dir <- withr::local_tempdir()
+  write_sas_fixture(src_dir, "adsl.sas7bdat")
+  write_sas_fixture(src_dir, "adae.sas7bdat")
+
+  withr::local_options(blockr.dm_read_cache_dir = cache_dir)
+
+  read_once <- function() {
+    block <- new_dm_read_block(
+      path = src_dir, selected_tables = c("adsl", "adae")
+    )
+    out <- NULL
+    shiny::testServer(
+      blockr.core:::get_s3_method("block_server", block),
+      {
+        session$flushReact()
+        out <<- list(
+          expr = rlang::expr_text(session$returned$expr()),
+          result = session$returned$result(),
+          stats = blockr.dm:::dm_read_stats()
+        )
+      },
+      args = list(x = block, data = list())
+    )
+    out
+  }
+
+  cold <- read_once()
+
+  expect_match(cold$expr, "dm_read_tables", fixed = TRUE)
+  expect_match(cold$expr, cache_dir, fixed = TRUE)
+  expect_s3_class(cold$result, "dm")
+  expect_setequal(cold$stats$source, "converted")
+  expect_length(list.files(cache_dir, pattern = "\\.parquet$"), 2L)
+
+  warm <- read_once()
+
+  expect_setequal(warm$stats$source, "cache-dir")
+  expect_setequal(
+    names(dm::dm_get_tables(warm$result)), c("adsl", "adae")
+  )
+})
+
+test_that("cached and uncached reads return the same object", {
+  skip_if_not_installed("haven")
+  skip_if_not_installed("arrow")
+
+  # A cache is a speedup, never a change of type: when these two drifted, the
+  # same .sas7bdat came back a data.frame with caching off and a tbl_df with
+  # it on, so switching a cache on silently changed the data downstream.
+  src_dir <- withr::local_tempdir()
+  cache_dir <- withr::local_tempdir()
+  f <- write_sas_fixture(src_dir)
+
+  files <- f
+  plain <- eval(dm_read_tables_expr(cache = FALSE))[[1]]
+
+  cached_cold <- dm_read_tables(f, cache_dir = cache_dir)[[1]]
+  cached_warm <- dm_read_tables(f, cache_dir = cache_dir)[[1]]
+
+  expect_identical(class(plain), class(cached_cold))
+  expect_identical(class(plain), class(cached_warm))
+  expect_identical(plain, cached_cold)
+  expect_identical(
+    lapply(plain, attributes), lapply(cached_warm, attributes)
+  )
+})
+
+test_that("the read report says which route the data took", {
+  skip_if_not_installed("haven")
+  skip_if_not_installed("arrow")
+
+  src_dir <- withr::local_tempdir()
+  cache_dir <- withr::local_tempdir()
+  f <- write_sas_fixture(src_dir)
+
+  withr::local_options(blockr.dm_read_cache_dir = cache_dir)
+
+  dm_read_tables(f, cache_dir = cache_dir)
+  cold <- blockr.dm:::dm_read_status("adxx", elapsed = 12.5)
+  expect_identical(cold$state, "converted")
+  expect_match(cold$text, "1 tables in 12.5 s")
+  expect_match(cold$text, "converted from source")
+
+  dm_read_tables(f, cache_dir = cache_dir)
+  warm <- blockr.dm:::dm_read_status("adxx", elapsed = 0.4)
+  expect_identical(warm$state, "cached")
+  expect_match(warm$text, "from parquet cache")
+})
+
+test_that("the read report names the missing cache rather than staying quiet", {
+
+  # No backend configured: the read still works, which is exactly why nobody
+  # notices it is uncached until someone asks why the app takes a minute.
+  withr::local_options(
+    blockr.dm_read_cache_dir = NULL,
+    blockr.dm_read_cache_board = NULL
+  )
+  blockr.dm:::dm_read_stats_record(list())
+
+  status <- blockr.dm:::dm_read_status(c("adsl", "adae"), elapsed = 125)
+  expect_identical(status$state, "plain")
+  expect_match(status$text, "no parquet cache configured")
+  expect_match(status$text, "2.1 min")
+})
+
+test_that("an unreachable board is reported, not swallowed", {
+  skip_if_not_installed("haven")
+  skip_if_not_installed("arrow")
+  skip_if_not_installed("pins")
+
+  src_dir <- withr::local_tempdir()
+  f <- write_sas_fixture(src_dir)
+  broken <- structure(list(), class = c("pins_board_folder", "pins_board"))
+
+  res <- dm_read_tables(f, cache_dir = "", cache_board = broken)
+
+  expect_identical(res[[1]]$USUBJID, c("01-001", "01-002", "01-003"))
+
+  status <- blockr.dm:::dm_read_status("adxx")
+  expect_identical(status$state, "error")
+  expect_match(status$text, "cache unavailable")
+})
+
 test_that("dm_read_tables_expr emits a bare call for a board backend", {
   skip_if_not_installed("pins")
 
