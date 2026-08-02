@@ -73,7 +73,7 @@ dm_picker_push <- function(session, id, dm_obj, selected,
 #' @noRd
 dm_picker_mount <- function(session, id, options, selected,
                             mode = c("single", "multi"),
-                            placeholder = "Select tables…") {
+                            placeholder = "Select tables\u2026") {
 
   mode <- match.arg(mode)
 

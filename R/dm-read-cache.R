@@ -168,7 +168,7 @@ dm_read_status <- function(stems) {
     } else {
       "no parquet cache configured"
     }
-    return(list(text = paste(head_txt, detail, sep = " · "),
+    return(list(text = paste(head_txt, detail, sep = " \u00b7 "),
                 state = "plain"))
   }
 
@@ -210,7 +210,7 @@ dm_read_status <- function(stems) {
   }
 
   list(
-    text = paste(c(head_txt, parts), collapse = " · "),
+    text = paste(c(head_txt, parts), collapse = " \u00b7 "),
     state = if (!is.null(err) && nzchar(err)) {
       "error"
     } else if (any(conv)) {
