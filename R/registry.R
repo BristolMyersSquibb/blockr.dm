@@ -25,7 +25,7 @@ register_dm_blocks <- function() {
       "new_value_filter_block"
     ),
     name = c(
-      "Read dm",
+      "Import multiple tables",
       "Write dm",
       "Create dm",
       "CDISC dm",
@@ -42,7 +42,10 @@ register_dm_blocks <- function() {
       "Value filter"
     ),
     description = c(
-      "Read tables from Excel, ZIP, or directory into dm",
+      paste(
+        "Read a whole directory, ZIP archive or Excel workbook at once:",
+        "one table per file or sheet, linked as a dm"
+      ),
       "Write dm object to Excel, ZIP, or directory",
       "Combine data frames into a dm (data model) object",
       paste(
@@ -81,7 +84,9 @@ register_dm_blocks <- function() {
       )
     ),
     category = c(
-      "structured",
+      # A block that fetches data is "input", whatever shape it hands back:
+      # that is the shelf people look on for "how do I get my files in".
+      "input",
       "structured",
       "structured",
       "structured",
