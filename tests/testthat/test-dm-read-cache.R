@@ -271,7 +271,12 @@ test_that("the block routes a directory of SAS files through the cache", {
   cold <- read_once()
 
   expect_match(cold$expr, "dm_read_tables", fixed = TRUE)
-  expect_match(cold$expr, cache_dir, fixed = TRUE)
+  # expr_text() renders the call as R SOURCE, so a path's backslashes come back
+  # doubled and the raw value never appears in it. encodeString() is the same
+  # rendering, and a no-op on a separator that needs no escaping -- so this
+  # compares like with like on Windows without changing what it asserts
+  # anywhere else.
+  expect_match(cold$expr, encodeString(cache_dir), fixed = TRUE)
   expect_s3_class(cold$result, "dm")
   expect_setequal(cold$stats$source, "converted")
   expect_length(list.files(cache_dir, pattern = "\\.parquet$"), 2L)
