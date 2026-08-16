@@ -18,11 +18,12 @@
 #' @param args Named list of reader options applied uniformly to every member
 #'   of the container: each member's format entry picks the parameters it
 #'   understands, so `args = list(sep = ";")` reads every CSV in a folder as
-#'   semicolon-separated and leaves the other formats untouched. The gear
-#'   band on the block edits the common text options (delimiter, skip);
-#'   other keys are set at construction or through external control. When
-#'   `args` is non-empty a directory read bypasses the parquet cache, whose
-#'   readers take no options.
+#'   semicolon-separated and leaves the other formats untouched. Which
+#'   options a source offers is declared by its members' formats
+#'   ([blockr.io::source_options()]) and the block's gear band is generated
+#'   from that, so a source whose formats declare nothing shows no gear at
+#'   all. When `args` is non-empty a directory read bypasses the parquet
+#'   cache, whose readers take no options.
 #' @param ... Forwarded to [blockr.core::new_data_block()]
 #'
 #' @section External control:
@@ -116,65 +117,13 @@ new_dm_read_block <- function(
           # NULL / empty = no table chosen yet, which holds the read back.
           r_selected_tables <- shiny::reactiveVal(selected_tables)
 
-          # Uniform member options (see the ctor doc). The gear band edits
-          # the two common text options; any other key rides in unchanged,
-          # set at construction or by an external controller.
+          # Uniform member options (see the ctor doc), edited through the
+          # gear band. Which fields that band has is not this block's
+          # knowledge: the registry answers it per source, so a folder of
+          # CSVs offers the csv options, a folder of parquet offers none,
+          # and a format registered by another package offers whatever it
+          # declares -- all without this block changing.
           r_args <- shiny::reactiveVal(as.list(args))
-
-          # Gear band -> state. The widget-managed keys (sep, skip) are
-          # rebuilt from the inputs with defaults dropped, so a pristine
-          # block keeps args == list(); unmanaged keys pass through.
-          shiny::observeEvent(list(input$opt_sep, input$opt_skip), {
-            upd <- shiny::isolate(r_args())
-
-            sep <- input$opt_sep
-            upd$sep <- if (!is.null(sep) && nzchar(sep) && !identical(sep, ",")) {
-              sep
-            } else {
-              NULL
-            }
-
-            skip <- suppressWarnings(as.numeric(input$opt_skip))
-            upd$skip <- if (length(skip) == 1 && !is.na(skip) && skip > 0) {
-              skip
-            } else {
-              NULL
-            }
-
-            if (length(upd) == 0) {
-              # dropping the last key leaves a named empty list; a pristine
-              # state is the bare list() the ctor default is
-              upd <- list()
-            }
-
-            if (!identical(upd, shiny::isolate(r_args()))) {
-              self_write$args <- TRUE
-              r_args(upd)
-            }
-          }, ignoreInit = TRUE)
-
-          # State -> gear band, for an external write. (A panel that has
-          # never mounted misses these updates and falls back to the ctor
-          # values -- acceptable for gear fields, whose truth is the state;
-          # the read itself always follows r_args().)
-          shiny::observeEvent(r_args(), {
-            if (self_write$args) {
-              self_write$args <- FALSE
-              return()
-            }
-
-            a <- r_args()
-
-            sep <- a$sep %||% ","
-            if (!identical(input$opt_sep, sep)) {
-              shiny::updateSelectizeInput(session, "opt_sep", selected = sep)
-            }
-
-            skip <- a$skip %||% 0
-            if (!identical(as.numeric(input$opt_skip), as.numeric(skip))) {
-              shiny::updateNumericInput(session, "opt_skip", value = skip)
-            }
-          }, ignoreInit = TRUE, ignoreNULL = FALSE)
 
           # Set by the input observers just before they write the state they
           # own, so the observers that mirror that state back into the widgets
@@ -259,18 +208,74 @@ new_dm_read_block <- function(
             detect_dm_input_type(p)
           })
 
-          # No options, no gear: the band's fields (delimiter, skip) only
-          # reach delimited-text members, so a source without any -- an rds,
-          # a workbook, a folder of parquet -- shows no gear at all.
-          output$show_reader_options <- shiny::reactive({
+          # What this source lets a reader set, declared by the formats its
+          # members are in.
+          opt_specs <- shiny::reactive({
             p <- resolved_path()
-            length(p) > 0 &&
-              !nzchar(policy_error()) &&
-              dm_source_has_text_members(p)
+
+            if (!length(p) || nzchar(policy_error())) {
+              return(list())
+            }
+
+            blockr.io::source_options(p, "container")
+          })
+
+          # No options, no gear -- now the registry's answer rather than a
+          # list of extensions kept in this package.
+          output$show_reader_options <- shiny::reactive({
+            length(opt_specs()) > 0
           })
           shiny::outputOptions(
             output, "show_reader_options", suspendWhenHidden = FALSE
           )
+
+          # Fields, generated. Depends on the spec set only, values
+          # isolated: re-rendering per keystroke would fight the user for
+          # the cursor. A dock panel mounting late therefore renders fields
+          # that already carry the block's options.
+          output$format_options <- shiny::renderUI({
+            blockr.io::format_options_ui(
+              opt_specs(), session$ns, shiny::isolate(r_args())
+            )
+          })
+          shiny::outputOptions(
+            output, "format_options", suspendWhenHidden = FALSE
+          )
+
+          # Fields -> state. Values at their declared default drop out, so a
+          # block nobody has touched keeps `args == list()`.
+          shiny::observe({
+            specs <- opt_specs()
+            shiny::req(length(specs) > 0)
+
+            mounted <- any(
+              vapply(
+                names(specs), function(nm) !is.null(input[[nm]]), logical(1)
+              )
+            )
+
+            # Before the band renders, every field reads NULL -- which is
+            # not the user clearing them, and writing then would wipe the
+            # options a board was constructed or restored with.
+            shiny::req(mounted)
+
+            vals <- blockr.io::format_options_values(input, specs)
+
+            if (!identical(vals, shiny::isolate(r_args()))) {
+              self_write$args <- TRUE
+              r_args(vals)
+            }
+          })
+
+          # State -> fields, for an external write.
+          shiny::observeEvent(r_args(), {
+            if (self_write$args) {
+              self_write$args <- FALSE
+              return()
+            }
+
+            blockr.io::format_options_update(session, opt_specs(), r_args())
+          }, ignoreInit = TRUE, ignoreNULL = FALSE)
 
           # Path input module. `value` makes the module responsible for
           # keeping the field in step with the block's path, including when
@@ -590,54 +595,15 @@ new_dm_read_block <- function(
               condition = "output.show_reader_options",
               ns = ns,
               blockr.io::gear_band_ui(
-              gear_id = ns("gear_btn"),
-              band_id = ns("gear_band"),
-              band_label = "Reader options",
-              shiny::tags$p(
-                class = "blockr-path-hint blockr-settings__field--full",
-                "Applied to every file read from this source;",
-                "each format uses the options it understands."
-              ),
-              shiny::div(
-                class = "blockr-settings__grid",
-                shiny::div(
-                  class = "blockr-settings__field",
-                  shiny::tags$label(
-                    class = "blockr-label",
-                    `for` = ns("opt_sep"),
-                    "Delimiter"
-                  ),
-                  shiny::selectizeInput(
-                    inputId = ns("opt_sep"),
-                    label = NULL,
-                    choices = c(
-                      "Comma (,)" = ",",
-                      "Semicolon (;)" = ";",
-                      "Tab (\\t)" = "\t",
-                      "Pipe (|)" = "|"
-                    ),
-                    selected = if (!is.null(args$sep)) args$sep else ",",
-                    options = list(create = TRUE),
-                    width = "100%"
-                  )
+                gear_id = ns("gear_btn"),
+                band_id = ns("gear_band"),
+                band_label = "Reader options",
+                shiny::tags$p(
+                  class = "blockr-path-hint blockr-settings__field--full",
+                  "Applied to every file read from this source;",
+                  "each format uses the options it understands."
                 ),
-                shiny::div(
-                  class = "blockr-settings__field",
-                  shiny::tags$label(
-                    class = "blockr-label",
-                    `for` = ns("opt_skip"),
-                    "Skip rows"
-                  ),
-                  shiny::numericInput(
-                    inputId = ns("opt_skip"),
-                    label = NULL,
-                    value = if (!is.null(args$skip)) args$skip else 0,
-                    min = 0,
-                    step = 1,
-                    width = "100%"
-                  )
-                )
-              )
+                shiny::uiOutput(ns("format_options"))
               )
             ),
             shiny::tags$h4("File Location", class = "mb-3"),
@@ -831,37 +797,6 @@ detect_dm_input_type <- function(path) {
 #' @noRd
 dm_read_cache_active <- function() {
   nzchar(dm_read_cache_dir()) || !is.null(dm_read_cache_board())
-}
-
-
-#' Does the source hold delimited-text members?
-#'
-#' Gates the gear band: its fields (delimiter, skip) only reach members that
-#' parse as delimited text, so a source without any has no options and shows
-#' no gear. Which formats an option reaches is really the registry's
-#' business -- an entry-declared options spec is the open item in the
-#' file-format-registry design -- so until entries declare, the delimited
-#' set is named here, matching blockr.io's csv entry.
-#'
-#' @noRd
-dm_source_has_text_members <- function(path) {
-  pattern <- "\\.(csv|tsv|txt|dat|tab)$"
-
-  if (dir.exists(path)) {
-    return(
-      length(list.files(path, pattern = pattern, ignore.case = TRUE)) > 0
-    )
-  }
-
-  if (tolower(tools::file_ext(path)) == "zip" && file.exists(path)) {
-    members <- tryCatch(
-      utils::unzip(path, list = TRUE)$Name,
-      error = function(e) character()
-    )
-    return(any(grepl(pattern, members, ignore.case = TRUE)))
-  }
-
-  FALSE
 }
 
 

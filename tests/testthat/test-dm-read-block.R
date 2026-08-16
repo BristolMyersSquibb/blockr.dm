@@ -469,7 +469,7 @@ test_that("the gear band writes args, and args mirror back", {
 
       # widget -> state: picking the semicolon delimiter lands in args
       # (default keys dropped, so only the deviation is recorded)
-      session$setInputs(`expr-opt_sep` = ";", `expr-opt_skip` = 0)
+      session$setInputs(`expr-sep` = ";", `expr-skip` = "")
       session$flushReact()
       expect_identical(session$returned$state$args(), list(sep = ";"))
       expect_match(
@@ -477,7 +477,7 @@ test_that("the gear band writes args, and args mirror back", {
       )
 
       # back to the default empties the args again
-      session$setInputs(`expr-opt_sep` = ",")
+      session$setInputs(`expr-sep` = ",")
       session$flushReact()
       expect_identical(session$returned$state$args(), list())
 
@@ -492,23 +492,25 @@ test_that("the gear band writes args, and args mirror back", {
   )
 })
 
-test_that("the gear only shows for sources with delimited-text members", {
+test_that("the gear follows what the source's formats declare", {
+  # the block asks the registry rather than keeping its own list of which
+  # extensions have options
   dir <- withr::local_tempdir()
   writeLines(c("x;y", "1;a"), file.path(dir, "adsl.csv"))
-  expect_true(dm_source_has_text_members(dir))
+  expect_gt(length(blockr.io::source_options(dir, "container")), 0)
 
-  # a folder without text members has no options to offer
+  # a folder whose formats declare nothing offers nothing
   pq_dir <- withr::local_tempdir()
-  saveRDS(data.frame(x = 1), file.path(pq_dir, "not_text.rds"))
-  expect_false(dm_source_has_text_members(pq_dir))
+  file.create(file.path(pq_dir, "t.parquet"))
+  expect_length(blockr.io::source_options(pq_dir, "container"), 0)
 
-  # an rds or a workbook is not a text source
+  # nor does an rds list, or a workbook read sheet-wise
   rds <- withr::local_tempfile(fileext = ".rds")
   saveRDS(list(a = data.frame(x = 1)), rds)
-  expect_false(dm_source_has_text_members(rds))
+  expect_length(blockr.io::source_options(rds, "container"), 0)
 
-  # a zip is judged by its central directory
+  # a zip is judged by its members, without extracting
   archive <- file.path(dir, "a.zip")
   zip::zip(archive, "adsl.csv", root = dir, mode = "cherry-pick")
-  expect_true(dm_source_has_text_members(archive))
+  expect_gt(length(blockr.io::source_options(archive, "container")), 0)
 })

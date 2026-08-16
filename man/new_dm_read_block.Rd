@@ -29,11 +29,12 @@ a table is asked for.}
 \item{args}{Named list of reader options applied uniformly to every member
 of the container: each member's format entry picks the parameters it
 understands, so \code{args = list(sep = ";")} reads every CSV in a folder as
-semicolon-separated and leaves the other formats untouched. The gear
-band on the block edits the common text options (delimiter, skip);
-other keys are set at construction or through external control. When
-\code{args} is non-empty a directory read bypasses the parquet cache, whose
-readers take no options.}
+semicolon-separated and leaves the other formats untouched. Which
+options a source offers is declared by its members' formats
+(\code{\link[blockr.io:source_options]{blockr.io::source_options()}}) and the block's gear band is generated
+from that, so a source whose formats declare nothing shows no gear at
+all. When \code{args} is non-empty a directory read bypasses the parquet
+cache, whose readers take no options.}
 
 \item{...}{Forwarded to \code{\link[blockr.core:new_data_block]{blockr.core::new_data_block()}}}
 }
