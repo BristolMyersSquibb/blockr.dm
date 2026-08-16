@@ -491,3 +491,24 @@ test_that("the gear band writes args, and args mirror back", {
     args = list(x = block, data = list())
   )
 })
+
+test_that("the gear only shows for sources with delimited-text members", {
+  dir <- withr::local_tempdir()
+  writeLines(c("x;y", "1;a"), file.path(dir, "adsl.csv"))
+  expect_true(dm_source_has_text_members(dir))
+
+  # a folder without text members has no options to offer
+  pq_dir <- withr::local_tempdir()
+  saveRDS(data.frame(x = 1), file.path(pq_dir, "not_text.rds"))
+  expect_false(dm_source_has_text_members(pq_dir))
+
+  # an rds or a workbook is not a text source
+  rds <- withr::local_tempfile(fileext = ".rds")
+  saveRDS(list(a = data.frame(x = 1)), rds)
+  expect_false(dm_source_has_text_members(rds))
+
+  # a zip is judged by its central directory
+  archive <- file.path(dir, "a.zip")
+  zip::zip(archive, "adsl.csv", root = dir, mode = "cherry-pick")
+  expect_true(dm_source_has_text_members(archive))
+})

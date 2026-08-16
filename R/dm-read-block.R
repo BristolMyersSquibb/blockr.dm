@@ -259,6 +259,19 @@ new_dm_read_block <- function(
             detect_dm_input_type(p)
           })
 
+          # No options, no gear: the band's fields (delimiter, skip) only
+          # reach delimited-text members, so a source without any -- an rds,
+          # a workbook, a folder of parquet -- shows no gear at all.
+          output$show_reader_options <- shiny::reactive({
+            p <- resolved_path()
+            length(p) > 0 &&
+              !nzchar(policy_error()) &&
+              dm_source_has_text_members(p)
+          })
+          shiny::outputOptions(
+            output, "show_reader_options", suspendWhenHidden = FALSE
+          )
+
           # Path input module. `value` makes the module responsible for
           # keeping the field in step with the block's path, including when
           # this block's dock panel mounts long after the first push -- the
@@ -573,7 +586,10 @@ new_dm_read_block <- function(
           # File Location section
           shiny::div(
             class = "block-section",
-            blockr.io::gear_band_ui(
+            shiny::conditionalPanel(
+              condition = "output.show_reader_options",
+              ns = ns,
+              blockr.io::gear_band_ui(
               gear_id = ns("gear_btn"),
               band_id = ns("gear_band"),
               band_label = "Reader options",
@@ -621,6 +637,7 @@ new_dm_read_block <- function(
                     width = "100%"
                   )
                 )
+              )
               )
             ),
             shiny::tags$h4("File Location", class = "mb-3"),
@@ -814,6 +831,37 @@ detect_dm_input_type <- function(path) {
 #' @noRd
 dm_read_cache_active <- function() {
   nzchar(dm_read_cache_dir()) || !is.null(dm_read_cache_board())
+}
+
+
+#' Does the source hold delimited-text members?
+#'
+#' Gates the gear band: its fields (delimiter, skip) only reach members that
+#' parse as delimited text, so a source without any has no options and shows
+#' no gear. Which formats an option reaches is really the registry's
+#' business -- an entry-declared options spec is the open item in the
+#' file-format-registry design -- so until entries declare, the delimited
+#' set is named here, matching blockr.io's csv entry.
+#'
+#' @noRd
+dm_source_has_text_members <- function(path) {
+  pattern <- "\\.(csv|tsv|txt|dat|tab)$"
+
+  if (dir.exists(path)) {
+    return(
+      length(list.files(path, pattern = pattern, ignore.case = TRUE)) > 0
+    )
+  }
+
+  if (tolower(tools::file_ext(path)) == "zip" && file.exists(path)) {
+    members <- tryCatch(
+      utils::unzip(path, list = TRUE)$Name,
+      error = function(e) character()
+    )
+    return(any(grepl(pattern, members, ignore.case = TRUE)))
+  }
+
+  FALSE
 }
 
 
