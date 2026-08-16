@@ -127,8 +127,14 @@ register_dm_blocks <- function() {
       paste(
         "Reads tabular data from disk into a dm (data model) object. Use as",
         "the entry point when working with multi-table datasets from Excel /",
-        "ZIP / directories. The output is a dm that downstream dm_* blocks",
-        "can filter, select, join, and flatten."
+        "ZIP / directories. Which file formats a directory or ZIP may hold",
+        "comes from blockr.io's format registry, so formats registered by",
+        "other loaded packages work here too, and one folder may mix",
+        "formats. `args` is a named list of reader options applied uniformly",
+        "to every member (each format takes what it understands), e.g.",
+        "`args = list(sep = \";\")` for a folder of semicolon CSVs. The",
+        "output is a dm that downstream dm_* blocks can filter, select,",
+        "join, and flatten."
       ),
       # new_dm_write_block:
       paste(

@@ -65,8 +65,10 @@ test_that("dm read block reaches idle and reads without a confirm step", {
 
   # The read report is on screen, and with no backend configured it says so
   # rather than leaving the question open -- that silence is what made people
-  # unsure whether a deployment was using its parquet cache at all.
+  # unsure whether a deployment was using its parquet cache at all. Timing
+  # only appears on the cached path: without a backend the emitted read is
+  # plain reader-package code that never routes through dm_read_tables().
   report <- app$get_text(".dm-read-status")
-  expect_match(report, "2 tables in")
+  expect_match(report, "2 tables")
   expect_match(report, "no parquet cache configured")
 })

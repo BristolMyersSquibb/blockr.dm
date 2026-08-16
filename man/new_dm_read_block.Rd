@@ -4,7 +4,12 @@
 \alias{new_dm_read_block}
 \title{Read multiple files into a dm object}
 \usage{
-new_dm_read_block(path = character(), selected_tables = NULL, ...)
+new_dm_read_block(
+  path = character(),
+  selected_tables = NULL,
+  args = list(),
+  ...
+)
 }
 \arguments{
 \item{path}{Character. Path to file or directory. Can be:
@@ -20,6 +25,16 @@ new_dm_read_block(path = character(), selected_tables = NULL, ...)
 (the default) means nothing has been chosen yet and the block waits:
 pointing it at a directory of study data must not read all of it before
 a table is asked for.}
+
+\item{args}{Named list of reader options applied uniformly to every member
+of the container: each member's format entry picks the parameters it
+understands, so \code{args = list(sep = ";")} reads every CSV in a folder as
+semicolon-separated and leaves the other formats untouched. Which
+options a source offers is declared by its members' formats
+(\code{\link[blockr.io:source_options]{blockr.io::source_options()}}) and the block's gear band is generated
+from that, so a source whose formats declare nothing shows no gear at
+all. When \code{args} is non-empty a directory read bypasses the parquet
+cache, whose readers take no options.}
 
 \item{...}{Forwarded to \code{\link[blockr.core:new_data_block]{blockr.core::new_data_block()}}}
 }
@@ -70,7 +85,7 @@ serialization formats (RDS, QS, RData).
 }
 \section{External control}{
 
-\code{path} and \code{selected_tables} are externally controllable (see
+\code{path}, \code{selected_tables} and \code{args} are externally controllable (see
 \code{\link[blockr.core:block_name]{blockr.core::external_ctrl_vars()}}), so a board update, the assistant or
 any other controller can point the block at a different dataset with a
 \code{mod} delta instead of replacing the block. This works because the block's

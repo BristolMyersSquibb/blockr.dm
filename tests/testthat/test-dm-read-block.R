@@ -12,11 +12,11 @@ make_study_dir <- function(tables) {
   dir
 }
 
-test_that("path and selected_tables are externally controllable", {
+test_that("path, selected_tables and args are externally controllable", {
 
   expect_setequal(
     blockr.core::external_ctrl_vars(new_dm_read_block()),
-    c("path", "selected_tables", "block_name")
+    c("path", "selected_tables", "args", "block_name")
   )
 })
 
@@ -355,4 +355,162 @@ test_that("an unreadable path becomes a stop() inside the expression", {
     },
     args = list(x = block, data = list())
   )
+})
+
+test_that("the emitted read is layered: registry list, dm wrap", {
+  dir <- withr::local_tempdir()
+  write.csv(data.frame(x = 1:3), file.path(dir, "adsl.csv"), row.names = FALSE)
+  write.csv(data.frame(y = 4:6), file.path(dir, "adae.csv"), row.names = FALSE)
+
+  # No cache configured: explicit member reads from blockr.io's registry,
+  # wrapped in new_dm() by this block. No blockr call in the emitted code.
+  expr <- dm_read_expr(dir, selected = c("adsl", "adae"))
+  txt <- rlang::expr_text(expr)
+  expect_match(txt, "^dm::new_dm\\(list\\(")
+  expect_match(txt, "adsl = readr::read_csv")
+  expect_no_match(txt, "blockr")
+
+  result <- eval(expr)
+  expect_s3_class(result, "dm")
+  expect_setequal(names(result), c("adsl", "adae"))
+
+  # With a parquet cache configured the directory read keeps routing through
+  # dm_read_tables(), the cache seam -- members still discovered at build
+  # time, as literals.
+  cache <- withr::local_tempdir()
+  withr::local_options(blockr.dm_read_cache_dir = cache)
+
+  cached <- dm_read_expr(dir, selected = "adsl")
+  cached_txt <- rlang::expr_text(cached)
+  expect_match(cached_txt, "blockr.dm::dm_read_tables")
+  expect_no_match(cached_txt, "list.files")
+  expect_s3_class(eval(cached), "dm")
+})
+
+test_that("an rds holding a dm stays a native read, lists go to the registry", {
+  dm_path <- withr::local_tempfile(fileext = ".rds")
+  saveRDS(dm::dm(adsl = data.frame(x = 1)), dm_path)
+
+  expr <- dm_read_expr(dm_path, selected = "adsl")
+  expect_match(rlang::expr_text(expr), "dm::dm_select_tbl\\(readRDS")
+
+  list_path <- withr::local_tempfile(fileext = ".rds")
+  saveRDS(list(adsl = data.frame(x = 1), adae = data.frame(y = 2)), list_path)
+
+  expr <- dm_read_expr(list_path, selected = "adae")
+  expect_match(rlang::expr_text(expr), "^dm::new_dm\\(readRDS")
+  expect_setequal(names(eval(expr)), "adae")
+
+  # discovery agrees: native rds-dm labels, registry labels for the list
+  expect_identical(dm_discover_tables(dm_path)$name, "adsl")
+  expect_identical(dm_discover_tables(list_path)$name, c("adsl", "adae"))
+})
+
+test_that("uniform member options reach every member: semicolon CSVs", {
+  dir <- withr::local_tempdir()
+  writeLines(c("x;y", "1;a", "2;b"), file.path(dir, "adsl.csv"))
+  writeLines(c("z;w", "9;c"), file.path(dir, "adae.csv"))
+
+  expr <- dm_read_expr(dir, args = list(sep = ";"))
+  expect_match(rlang::expr_text(expr), 'delim = ";"')
+
+  result <- eval(expr)
+  expect_s3_class(result, "dm")
+  expect_identical(names(dm::dm_get_tables(result)$adsl), c("x", "y"))
+
+  # options and the cache do not combine: with args set, a configured cache
+  # backend is bypassed in favor of the registry expression
+  withr::local_options(blockr.dm_read_cache_dir = withr::local_tempdir())
+  with_args <- dm_read_expr(dir, args = list(sep = ";"))
+  expect_no_match(rlang::expr_text(with_args), "dm_read_tables")
+  without <- dm_read_expr(dir)
+  expect_match(rlang::expr_text(without), "dm_read_tables")
+})
+
+test_that("args is externally controllable state", {
+  dir <- withr::local_tempdir()
+  writeLines(c("x;y", "1;a"), file.path(dir, "adsl.csv"))
+
+  block <- new_dm_read_block(path = dir, selected_tables = "adsl")
+  expect_contains(blockr.core::external_ctrl_vars(block), "args")
+
+  shiny::testServer(
+    blockr.core:::get_s3_method("block_server", block),
+    {
+      session$flushReact()
+      expect_no_match(
+        rlang::expr_text(session$returned$expr()), 'delim = ";"'
+      )
+
+      session$returned$state$args(list(sep = ";"))
+      session$flushReact()
+
+      expect_match(
+        rlang::expr_text(session$returned$expr()), 'delim = ";"'
+      )
+      expect_identical(
+        names(session$returned$result()$adsl), c("x", "y")
+      )
+    },
+    args = list(x = block, data = list())
+  )
+})
+
+test_that("the gear band writes args, and args mirror back", {
+  dir <- withr::local_tempdir()
+  writeLines(c("x;y", "1;a"), file.path(dir, "adsl.csv"))
+
+  block <- new_dm_read_block(path = dir, selected_tables = "adsl")
+
+  shiny::testServer(
+    blockr.core:::get_s3_method("block_server", block),
+    {
+      session$flushReact()
+
+      # widget -> state: picking the semicolon delimiter lands in args
+      # (default keys dropped, so only the deviation is recorded)
+      session$setInputs(`expr-sep` = ";", `expr-skip` = "")
+      session$flushReact()
+      expect_identical(session$returned$state$args(), list(sep = ";"))
+      expect_match(
+        rlang::expr_text(session$returned$expr()), 'delim = ";"'
+      )
+
+      # back to the default empties the args again
+      session$setInputs(`expr-sep` = ",")
+      session$flushReact()
+      expect_identical(session$returned$state$args(), list())
+
+      # an external write is not echoed back into a self-write loop
+      session$returned$state$args(list(sep = ";", skip = 2))
+      session$flushReact()
+      expect_identical(
+        session$returned$state$args(), list(sep = ";", skip = 2)
+      )
+    },
+    args = list(x = block, data = list())
+  )
+})
+
+test_that("the gear follows what the source's formats declare", {
+  # the block asks the registry rather than keeping its own list of which
+  # extensions have options
+  dir <- withr::local_tempdir()
+  writeLines(c("x;y", "1;a"), file.path(dir, "adsl.csv"))
+  expect_gt(length(blockr.io::source_options(dir, "container")), 0)
+
+  # a folder whose formats declare nothing offers nothing
+  pq_dir <- withr::local_tempdir()
+  file.create(file.path(pq_dir, "t.parquet"))
+  expect_length(blockr.io::source_options(pq_dir, "container"), 0)
+
+  # nor does an rds list, or a workbook read sheet-wise
+  rds <- withr::local_tempfile(fileext = ".rds")
+  saveRDS(list(a = data.frame(x = 1)), rds)
+  expect_length(blockr.io::source_options(rds, "container"), 0)
+
+  # a zip is judged by its members, without extracting
+  archive <- file.path(dir, "a.zip")
+  zip::zip(archive, "adsl.csv", root = dir, mode = "cherry-pick")
+  expect_gt(length(blockr.io::source_options(archive, "container")), 0)
 })
