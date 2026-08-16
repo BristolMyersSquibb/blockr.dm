@@ -18,10 +18,11 @@
 #' @param args Named list of reader options applied uniformly to every member
 #'   of the container: each member's format entry picks the parameters it
 #'   understands, so `args = list(sep = ";")` reads every CSV in a folder as
-#'   semicolon-separated and leaves the other formats untouched. No widget;
-#'   set at construction or through external control. When `args` is
-#'   non-empty a directory read bypasses the parquet cache, whose readers
-#'   take no options.
+#'   semicolon-separated and leaves the other formats untouched. The gear
+#'   band on the block edits the common text options (delimiter, skip);
+#'   other keys are set at construction or through external control. When
+#'   `args` is non-empty a directory read bypasses the parquet cache, whose
+#'   readers take no options.
 #' @param ... Forwarded to [blockr.core::new_data_block()]
 #'
 #' @section External control:
@@ -115,10 +116,65 @@ new_dm_read_block <- function(
           # NULL / empty = no table chosen yet, which holds the read back.
           r_selected_tables <- shiny::reactiveVal(selected_tables)
 
-          # Uniform member options (see the ctor doc). State without a
-          # widget: written at construction or by an external controller,
-          # so there is no input observer and nothing to mirror back.
+          # Uniform member options (see the ctor doc). The gear band edits
+          # the two common text options; any other key rides in unchanged,
+          # set at construction or by an external controller.
           r_args <- shiny::reactiveVal(as.list(args))
+
+          # Gear band -> state. The widget-managed keys (sep, skip) are
+          # rebuilt from the inputs with defaults dropped, so a pristine
+          # block keeps args == list(); unmanaged keys pass through.
+          shiny::observeEvent(list(input$opt_sep, input$opt_skip), {
+            upd <- shiny::isolate(r_args())
+
+            sep <- input$opt_sep
+            upd$sep <- if (!is.null(sep) && nzchar(sep) && !identical(sep, ",")) {
+              sep
+            } else {
+              NULL
+            }
+
+            skip <- suppressWarnings(as.numeric(input$opt_skip))
+            upd$skip <- if (length(skip) == 1 && !is.na(skip) && skip > 0) {
+              skip
+            } else {
+              NULL
+            }
+
+            if (length(upd) == 0) {
+              # dropping the last key leaves a named empty list; a pristine
+              # state is the bare list() the ctor default is
+              upd <- list()
+            }
+
+            if (!identical(upd, shiny::isolate(r_args()))) {
+              self_write$args <- TRUE
+              r_args(upd)
+            }
+          }, ignoreInit = TRUE)
+
+          # State -> gear band, for an external write. (A panel that has
+          # never mounted misses these updates and falls back to the ctor
+          # values -- acceptable for gear fields, whose truth is the state;
+          # the read itself always follows r_args().)
+          shiny::observeEvent(r_args(), {
+            if (self_write$args) {
+              self_write$args <- FALSE
+              return()
+            }
+
+            a <- r_args()
+
+            sep <- a$sep %||% ","
+            if (!identical(input$opt_sep, sep)) {
+              shiny::updateSelectizeInput(session, "opt_sep", selected = sep)
+            }
+
+            skip <- a$skip %||% 0
+            if (!identical(as.numeric(input$opt_skip), as.numeric(skip))) {
+              shiny::updateNumericInput(session, "opt_skip", value = skip)
+            }
+          }, ignoreInit = TRUE, ignoreNULL = FALSE)
 
           # Set by the input observers just before they write the state they
           # own, so the observers that mirror that state back into the widgets
@@ -126,6 +182,7 @@ new_dm_read_block <- function(
           # the echo. Same guard blockr.dplyr's `js_block_state()` uses.
           self_write <- new.env(parent = emptyenv())
           self_write$tables <- FALSE
+          self_write$args <- FALSE
 
           set_selected <- function(val) {
             if (!length(val)) {
@@ -516,6 +573,56 @@ new_dm_read_block <- function(
           # File Location section
           shiny::div(
             class = "block-section",
+            blockr.io::gear_band_ui(
+              gear_id = ns("gear_btn"),
+              band_id = ns("gear_band"),
+              band_label = "Reader options",
+              shiny::tags$p(
+                class = "blockr-path-hint blockr-settings__field--full",
+                "Applied to every file read from this source;",
+                "each format uses the options it understands."
+              ),
+              shiny::div(
+                class = "blockr-settings__grid",
+                shiny::div(
+                  class = "blockr-settings__field",
+                  shiny::tags$label(
+                    class = "blockr-label",
+                    `for` = ns("opt_sep"),
+                    "Delimiter"
+                  ),
+                  shiny::selectizeInput(
+                    inputId = ns("opt_sep"),
+                    label = NULL,
+                    choices = c(
+                      "Comma (,)" = ",",
+                      "Semicolon (;)" = ";",
+                      "Tab (\\t)" = "\t",
+                      "Pipe (|)" = "|"
+                    ),
+                    selected = if (!is.null(args$sep)) args$sep else ",",
+                    options = list(create = TRUE),
+                    width = "100%"
+                  )
+                ),
+                shiny::div(
+                  class = "blockr-settings__field",
+                  shiny::tags$label(
+                    class = "blockr-label",
+                    `for` = ns("opt_skip"),
+                    "Skip rows"
+                  ),
+                  shiny::numericInput(
+                    inputId = ns("opt_skip"),
+                    label = NULL,
+                    value = if (!is.null(args$skip)) args$skip else 0,
+                    min = 0,
+                    step = 1,
+                    width = "100%"
+                  )
+                )
+              )
+            ),
             shiny::tags$h4("File Location", class = "mb-3"),
             shiny::tags$p(
               class = "blockr-path-hint",

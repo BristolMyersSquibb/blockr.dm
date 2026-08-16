@@ -455,3 +455,39 @@ test_that("args is externally controllable state", {
     args = list(x = block, data = list())
   )
 })
+
+test_that("the gear band writes args, and args mirror back", {
+  dir <- withr::local_tempdir()
+  writeLines(c("x;y", "1;a"), file.path(dir, "adsl.csv"))
+
+  block <- new_dm_read_block(path = dir, selected_tables = "adsl")
+
+  shiny::testServer(
+    blockr.core:::get_s3_method("block_server", block),
+    {
+      session$flushReact()
+
+      # widget -> state: picking the semicolon delimiter lands in args
+      # (default keys dropped, so only the deviation is recorded)
+      session$setInputs(`expr-opt_sep` = ";", `expr-opt_skip` = 0)
+      session$flushReact()
+      expect_identical(session$returned$state$args(), list(sep = ";"))
+      expect_match(
+        rlang::expr_text(session$returned$expr()), 'delim = ";"'
+      )
+
+      # back to the default empties the args again
+      session$setInputs(`expr-opt_sep` = ",")
+      session$flushReact()
+      expect_identical(session$returned$state$args(), list())
+
+      # an external write is not echoed back into a self-write loop
+      session$returned$state$args(list(sep = ";", skip = 2))
+      session$flushReact()
+      expect_identical(
+        session$returned$state$args(), list(sep = ";", skip = 2)
+      )
+    },
+    args = list(x = block, data = list())
+  )
+})
