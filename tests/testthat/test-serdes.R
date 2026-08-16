@@ -204,3 +204,19 @@ test_that("ser/deser crossfilter_block", {
   restored <- ser_deser(blk)
   expect_s3_class(restored, class(blk))
 })
+
+test_that("ser/deser dm_read_block keeps args", {
+  blk <- new_dm_read_block(
+    path = "/tmp/semi",
+    selected_tables = c("sites", "visits_eu"),
+    args = list(sep = ";", skip = 2)
+  )
+  restored <- ser_deser(blk)
+  state <- blockr.core:::initial_block_state(restored)
+  expect_equal(state$args, list(sep = ";", skip = 2))
+  expect_equal(state$selected_tables, c("sites", "visits_eu"))
+
+  # a pristine block stays pristine through the round trip
+  state0 <- blockr.core:::initial_block_state(ser_deser(new_dm_read_block()))
+  expect_equal(state0$args, list())
+})
