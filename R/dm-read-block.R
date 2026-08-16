@@ -266,7 +266,7 @@ new_dm_read_block <- function(
               return(empty_table_info())
             }
 
-            discover_dm_tables(resolved, input_type())
+            dm_discover_tables(resolved)
           })
 
           # Whether the tables section has anything to show. The picker is
@@ -285,7 +285,7 @@ new_dm_read_block <- function(
             lapply(seq_len(nrow(tbl_info)), function(i) {
               list(
                 value = tbl_info$name[[i]],
-                label = trimws(paste(tbl_info$ext[[i]], tbl_info$size[[i]]))
+                label = tbl_info$label[[i]]
               )
             })
           })
@@ -453,7 +453,7 @@ new_dm_read_block <- function(
               selected <- r_selected_tables()
               shiny::req(length(selected) > 0)
 
-              dm_read_expr(resolved, type, selected)
+              dm_read_expr(resolved, selected)
             }),
             state = list(
               path = r_path,
@@ -514,7 +514,13 @@ new_dm_read_block <- function(
                 inputId = ns("file_upload"),
                 label = NULL,
                 multiple = FALSE,
-                accept = c(".xlsx", ".xls", ".zip", ".rds", ".rdata", ".rda")
+                # Whatever the registry can open, minus the one container
+                # that cannot arrive by upload (a zip is how a directory
+                # arrives from a browser).
+                accept = paste0(
+                  ".",
+                  setdiff(blockr.io::container_kinds(), "directory")
+                )
               )
             ),
             blockr.io::path_input_ui(
@@ -566,127 +572,99 @@ new_dm_read_block <- function(
 }
 
 
-#' The "no tables here" answer from [discover_dm_tables()]
+#' The "no tables here" answer from [dm_discover_tables()]
 #'
 #' @return A zero-row data frame with the columns table discovery returns.
 #' @noRd
 empty_table_info <- function() {
   data.frame(
-    name = character(), ext = character(), size = character(),
+    name = character(), label = character(),
     stringsAsFactors = FALSE
   )
 }
 
 
-#' Format byte sizes for display
-#' @param bytes Numeric byte count
-#' @return Formatted string (e.g. "1.2 KB")
+#' The rds cases that are dm's own, not the registry's
+#'
+#' An `.rds` holding an actual dm is dm reading its own serialization, and
+#' one holding a single data frame is wrapped the way this block always
+#' wrapped it. Both are handled natively; an `.rds` holding a named list of
+#' data frames falls through to blockr.io's container entry. Returns `NULL`
+#' when the path is not one of the two.
+#'
 #' @noRd
-format_bytes <- function(bytes) {
-  if (is.na(bytes) || bytes < 0) return("")
-  if (bytes < 1024) return(paste0(bytes, " B"))
-  if (bytes < 1024 * 1024) return(paste0(round(bytes / 1024, 1), " KB"))
-  paste0(round(bytes / (1024 * 1024), 1), " MB")
+dm_rds_special <- function(path) {
+  if (dir.exists(path) || tolower(tools::file_ext(path)) != "rds") {
+    return(NULL)
+  }
+
+  obj <- tryCatch(readRDS(path), error = function(e) NULL)
+
+  if (inherits(obj, "dm")) {
+    nms <- names(obj)
+    list(
+      kind = "dm",
+      info = data.frame(
+        name = nms,
+        label = vapply(
+          nms,
+          function(n) paste0(nrow(obj[[n]]), " rows"),
+          character(1)
+        ),
+        stringsAsFactors = FALSE
+      )
+    )
+  } else if (is.data.frame(obj)) {
+    list(
+      kind = "data.frame",
+      info = data.frame(
+        name = "data",
+        label = paste0(nrow(obj), " rows"),
+        stringsAsFactors = FALSE
+      )
+    )
+  } else {
+    NULL
+  }
 }
 
 
 #' Discover table names without reading data
 #'
-#' Uses cheap operations (sheet listing, file listing) to discover available
-#' table names from a dm source path. Avoids full data reads for
-#' format types where discovery is possible (Excel, ZIP, directory).
+#' The two native rds cases aside, discovery is blockr.io's: the registry's
+#' container entries know their own tables (and their display labels), so a
+#' container registered by a third package works here without this package
+#' changing.
 #'
 #' @param path Path to file or directory
-#' @param input_type Character: "excel", "zip", "directory",
-#'   "serialized", "rdata"
-#' @return A data.frame with columns `name`, `ext`, and `size`
+#' @return A data.frame with columns `name` and `label`
 #' @noRd
-discover_dm_tables <- function(path, input_type) {
-  empty <- empty_table_info()
-  tryCatch({
-    switch(input_type,
-      excel = {
-        sheets <- readxl::excel_sheets(path)
-        nms <- make.names(sheets, unique = TRUE)
-        data.frame(name = nms, ext = rep("Sheet", length(nms)),
-                   size = rep("", length(nms)), stringsAsFactors = FALSE)
-      },
-      zip = {
-        zip_info <- utils::unzip(path, list = TRUE)
-        exts <- blockr.io::file_extensions()
-        pattern <- paste0(
-          "\\.(", paste(exts, collapse = "|"), ")$"
-        )
-        keep <- grepl(pattern, zip_info$Name, ignore.case = TRUE)
-        data_info <- zip_info[keep, , drop = FALSE]
-        nms <- make.names(
-          tools::file_path_sans_ext(basename(data_info$Name)),
-          unique = TRUE
-        )
-        file_exts <- toupper(tools::file_ext(data_info$Name))
-        sizes <- vapply(data_info$Length, format_bytes, character(1))
-        data.frame(name = nms, ext = file_exts, size = sizes,
-                   stringsAsFactors = FALSE)
-      },
-      directory = {
-        files <- list_data_files(path)
-        nms <- make.names(
-          tools::file_path_sans_ext(basename(files)),
-          unique = TRUE
-        )
-        file_exts <- toupper(tools::file_ext(files))
-        sizes <- vapply(file.size(files), format_bytes, character(1))
-        data.frame(name = nms, ext = file_exts, size = sizes,
-                   stringsAsFactors = FALSE)
-      },
-      serialized = {
-        obj <- readRDS(path)
-        if (inherits(obj, "dm")) {
-          nms <- names(obj)
-          sizes <- vapply(nms, function(n) {
-            paste0(nrow(obj[[n]]), " rows")
-          }, character(1))
-          data.frame(name = nms, ext = rep("Table", length(nms)),
-                     size = sizes, stringsAsFactors = FALSE)
-        } else if (inherits(obj, "data.frame")) {
-          data.frame(name = "data", ext = "Table",
-                     size = paste0(nrow(obj), " rows"),
-                     stringsAsFactors = FALSE)
-        } else if (is.list(obj)) {
-          are_dfs <- vapply(obj, inherits, logical(1), "data.frame")
-          dfs <- obj[are_dfs]
-          nms <- names(dfs)
-          if (is.null(nms)) nms <- paste0("table", seq_len(sum(are_dfs)))
-          sizes <- vapply(dfs, function(d) paste0(nrow(d), " rows"),
-                          character(1))
-          data.frame(name = nms, ext = rep("Table", length(nms)),
-                     size = sizes, stringsAsFactors = FALSE)
-        } else {
-          empty
-        }
-      },
-      rdata = {
-        env <- new.env()
-        load(path, envir = env)
-        objs <- as.list(env)
-        are_dfs <- vapply(objs, inherits, logical(1), "data.frame")
-        dfs <- objs[are_dfs]
-        nms <- names(dfs)
-        sizes <- vapply(dfs, function(d) paste0(nrow(d), " rows"),
-                        character(1))
-        data.frame(name = nms, ext = rep("Table", length(nms)),
-                   size = sizes, stringsAsFactors = FALSE)
-      },
-      empty
-    )
-  }, error = function(e) empty)
+dm_discover_tables <- function(path) {
+  tryCatch(
+    {
+      special <- dm_rds_special(path)
+
+      if (!is.null(special)) {
+        return(special$info)
+      }
+
+      blockr.io::container_table_info(path)
+    },
+    error = function(e) empty_table_info()
+  )
 }
 
 
 #' Detect dm input type from path
+#'
+#' Detection is the registry lookup with a label mapping on top: anything
+#' blockr.io has a container entry for is a dm source, so a container
+#' registered by a third package is recognized without this switch growing.
+#' Unmapped kinds fall through as the extension itself and badge as "File".
+#'
 #' @param path Path to file or directory
-#' @return Character: "excel", "zip", "directory",
-#'   "serialized", "rdata", or "unknown"
+#' @return Character: "excel", "zip", "directory", "serialized", "rdata",
+#'   another registered container key, or "unknown"
 #' @noRd
 detect_dm_input_type <- function(path) {
   if (dir.exists(path)) {
@@ -695,205 +673,100 @@ detect_dm_input_type <- function(path) {
 
   ext <- tolower(tools::file_ext(path))
 
+  if (!ext %in% blockr.io::container_kinds()) {
+    return("unknown")
+  }
+
   switch(ext,
-    xlsx = , xls = "excel",
-    zip = "zip",
+    xlsx = ,
+    xls = "excel",
     rds = "serialized",
-    rdata = , rda = "rdata",
-    "unknown"
+    rdata = ,
+    rda = "rdata",
+    ext
   )
 }
 
 
-#' List data files in a directory
+#' Whether a parquet cache backend is configured
 #' @noRd
-list_data_files <- function(dir_path) {
+dm_read_cache_active <- function() {
+  nzchar(dm_read_cache_dir()) || !is.null(dm_read_cache_board())
+}
+
+
+#' Build expression to read a dm source
+#'
+#' The registry is consulted at build time and the emitted code shows each
+#' package's contribution as a layer: blockr.io's container entry produces a
+#' bare named list of data frames, and this block's wrap --
+#' `dm::new_dm(list(...))` -- is where the list becomes a dm. The exceptions
+#' are the two native rds cases ([dm_rds_special()]) and a directory read
+#' with a parquet cache configured, which keeps routing through
+#' [dm_read_tables()] so slow statistical formats stay mirrored and the
+#' read report stays measured.
+#'
+#' @noRd
+dm_read_expr <- function(path, selected = NULL) {
+  special <- dm_rds_special(path)
+
+  if (!is.null(special)) {
+    if (identical(special$kind, "dm")) {
+      if (is.null(selected)) {
+        return(bquote(readRDS(.(path))))
+      }
+      return(bquote(
+        dm::dm_select_tbl(readRDS(.(path)), dplyr::all_of(.(selected)))
+      ))
+    }
+    return(bquote(dm::dm(data = readRDS(.(path)))))
+  }
+
+  if (dir.exists(path) && dm_read_cache_active()) {
+    return(dm_read_expr_directory_cached(path, selected))
+  }
+
+  bquote(dm::new_dm(.(
+    blockr.io::container_read_expr(path, tables = selected)
+  )))
+}
+
+
+#' Cached directory read
+#'
+#' The one emitted expression that calls blockr.dm: [dm_read_tables()] is
+#' the cache seam (parquet mirror plus the measured read report) and cannot
+#' become a per-member literal, because a cache hit rewrites the member's
+#' read at run time. Members are still discovered at build time -- the file
+#' list and table names are baked in as literals.
+#'
+#' @noRd
+dm_read_expr_directory_cached <- function(path, selected = NULL) {
   extensions <- blockr.io::file_extensions()
   pattern <- paste0("\\.(", paste(extensions, collapse = "|"), ")$")
-  list.files(dir_path, pattern = pattern, ignore.case = TRUE, full.names = TRUE)
-}
-
-
-#' Build expression to read files into dm
-#' @noRd
-dm_read_expr <- function(path, input_type, selected = NULL) {
-  switch(input_type,
-    excel = dm_read_expr_excel(path, selected),
-    zip = dm_read_expr_zip(path, selected),
-    directory = dm_read_expr_directory(path, selected),
-    serialized = dm_read_expr_serialized(path, selected),
-    rdata = dm_read_expr_rdata(path, selected),
-    stop("Unknown input type: ", input_type)
+  files <- list.files(path, pattern = pattern, ignore.case = TRUE,
+                      full.names = TRUE)
+  names(files) <- make.names(
+    tools::file_path_sans_ext(basename(files)),
+    unique = TRUE
   )
-}
 
+  if (!is.null(selected)) {
+    files <- files[names(files) %in% selected]
+  }
 
-#' Read Excel file - each sheet becomes a table
-#' @noRd
-dm_read_expr_excel <- function(path, selected = NULL) {
+  if (length(files) == 0) {
+    return(bquote(stop(
+      "No readable files match the selection.", call. = FALSE
+    )))
+  }
+
   bquote(
     local({
-      sheets <- readxl::excel_sheets(.(path))
-      table_names <- make.names(sheets, unique = TRUE)
-
-      # Filter to selected tables
-      if (!is.null(.(selected))) {
-        keep <- table_names %in% .(selected)
-        sheets <- sheets[keep]
-        table_names <- table_names[keep]
-      }
-
-      tables <- lapply(sheets, function(sheet) {
-        readxl::read_excel(.(path), sheet = sheet)
-      })
-      names(tables) <- table_names
-      do.call(dm::dm, tables)
-    })
-  )
-}
-
-
-#' Read ZIP file - extract and read all data files
-#' @noRd
-dm_read_expr_zip <- function(path, selected = NULL) {
-  bquote(
-    local({
-      temp_dir <- tempfile("dm_zip_")
-      dir.create(temp_dir, showWarnings = FALSE)
-      on.exit(unlink(temp_dir, recursive = TRUE), add = TRUE)
-
-      utils::unzip(.(path), exdir = temp_dir)
-
-      # Find all data files
-      extensions <- blockr.io::file_extensions()
-      pattern <- paste0("\\.(", paste(extensions, collapse = "|"), ")$")
-      files <- list.files(temp_dir, pattern = pattern, ignore.case = TRUE,
-                          full.names = TRUE, recursive = TRUE)
-
-      if (length(files) == 0) {
-        stop("No data files found in ZIP archive")
-      }
-
-      # Get table names and filter to selected
-      table_names <- make.names(
-        tools::file_path_sans_ext(basename(files)),
-        unique = TRUE
-      )
-      if (!is.null(.(selected))) {
-        keep <- table_names %in% .(selected)
-        files <- files[keep]
-        table_names <- table_names[keep]
-      }
-
-      # Read each file
-      tables <- .(dm_read_tables_expr(cache = FALSE))
-
-      names(tables) <- table_names
-      do.call(dm::dm, tables)
-    })
-  )
-}
-
-
-#' Read directory - read all data files
-#' @noRd
-dm_read_expr_directory <- function(path, selected = NULL) {
-  bquote(
-    local({
-      # Find all data files
-      extensions <- blockr.io::file_extensions()
-      pattern <- paste0(
-        "\\.(", paste(extensions, collapse = "|"), ")$"
-      )
-      files <- list.files(
-        .(path), pattern = pattern,
-        ignore.case = TRUE, full.names = TRUE
-      )
-
-      if (length(files) == 0) {
-        stop("No data files found in directory")
-      }
-
-      # Get table names and filter to selected
-      table_names <- make.names(
-        tools::file_path_sans_ext(basename(files)),
-        unique = TRUE
-      )
-      if (!is.null(.(selected))) {
-        keep <- table_names %in% .(selected)
-        files <- files[keep]
-        table_names <- table_names[keep]
-      }
-
-      # Read each file
+      files <- .(unname(files))
       tables <- .(dm_read_tables_expr())
-
-      names(tables) <- table_names
-      do.call(dm::dm, tables)
-    })
-  )
-}
-
-
-#' Read serialized file (RDS or QS) into dm
-#' @noRd
-dm_read_expr_serialized <- function(path, selected = NULL) {
-  bquote(
-    local({
-      obj <- readRDS(.(path))
-
-      if (inherits(obj, "dm")) {
-        if (!is.null(.(selected))) {
-          return(dm::dm_select_tbl(obj, dplyr::all_of(.(selected))))
-        }
-        return(obj)
-      }
-      if (inherits(obj, "data.frame")) {
-        return(dm::dm(data = obj))
-      }
-      if (is.list(obj) && length(obj) > 0) {
-        are_dfs <- vapply(obj, inherits, logical(1), "data.frame")
-        if (all(are_dfs)) {
-          if (is.null(names(obj))) names(obj) <- paste0("table", seq_along(obj))
-          names(obj) <- make.names(names(obj), unique = TRUE)
-          # Filter to selected
-          if (!is.null(.(selected))) {
-            obj <- obj[names(obj) %in% .(selected)]
-          }
-          return(do.call(dm::dm, obj))
-        }
-      }
-      stop("File must contain a dm, data.frame, or list of data.frames")
-    })
-  )
-}
-
-
-#' Read RData file into dm
-#' @noRd
-dm_read_expr_rdata <- function(path, selected = NULL) {
-  bquote(
-    local({
-      env <- new.env()
-      load(.(path), envir = env)
-      objs <- as.list(env)
-
-      # Keep only data.frames
-      are_dfs <- vapply(objs, inherits, logical(1), "data.frame")
-      tables <- objs[are_dfs]
-
-      if (length(tables) == 0) {
-        stop("RData file contains no data.frames")
-      }
-
-      names(tables) <- make.names(names(tables), unique = TRUE)
-
-      # Filter to selected
-      if (!is.null(.(selected))) {
-        tables <- tables[names(tables) %in% .(selected)]
-      }
-
-      do.call(dm::dm, tables)
+      names(tables) <- .(names(files))
+      dm::new_dm(tables)
     })
   )
 }
