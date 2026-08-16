@@ -15,10 +15,17 @@
 #'   (the default) means nothing has been chosen yet and the block waits:
 #'   pointing it at a directory of study data must not read all of it before
 #'   a table is asked for.
+#' @param args Named list of reader options applied uniformly to every member
+#'   of the container: each member's format entry picks the parameters it
+#'   understands, so `args = list(sep = ";")` reads every CSV in a folder as
+#'   semicolon-separated and leaves the other formats untouched. No widget;
+#'   set at construction or through external control. When `args` is
+#'   non-empty a directory read bypasses the parquet cache, whose readers
+#'   take no options.
 #' @param ... Forwarded to [blockr.core::new_data_block()]
 #'
 #' @section External control:
-#' `path` and `selected_tables` are externally controllable (see
+#' `path`, `selected_tables` and `args` are externally controllable (see
 #' [blockr.core::external_ctrl_vars()]), so a board update, the assistant or
 #' any other controller can point the block at a different dataset with a
 #' `mod` delta instead of replacing the block. This works because the block's
@@ -67,6 +74,7 @@
 new_dm_read_block <- function(
   path = character(),
   selected_tables = NULL,
+  args = list(),
   ...
 ) {
   # Both arguments are read inside the server closure, i.e. long after this
@@ -77,6 +85,7 @@ new_dm_read_block <- function(
   # with "object 'x' not found" before it ever reaches its first flush.
   force(path)
   force(selected_tables)
+  force(args)
 
   upload_path <- blockr.core::blockr_option(
     "upload_path",
@@ -105,6 +114,11 @@ new_dm_read_block <- function(
 
           # NULL / empty = no table chosen yet, which holds the read back.
           r_selected_tables <- shiny::reactiveVal(selected_tables)
+
+          # Uniform member options (see the ctor doc). State without a
+          # widget: written at construction or by an external controller,
+          # so there is no input observer and nothing to mirror back.
+          r_args <- shiny::reactiveVal(as.list(args))
 
           # Set by the input observers just before they write the state they
           # own, so the observers that mirror that state back into the widgets
@@ -453,11 +467,12 @@ new_dm_read_block <- function(
               selected <- r_selected_tables()
               shiny::req(length(selected) > 0)
 
-              dm_read_expr(resolved, selected)
+              dm_read_expr(resolved, selected, args = r_args())
             }),
             state = list(
               path = r_path,
-              selected_tables = r_selected_tables
+              selected_tables = r_selected_tables,
+              args = r_args
             )
           )
         }
@@ -566,7 +581,7 @@ new_dm_read_block <- function(
     },
     class = "dm_read_block",
     allow_empty_state = TRUE,
-    external_ctrl = c("path", "selected_tables"),
+    external_ctrl = c("path", "selected_tables", "args"),
     ...
   )
 }
@@ -707,7 +722,7 @@ dm_read_cache_active <- function() {
 #' read report stays measured.
 #'
 #' @noRd
-dm_read_expr <- function(path, selected = NULL) {
+dm_read_expr <- function(path, selected = NULL, args = list()) {
   special <- dm_rds_special(path)
 
   if (!is.null(special)) {
@@ -722,13 +737,20 @@ dm_read_expr <- function(path, selected = NULL) {
     return(bquote(dm::dm(data = readRDS(.(path)))))
   }
 
-  if (dir.exists(path) && dm_read_cache_active()) {
+  # Reader options and the cache do not combine: dm_read_tables() reads with
+  # fixed defaults, so a folder that needs `sep = ";"` must go through the
+  # registry expression even when a cache backend is configured. Options on
+  # a folder of haven formats (the cacheable ones) are meaningless anyway.
+  if (dir.exists(path) && dm_read_cache_active() && !length(args)) {
     return(dm_read_expr_directory_cached(path, selected))
   }
 
-  bquote(dm::new_dm(.(
-    blockr.io::container_read_expr(path, tables = selected)
-  )))
+  tables_expr <- do.call(
+    blockr.io::container_read_expr,
+    c(list(path, tables = selected), args)
+  )
+
+  bquote(dm::new_dm(.(tables_expr)))
 }
 
 

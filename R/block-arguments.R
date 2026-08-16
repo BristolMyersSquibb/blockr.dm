@@ -25,6 +25,18 @@ dm_read_arguments <- function() {
       ),
       example = list("adsl", "adae", "adlbc"),
       type = arg_array(arg_string())
+    ),
+    # Arbitrary-key map of reader options (keys depend on the member
+    # formats); the JSON-Schema subset has no open-ended object, so `type`
+    # is left unset and the consumer infers the shape from the example.
+    args = new_arg_spec(
+      paste0(
+        "Named list of reader options applied uniformly to every member of ",
+        "the container; each member's format picks the parameters it ",
+        "understands (e.g. `list(sep = \";\")` reads every CSV in the ",
+        "folder as semicolon-separated and leaves other formats untouched)."
+      ),
+      example = list(sep = ";")
     )
   )
 }

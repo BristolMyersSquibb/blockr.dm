@@ -24,7 +24,7 @@ Imports:
     blockr.ai,
     blockr.core,
     blockr.dplyr,
-    blockr.io (>= 0.1.0.9012),
+    blockr.io (>= 0.1.0.9013),
     blockr.ui,
     dm,
     dplyr,

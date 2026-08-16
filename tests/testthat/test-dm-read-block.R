@@ -12,11 +12,11 @@ make_study_dir <- function(tables) {
   dir
 }
 
-test_that("path and selected_tables are externally controllable", {
+test_that("path, selected_tables and args are externally controllable", {
 
   expect_setequal(
     blockr.core::external_ctrl_vars(new_dm_read_block()),
-    c("path", "selected_tables", "block_name")
+    c("path", "selected_tables", "args", "block_name")
   )
 })
 
@@ -404,4 +404,54 @@ test_that("an rds holding a dm stays a native read, lists go to the registry", {
   # discovery agrees: native rds-dm labels, registry labels for the list
   expect_identical(dm_discover_tables(dm_path)$name, "adsl")
   expect_identical(dm_discover_tables(list_path)$name, c("adsl", "adae"))
+})
+
+test_that("uniform member options reach every member: semicolon CSVs", {
+  dir <- withr::local_tempdir()
+  writeLines(c("x;y", "1;a", "2;b"), file.path(dir, "adsl.csv"))
+  writeLines(c("z;w", "9;c"), file.path(dir, "adae.csv"))
+
+  expr <- dm_read_expr(dir, args = list(sep = ";"))
+  expect_match(rlang::expr_text(expr), 'delim = ";"')
+
+  result <- eval(expr)
+  expect_s3_class(result, "dm")
+  expect_identical(names(dm::dm_get_tables(result)$adsl), c("x", "y"))
+
+  # options and the cache do not combine: with args set, a configured cache
+  # backend is bypassed in favor of the registry expression
+  withr::local_options(blockr.dm_read_cache_dir = withr::local_tempdir())
+  with_args <- dm_read_expr(dir, args = list(sep = ";"))
+  expect_no_match(rlang::expr_text(with_args), "dm_read_tables")
+  without <- dm_read_expr(dir)
+  expect_match(rlang::expr_text(without), "dm_read_tables")
+})
+
+test_that("args is externally controllable state", {
+  dir <- withr::local_tempdir()
+  writeLines(c("x;y", "1;a"), file.path(dir, "adsl.csv"))
+
+  block <- new_dm_read_block(path = dir, selected_tables = "adsl")
+  expect_contains(blockr.core::external_ctrl_vars(block), "args")
+
+  shiny::testServer(
+    blockr.core:::get_s3_method("block_server", block),
+    {
+      session$flushReact()
+      expect_no_match(
+        rlang::expr_text(session$returned$expr()), 'delim = ";"'
+      )
+
+      session$returned$state$args(list(sep = ";"))
+      session$flushReact()
+
+      expect_match(
+        rlang::expr_text(session$returned$expr()), 'delim = ";"'
+      )
+      expect_identical(
+        names(session$returned$result()$adsl), c("x", "y")
+      )
+    },
+    args = list(x = block, data = list())
+  )
 })
