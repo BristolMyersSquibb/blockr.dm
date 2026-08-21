@@ -4,11 +4,7 @@
 \alias{new_value_filter_block}
 \title{Value filter block}
 \usage{
-new_value_filter_block(
-  state = list(columns = list()),
-  flag_groups = list(),
-  ...
-)
+new_value_filter_block(state = list(columns = list()), ...)
 }
 \arguments{
 \item{state}{List with \code{columns} — a list of column-object entries — and
@@ -27,22 +23,9 @@ that column (NOT a \code{FALSE} filter). To target FALSE/NA explicitly,
 flip the column to Multi (values plus the \verb{<NA>} token) or use the
 blockr.dplyr filter block. (Legacy saved states with a logical
 single-select value of "FALSE" still evaluate as \code{!(col \%in\% TRUE)}.)
-A flag-group selection is stored as an entry with \code{group = TRUE},
-\code{name} (the group's name) and \code{values} (selected labels).
 Old-style state (\code{list(columns=character, modes=list, values=list)})
 is auto-migrated via \code{\link[=migrate_value_filter_state]{migrate_value_filter_state()}} for backward
 compatibility.}
-
-\item{flag_groups}{Named list declaring families of indicator columns
-that encode ONE categorical field — e.g. treatment period as
-ADaM-style flags. Each element is a named character vector mapping a
-display label to the logical column carrying that category:
-\code{list("Treatment period" = c(Before = "PREFL", During = "TRTEMFL", After = "FUPFL"))}. Each group renders as a single multi-select of
-its labels; selected labels union (\code{PREFL \%in\% TRUE | ...}), an empty
-selection passes everything through, and the group joins the other
-conditions via \code{operator}. Member columns are hidden from the Fields
-picker so the same flag cannot be constrained twice. Data-frame input
-only (ignored for \code{dm}).}
 
 \item{...}{Additional arguments forwarded to \code{\link[blockr.core:new_transform_block]{blockr.core::new_transform_block()}}.}
 }

@@ -677,10 +677,12 @@ test_that("empty single-mode logical entry adds no constraint", {
   expect_identical(e, quote(dplyr::filter(.(data), TRUE)))
 })
 
-# flag groups ---------------------------------------------------------------
-
-FG <- list("Treatment period" = c(Before = "PREFL", During = "TRTEMFL",
-                                  After = "FUPFL"))
+# Flag columns: plain logical fields combined by the block operator -----------
+#
+# A family of indicator columns encoding ONE field (ADaM period flags, say) is
+# filtered by picking each flag as an ordinary field and setting the operator
+# to OR. There is no group construct: an unchecked logical contributes no
+# condition, so the OR is exactly the union of the checked ones.
 
 fg_df <- function() {
   data.frame(
@@ -691,115 +693,124 @@ fg_df <- function() {
   )
 }
 
-test_that("one selected group label filters to that flag", {
-  e <- make_filter_block_expr(
-    list(list(name = "Treatment period", group = TRUE, mode = "multi",
-              values = "During")),
-    fg_df(), flag_groups = FG
-  )
+flag_entries <- function(...) {
+  lapply(c(...), function(n) list(name = n, mode = "single", values = "TRUE"))
+}
+
+test_that("one checked flag filters to that flag", {
+  e <- make_filter_block_expr(flag_entries("TRTEMFL"), fg_df(), operator = "|")
   out <- eval(e, list(data = fg_df(), . = identity))
   expect_equal(nrow(out), 1L)
   expect_true(out$TRTEMFL)
 })
 
-test_that("two selected group labels union", {
-  e <- make_filter_block_expr(
-    list(list(name = "Treatment period", group = TRUE, mode = "multi",
-              values = c("Before", "During"))),
-    fg_df(), flag_groups = FG
-  )
+test_that("two checked flags union under OR", {
+  e <- make_filter_block_expr(flag_entries("PREFL", "TRTEMFL"), fg_df(),
+                              operator = "|")
   out <- eval(e, list(data = fg_df(), . = identity))
   expect_equal(nrow(out), 2L)
+  expect_identical(e, quote(
+    dplyr::filter(.(data), PREFL %in% TRUE | TRTEMFL %in% TRUE)
+  ))
 })
 
-test_that("empty group selection passes everything through", {
-  e <- make_filter_block_expr(
-    list(list(name = "Treatment period", group = TRUE, mode = "multi",
-              values = character())),
-    fg_df(), flag_groups = FG
+test_that("mutually exclusive flags under AND return nothing", {
+  # The reason OR is the right operator for a period family: PREFL and TRTEMFL
+  # partition the rows, so ANDing them is empty by construction.
+  e <- make_filter_block_expr(flag_entries("PREFL", "TRTEMFL"), fg_df(),
+                              operator = "&")
+  expect_equal(nrow(eval(e, list(data = fg_df(), . = identity))), 0L)
+})
+
+test_that("an unchecked flag adds no condition", {
+  cols <- list(
+    list(name = "PREFL",   mode = "single", values = "TRUE"),
+    list(name = "TRTEMFL", mode = "single", values = character())
   )
+  e <- make_filter_block_expr(cols, fg_df(), operator = "|")
+  expect_identical(e, quote(dplyr::filter(.(data), PREFL %in% TRUE)))
+})
+
+test_that("enforce_single_rule never fills an unchecked logical", {
+  s <- list(columns = list(
+    list(name = "TRTEMFL", mode = "single", values = character())
+  ))
+  out <- enforce_single_rule(s, fg_df())
+  expect_length(out$columns[[1]]$values, 0L)
+})
+
+test_that("build_column_meta offers every column, flags included", {
+  meta <- build_column_meta(fg_df())
+  vals <- vapply(meta$columns, function(cc) cc$value, character(1))
+  expect_setequal(vals, c("PREFL", "TRTEMFL", "FUPFL", "SEX"))
+  types <- vapply(meta$columns, function(cc) cc$type, character(1))
+  expect_equal(types[vals == "PREFL"], "logical")
+})
+
+# Yes/no flags stored as text ------------------------------------------------
+#
+# ADaM (and plenty of other exports) encode a boolean as "Y" against "", "N"
+# or NA. Those render as the same include-style checkbox a real logical gets,
+# rather than a value select whose only sensible pick is "Y".
+
+flag_df <- function() {
+  data.frame(
+    y_na    = c("Y", NA, "Y", NA),
+    y_empty = c("Y", "", "", "Y"),
+    y_n     = c("Y", "N", "Y", "N"),
+    yes_no  = c("Yes", "No", "Yes", "No"),
+    all_y   = c("Y", "Y", "Y", "Y"),
+    fct     = factor(c("Y", "N", "Y", "N")),
+    sex     = c("F", "M", "F", "M"),
+    grade   = c("1", "0", "1", "0"),
+    stringsAsFactors = FALSE
+  )
+}
+
+test_that("every yes/no encoding is detected as a flag", {
+  for (nm in c("y_na", "y_empty", "y_n", "yes_no", "all_y", "fct")) {
+    expect_true(flag_column(flag_df()[[nm]]), info = nm)
+  }
+})
+
+test_that("ordinary categoricals are NOT flags", {
+  # The vocabulary is deliberately narrow: no "1"/"0", or a grade column
+  # would turn into a checkbox.
+  expect_false(flag_column(flag_df()$sex))
+  expect_false(flag_column(flag_df()$grade))
+  expect_false(flag_column(1:3))
+})
+
+test_that("a checked text flag matches the column's own spelling", {
+  e <- make_filter_block_expr(
+    list(list(name = "yes_no", mode = "single", values = "Yes")), flag_df())
+  expect_identical(e, quote(dplyr::filter(.(data), yes_no %in% "Yes")))
+  e2 <- make_filter_block_expr(
+    list(list(name = "y_empty", mode = "single", values = "Y")), flag_df())
+  expect_identical(e2, quote(dplyr::filter(.(data), y_empty %in% "Y")))
+})
+
+test_that("an unchecked text flag adds no constraint", {
+  e <- make_filter_block_expr(
+    list(list(name = "y_n", mode = "single", values = character())), flag_df())
   expect_identical(e, quote(dplyr::filter(.(data), TRUE)))
 })
 
-test_that("group condition parenthesizes and ANDs with other conditions", {
-  e <- make_filter_block_expr(
-    list(
-      list(name = "Treatment period", group = TRUE, mode = "multi",
-           values = c("Before", "During")),
-      list(name = "SEX", mode = "multi", values = "F")
-    ),
-    fg_df(), flag_groups = FG
-  )
-  out <- eval(e, list(data = fg_df(), . = identity))
-  expect_equal(nrow(out), 2L)   # rows 1 (Before, F) and 2 (During, F)
-})
-
-test_that("unknown group entries are dropped, known ones kept", {
+test_that("enforce_single_rule never fills an unchecked text flag", {
   s <- list(columns = list(
-    list(name = "Treatment period", group = TRUE, mode = "multi",
-         values = "During"),
-    list(name = "Gone group", group = TRUE, mode = "multi", values = "x")
+    list(name = "y_n", mode = "single", values = character())
   ))
-  out <- enforce_single_rule(s, fg_df(), FG)
-  expect_length(out$columns, 1L)
-  expect_equal(out$columns[[1]]$name, "Treatment period")
-  expect_length(enforce_single_rule(s, fg_df())$columns, 0L)
+  expect_length(enforce_single_rule(s, flag_df())$columns[[1]]$values, 0L)
 })
 
-test_that("normalize_state_for_json keeps the group flag", {
-  s <- list(columns = list(
-    list(name = "Treatment period", group = TRUE, mode = "multi",
-         values = "During")
-  ))
-  out <- normalize_state_for_json(s)
-  expect_true(out$columns[[1]]$group)
-})
-
-test_that("build_column_meta hides group members and ships group labels", {
-  meta <- build_column_meta(fg_df(), FG)
-  vals <- vapply(meta$columns, function(cc) cc$value, character(1))
-  expect_false(any(c("PREFL", "TRTEMFL", "FUPFL") %in% vals))
-  expect_true("SEX" %in% vals)
-  expect_equal(meta$groups[[1]]$name, "Treatment period")
-  expect_equal(unlist(meta$groups[[1]]$labels), c("Before", "During", "After"))
-})
-
-test_that("normalize_flag_groups accepts JSON list shape, rejects unnamed", {
-  fg <- normalize_flag_groups(
-    list(Period = list(Before = "PREFL", During = "TRTEMFL"))
-  )
-  expect_equal(fg$Period, c(Before = "PREFL", During = "TRTEMFL"))
-  expect_error(normalize_flag_groups(list(c("PREFL"))), "named")
-  expect_equal(normalize_flag_groups(NULL), list())
-})
-
-test_that("flag_groups survives the board JSON round-trip", {
-  blk <- new_value_filter_block(
-    state = list(columns = list(
-      list(name = "Treatment period", group = TRUE, mode = "multi",
-           values = "During")
-    )),
-    flag_groups = FG
-  )
-  ser <- blockr.core::blockr_ser(blk)
-  json <- jsonlite::toJSON(ser, null = "null")
-  back <- jsonlite::fromJSON(json, simplifyDataFrame = FALSE,
-                             simplifyMatrix = FALSE)
-  blk2 <- blockr.core::blockr_deser(back)
-  expect_s3_class(blk2, "value_filter_block")
-  st <- attr(blk2, "ctor_env") %||% NULL
-  # The deserialized block must rebuild the same expression: During + F.
-  shiny::testServer(
-    blockr.core:::get_s3_method("block_server", blk2),
-    {
-      session$flushReact()
-      e <- session$returned$expr()
-      out <- eval(e, list(data = fg_df(), . = identity))
-      expect_equal(nrow(out), 1L)
-      expect_true(out$TRTEMFL)
-    },
-    args = list(x = blk2, data = list(data = function() fg_df()))
-  )
+test_that("metadata ships the affirmative spelling for the client", {
+  meta <- build_column_meta_df(flag_df())
+  by <- stats::setNames(meta$columns, vapply(meta$columns, function(c) c$value, ""))
+  expect_equal(by$y_n$type, "flag")
+  expect_equal(by$y_n$yes, "Y")
+  expect_equal(by$yes_no$yes, "Yes")
+  expect_equal(by$sex$type, "")
+  expect_null(by$sex$yes)
 })
 
 # Expression reference stability ----------------------------------------------

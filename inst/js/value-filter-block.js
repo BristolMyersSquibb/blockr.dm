@@ -32,15 +32,14 @@
       this.operator = '&';   // how column conditions combine (df input only)
       this.columns = [];     // [{value, label, type?, table?, column?}] all columns
       this.colLabels = {};   // qualKey -> label
-      this.colTypes = {};    // qualKey -> coarse type ('logical' or '')
+      this.colTypes = {};    // qualKey -> coarse type ('logical', 'flag', '')
+      this.colYes = {};      // qualKey -> affirmative literal for a text flag
       this.colValues = {};   // qualKey -> options array (loaded lazily on open)
       this._loadedKeys = new Set();        // qualKeys whose values have arrived
       this._pendingValueRequests = new Set(); // qualKeys with a request in flight
       this.tables = [];      // [string] only for dm — ordered table names
       this.currentTable = ''; // dm: which table the Fields picker is scoped to
       this.entries = [];     // [{name, table?, mode, values}] active filters
-      this.groups = [];      // [{name, labels}] author-declared flag groups
-      this.groupSel = {};    // group name -> selected labels
 
       this._callback = null;
       this._submitted = false;
@@ -196,6 +195,18 @@
         (!this.isDm && this.entries.length >= 2) ? '' : 'none';
     }
 
+    // Both a real logical and a yes/no column stored as text ('flag') get
+    // the include-style checkbox. They differ only in what "checked" stores:
+    // TRUE for the logical, the column's own affirmative spelling otherwise.
+    _isCheckboxType(key) {
+      const t = this.colTypes[key];
+      return t === 'logical' || t === 'flag';
+    }
+
+    _checkedValue(key) {
+      return this.colTypes[key] === 'flag' ? (this.colYes[key] || 'Y') : 'TRUE';
+    }
+
     _columnsForCurrentTable() {
       if (!this.isDm) return this.columns;
       const tbl = this.currentTable;
@@ -277,10 +288,11 @@
         if (exists) return;
         const entry = { name: nm, mode: 'single', values: [] };
         if (this.isDm) entry.table = tbl;
-        if (this.colTypes[qualKey(nm, this.isDm ? tbl : undefined)] === 'logical') {
+        const freshKey = qualKey(nm, this.isDm ? tbl : undefined);
+        if (this._isCheckboxType(freshKey)) {
           // A fresh flag checkbox starts checked: adding it means "require
           // this flag" (unchecked = no constraint, which would be a no-op).
-          entry.values = ['TRUE'];
+          entry.values = [this._checkedValue(freshKey)];
         } else {
           const first = this._firstValueOf(entry);
           if (first != null) entry.values = [String(first)];
@@ -377,52 +389,11 @@
       this._bodySelects = {};
       this.bodyEl.innerHTML = '';
 
-      // Author-declared flag groups render first: each is one multi-select
-      // over the group's labels (the block's normal field paradigm — empty
-      // selection passes through, selected labels union server-side).
-      if (!this.isDm) {
-        this.groups.forEach((grp) => {
-          const item = document.createElement('div');
-          item.className = 'bi-filter-item';
-
-          const label = document.createElement('label');
-          label.className = 'blockr-label bi-filter-label';
-          label.appendChild(document.createTextNode(grp.name));
-          item.appendChild(label);
-
-          const row = document.createElement('div');
-          row.className = 'blockr-row bi-filter-row';
-          item.appendChild(row);
-
-          const wrap = document.createElement('div');
-          wrap.className = 'bi-filter-select-wrap';
-          row.appendChild(wrap);
-
-          const labels = (grp.labels || []).map(String);
-          const sel = (this.groupSel[grp.name] || [])
-            .filter((v) => labels.indexOf(v) >= 0);
-          Blockr.Select.multi(wrap, {
-            options: labels,
-            selected: sel.slice(),
-            placeholder: 'Select…',
-            reorderable: false,
-            onChange: (vals) => {
-              this.groupSel[grp.name] = vals.map(String);
-              this._autoSubmit();
-            }
-          });
-
-          this.bodyEl.appendChild(item);
-        });
-      }
-
       if (this.entries.length === 0) {
-        if (this.isDm || this.groups.length === 0) {
-          const empty = document.createElement('div');
-          empty.className = 'bi-filter-empty';
-          empty.textContent = 'No filters. Click the gear to add fields.';
-          this.bodyEl.appendChild(empty);
-        }
+        const empty = document.createElement('div');
+        empty.className = 'bi-filter-empty';
+        empty.textContent = 'No filters. Click the gear to add fields.';
+        this.bodyEl.appendChild(empty);
         return;
       }
 
@@ -441,14 +412,14 @@
         // Markup + CSS vendored from blockr.dplyr's settings-band checkbox
         // (the design-system boolean control), same vendoring convention as
         // that dep itself.
-        if (entryMode === 'single' && this.colTypes[entryKey] === 'logical') {
+        if (entryMode === 'single' && this._isCheckboxType(entryKey)) {
           const item = document.createElement('div');
           item.className = 'bi-filter-item bi-filter-item-bool';
           const cb = document.createElement('label');
           cb.className = 'blockr-checkbox bi-filter-bool-checkbox';
           const cbInput = document.createElement('input');
           cbInput.type = 'checkbox';
-          cbInput.checked = String((entry.values || [])[0]) === 'TRUE';
+          cbInput.checked = (entry.values || []).length > 0;
           const box = document.createElement('span');
           box.className = 'blockr-checkbox__box';
           box.innerHTML =
@@ -472,7 +443,8 @@
             cb.appendChild(subEl);
           }
           cbInput.addEventListener('change', () => {
-            this.entries[idx].values = cbInput.checked ? ['TRUE'] : [];
+            this.entries[idx].values =
+              cbInput.checked ? [this._checkedValue(entryKey)] : [];
             this._autoSubmit(0);
           });
           item.appendChild(cb);
@@ -574,20 +546,12 @@
 
     _compose() {
       // Emit the column-object state shape. Each entry carries name + table?
-      // + mode + values; group selections ride along as group:true entries.
+      // + mode + values.
       const cols = this.entries.map((e) => {
         const out = { name: e.name, mode: e.mode || 'single',
                       values: (Array.isArray(e.values) ? e.values : []).slice() };
         if (this.isDm && e.table != null && e.table !== '') out.table = e.table;
         return out;
-      });
-      this.groups.forEach((grp) => {
-        cols.push({
-          name: grp.name,
-          group: true,
-          mode: 'multi',
-          values: (this.groupSel[grp.name] || []).slice()
-        });
       });
       return { columns: cols, operator: this.operator };
     }
@@ -605,18 +569,12 @@
     setState(state) {
       const colsIn = (state && state.columns) || [];
       // Accept the column-object list shape only — R-side auto-migration
-      // ensures we never see the old parallel-list shape. Group entries
-      // (group: true) feed the group selections, not the column entries.
+      // ensures we never see the old parallel-list shape.
       this.entries = [];
-      this.groupSel = {};
       colsIn.forEach((e) => {
         const vals = (e && e.values != null)
           ? (Array.isArray(e.values) ? e.values.map(String) : [String(e.values)])
           : [];
-        if (e && e.group === true) {
-          this.groupSel[(e && e.name) || ''] = vals;
-          return;
-        }
         const entry = {
           name:   (e && e.name) || '',
           mode:   (e && e.mode) || 'single',
@@ -634,16 +592,7 @@
 
     updateColumns(payload) {
       this.columns = (payload && payload.columns) || [];
-      this.groups = (payload && payload.groups) || [];
       this.isDm = !!(payload && payload.is_dm);
-      // Prune group selections to declared groups + known labels.
-      const known = {};
-      this.groups.forEach((g) => { known[g.name] = (g.labels || []).map(String); });
-      Object.keys(this.groupSel).forEach((nm) => {
-        if (!known[nm]) { delete this.groupSel[nm]; return; }
-        this.groupSel[nm] = this.groupSel[nm].filter(
-          (v) => known[nm].indexOf(v) >= 0);
-      });
 
       // A data change invalidates any cached values — they reload lazily on
       // the next dropdown-open. The startup payload carries column metadata
@@ -663,6 +612,7 @@
         this.colLabels[key] = lab;
         this.colTypes[key] =
           (typeof c === 'object' && c !== null && c.type) ? c.type : '';
+        if (typeof c === 'object' && c !== null && c.yes) this.colYes[key] = c.yes;
         if (this.isDm && c.table) tableSet.add(c.table);
       });
       this.tables = Array.from(tableSet);
@@ -769,7 +719,6 @@
   Shiny.addCustomMessageHandler('bi-filter-columns', (msg) => {
     pumpColumns(msg.id, {
       columns: msg.columns,
-      groups: msg.groups,
       values: msg.values,
       is_dm: msg.is_dm
     });
