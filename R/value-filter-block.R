@@ -395,19 +395,33 @@ build_column_meta_dm <- function(dm_obj) {
   tbls <- dm::dm_get_tables(dm_obj)
   cols <- list()
   for (tbl_nm in names(tbls)) {
-    # A 0-row template carries column names + labels via one cheap LIMIT 0
-    # query, so a remote (lazy) table is never collected just to enumerate
-    # its columns.
-    head0 <- table_head0(tbls[[tbl_nm]])
-    if (ncol(head0) == 0L) next
-    for (cn in names(head0)) {
-      cols[[length(cols) + 1L]] <- list(
+    # One bounded LIMIT per table carries column names, labels and enough
+    # values to spot a yes/no flag. A remote (lazy) table is still never
+    # collected whole -- see table_type_sample() for why a 0-row template
+    # cannot answer the flag question.
+    src <- tbls[[tbl_nm]]
+    smp <- table_type_sample(src)
+    if (ncol(smp) == 0L) next
+    for (cn in names(smp)) {
+      # The LABEL must come off the ORIGINAL column, not the sample:
+      # `[.data.frame` row-subsetting drops a column's attributes, so reading
+      # it off any head() (including the 0-row template this used to use)
+      # silently yields "" and the field renders with no label at all. Taking
+      # `src[[cn]]` is free -- it references the column, it does not copy it.
+      # A lazy table has no R attributes to lose, so the sample stands in.
+      lbl_src <- if (is.data.frame(src) && cn %in% names(src)) src[[cn]] else smp[[cn]]
+      entry <- list(
         value  = paste0(tbl_nm, ".", cn),
-        label  = column_label(head0[[cn]]),
-        type   = column_meta_type(head0[[cn]]),
+        label  = column_label(lbl_src),
+        type   = column_meta_type(smp[[cn]]),
         table  = tbl_nm,
         column = cn
       )
+      if (identical(entry$type, "flag")) {
+        yes <- flag_affirmative_values(smp[[cn]])
+        if (length(yes)) entry$yes <- yes[[1L]]
+      }
+      cols[[length(cols) + 1L]] <- entry
     }
   }
   list(columns = cols, is_dm = TRUE)
@@ -424,6 +438,29 @@ table_head0 <- function(tbl) {
     return(as.data.frame(dplyr::collect(utils::head(tbl, 0L))))
   }
   as.data.frame(tbl)[0L, , drop = FALSE]
+}
+
+#' A BOUNDED sample of a table, for the checks that need values rather than
+#' just column names.
+#'
+#' `table_head0()` is enough to read names, labels and storage types, and it
+#' is what the shape templates use. Detecting a yes/no flag column
+#' ([flag_column()]) is different: "Y" is a VALUE, so a zero-row template can
+#' never see it, and the dm path would render a value select where the data
+#' frame path renders a checkbox.
+#'
+#' So this takes a LIMIT, not a collect. A remote table is still never pulled
+#' whole; it pays one bounded query per table at startup, which is far cheaper
+#' than the per-column distinct scans the lazy value loading exists to avoid.
+#' Reading past the bound would only sharpen the rendering, never correctness:
+#' a missed flag falls back to the select, and a false positive is recoverable
+#' from the mode pill.
+#' @noRd
+table_type_sample <- function(tbl, n = 200L) {
+  if (inherits(tbl, "tbl_lazy")) {
+    return(as.data.frame(dplyr::collect(utils::head(tbl, n))))
+  }
+  as.data.frame(utils::head(tbl, n))
 }
 
 #' One column's label attribute as a length-1 character ("" if none).

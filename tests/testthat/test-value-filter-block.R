@@ -813,6 +813,69 @@ test_that("metadata ships the affirmative spelling for the client", {
   expect_null(by$sex$yes)
 })
 
+test_that("a dm input detects text flags too, from a bounded sample", {
+  # The dm path builds its metadata from a per-table LIMIT rather than the
+  # 0-row template used for the expression shapes: "Y" is a VALUE, so a
+  # zero-row template can never see it and the checkbox would never appear.
+  d <- dm::dm(
+    adsl = data.frame(USUBJID = c("1", "2", "3"),
+                      SAFFL = c("Y", "Y", "N"),
+                      DTHFL = c("Y", NA, NA),
+                      SEX = c("F", "M", "F"), stringsAsFactors = FALSE),
+    ae = data.frame(USUBJID = c("1", "1", "2"),
+                    TRTEMFL = c("Y", "", "Y"), stringsAsFactors = FALSE)
+  )
+  meta <- build_column_meta(d)
+  by <- stats::setNames(meta$columns, vapply(meta$columns, function(c) c$value, ""))
+  expect_true(meta$is_dm)
+  expect_equal(by[["adsl.SAFFL"]]$type, "flag")
+  expect_equal(by[["adsl.SAFFL"]]$yes, "Y")
+  expect_equal(by[["adsl.DTHFL"]]$type, "flag")
+  expect_equal(by[["ae.TRTEMFL"]]$type, "flag")
+  expect_equal(by[["adsl.SEX"]]$type, "")
+  expect_equal(by[["adsl.USUBJID"]]$type, "")
+})
+
+test_that("dm column labels survive the metadata build", {
+  # Regression: `[.data.frame` row-subsetting drops a column's attributes, so
+  # reading the label off any head() of the table yields "" and every dm field
+  # renders unlabelled. It has to come off the original column.
+  adsl <- data.frame(SAFFL = c("Y", "Y", "N"), SEX = c("F", "M", "F"),
+                     stringsAsFactors = FALSE)
+  attr(adsl$SAFFL, "label") <- "Safety Population Flag"
+  attr(adsl$SEX, "label") <- "Sex"
+  expect_equal(column_label(table_type_sample(adsl)$SAFFL), "")  # the trap
+  meta <- build_column_meta(dm::dm(adsl = adsl))
+  by <- stats::setNames(meta$columns, vapply(meta$columns, function(c) c$value, ""))
+  expect_equal(by[["adsl.SAFFL"]]$label, "Safety Population Flag")
+  expect_equal(by[["adsl.SEX"]]$label, "Sex")
+})
+
+test_that("a checked dm flag filters the right table", {
+  d <- dm::dm(adsl = data.frame(USUBJID = c("1", "2", "3"),
+                                SAFFL = c("Y", "Y", "N"),
+                                stringsAsFactors = FALSE))
+  e <- make_filter_block_expr(
+    list(list(name = "SAFFL", table = "adsl", mode = "single", values = "Y")), d)
+  expect_identical(
+    e, quote(dm::dm_filter(.(data), adsl = SAFFL %in% "Y"))
+  )
+})
+
+test_that("the bounded sample LIMITs a lazy table instead of collecting it", {
+  skip_if_not_installed("duckdb")
+  skip_if_not_installed("dbplyr")
+  con <- DBI::dbConnect(duckdb::duckdb())
+  on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)
+  DBI::dbWriteTable(con, "adsl", data.frame(
+    USUBJID = c("1", "2", "3"), SAFFL = c("Y", "Y", "N"),
+    stringsAsFactors = FALSE))
+  lz <- dplyr::tbl(con, "adsl")
+  sql <- as.character(dbplyr::sql_render(utils::head(lz, 200L)))
+  expect_match(sql, "LIMIT 200")
+  expect_true(flag_column(table_type_sample(lz)$SAFFL))
+})
+
 # Expression reference stability ----------------------------------------------
 #
 # This block's `expr` deliberately tracks `data()` (the expression SHAPE depends
