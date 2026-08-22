@@ -32,8 +32,7 @@
       this.operator = '&';   // how column conditions combine (df input only)
       this.columns = [];     // [{value, label, type?, table?, column?}] all columns
       this.colLabels = {};   // qualKey -> label
-      this.colTypes = {};    // qualKey -> coarse type ('logical', 'flag', '')
-      this.colYes = {};      // qualKey -> affirmative literal for a text flag
+      this.colTypes = {};    // qualKey -> coarse type ('logical' or '')
       this.colValues = {};   // qualKey -> options array (loaded lazily on open)
       this._loadedKeys = new Set();        // qualKeys whose values have arrived
       this._pendingValueRequests = new Set(); // qualKeys with a request in flight
@@ -195,18 +194,6 @@
         (!this.isDm && this.entries.length >= 2) ? '' : 'none';
     }
 
-    // Both a real logical and a yes/no column stored as text ('flag') get
-    // the include-style checkbox. They differ only in what "checked" stores:
-    // TRUE for the logical, the column's own affirmative spelling otherwise.
-    _isCheckboxType(key) {
-      const t = this.colTypes[key];
-      return t === 'logical' || t === 'flag';
-    }
-
-    _checkedValue(key) {
-      return this.colTypes[key] === 'flag' ? (this.colYes[key] || 'Y') : 'TRUE';
-    }
-
     _columnsForCurrentTable() {
       if (!this.isDm) return this.columns;
       const tbl = this.currentTable;
@@ -288,11 +275,10 @@
         if (exists) return;
         const entry = { name: nm, mode: 'single', values: [] };
         if (this.isDm) entry.table = tbl;
-        const freshKey = qualKey(nm, this.isDm ? tbl : undefined);
-        if (this._isCheckboxType(freshKey)) {
+        if (this.colTypes[qualKey(nm, this.isDm ? tbl : undefined)] === 'logical') {
           // A fresh flag checkbox starts checked: adding it means "require
           // this flag" (unchecked = no constraint, which would be a no-op).
-          entry.values = [this._checkedValue(freshKey)];
+          entry.values = ['TRUE'];
         } else {
           const first = this._firstValueOf(entry);
           if (first != null) entry.values = [String(first)];
@@ -412,14 +398,14 @@
         // Markup + CSS vendored from blockr.dplyr's settings-band checkbox
         // (the design-system boolean control), same vendoring convention as
         // that dep itself.
-        if (entryMode === 'single' && this._isCheckboxType(entryKey)) {
+        if (entryMode === 'single' && this.colTypes[entryKey] === 'logical') {
           const item = document.createElement('div');
           item.className = 'bi-filter-item bi-filter-item-bool';
           const cb = document.createElement('label');
           cb.className = 'blockr-checkbox bi-filter-bool-checkbox';
           const cbInput = document.createElement('input');
           cbInput.type = 'checkbox';
-          cbInput.checked = (entry.values || []).length > 0;
+          cbInput.checked = String((entry.values || [])[0]) === 'TRUE';
           const box = document.createElement('span');
           box.className = 'blockr-checkbox__box';
           box.innerHTML =
@@ -443,8 +429,7 @@
             cb.appendChild(subEl);
           }
           cbInput.addEventListener('change', () => {
-            this.entries[idx].values =
-              cbInput.checked ? [this._checkedValue(entryKey)] : [];
+            this.entries[idx].values = cbInput.checked ? ['TRUE'] : [];
             this._autoSubmit(0);
           });
           item.appendChild(cb);
@@ -612,7 +597,6 @@
         this.colLabels[key] = lab;
         this.colTypes[key] =
           (typeof c === 'object' && c !== null && c.type) ? c.type : '';
-        if (typeof c === 'object' && c !== null && c.yes) this.colYes[key] = c.yes;
         if (this.isDm && c.table) tableSet.add(c.table);
       });
       this.tables = Array.from(tableSet);

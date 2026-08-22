@@ -369,19 +369,11 @@ build_column_meta <- function(data) {
 #' @noRd
 build_column_meta_df <- function(df) {
   cols <- lapply(names(df), function(cn) {
-    out <- list(
+    list(
       value = cn,
       label = column_label(df[[cn]]),
       type  = column_meta_type(df[[cn]])
     )
-    # For a text flag, ship the affirmative spelling the column actually uses
-    # ("Y", "Yes", ...) so the client stores THAT when the box is ticked,
-    # rather than a stand-in the value select would later fail to show.
-    if (identical(out$type, "flag")) {
-      yes <- flag_affirmative_values(df[[cn]])
-      if (length(yes)) out$yes <- yes[[1L]]
-    }
-    out
   })
   list(columns = cols, is_dm = FALSE)
 }
@@ -395,33 +387,27 @@ build_column_meta_dm <- function(dm_obj) {
   tbls <- dm::dm_get_tables(dm_obj)
   cols <- list()
   for (tbl_nm in names(tbls)) {
-    # One bounded LIMIT per table carries column names, labels and enough
-    # values to spot a yes/no flag. A remote (lazy) table is still never
-    # collected whole -- see table_type_sample() for why a 0-row template
-    # cannot answer the flag question.
+    # A 0-row template carries column names and storage types via one cheap
+    # LIMIT 0 query, so a remote (lazy) table is never collected just to
+    # enumerate its columns.
     src <- tbls[[tbl_nm]]
-    smp <- table_type_sample(src)
-    if (ncol(smp) == 0L) next
-    for (cn in names(smp)) {
-      # The LABEL must come off the ORIGINAL column, not the sample:
+    head0 <- table_head0(src)
+    if (ncol(head0) == 0L) next
+    for (cn in names(head0)) {
+      # The LABEL must come off the ORIGINAL column, not the template:
       # `[.data.frame` row-subsetting drops a column's attributes, so reading
-      # it off any head() (including the 0-row template this used to use)
-      # silently yields "" and the field renders with no label at all. Taking
-      # `src[[cn]]` is free -- it references the column, it does not copy it.
-      # A lazy table has no R attributes to lose, so the sample stands in.
-      lbl_src <- if (is.data.frame(src) && cn %in% names(src)) src[[cn]] else smp[[cn]]
-      entry <- list(
+      # it off the 0-row template silently yields "" and the field renders
+      # with no label at all. Taking `src[[cn]]` is free -- it references the
+      # column, it does not copy it. A lazy table has no R attributes to lose,
+      # so the template stands in there.
+      lbl_src <- if (is.data.frame(src) && cn %in% names(src)) src[[cn]] else head0[[cn]]
+      cols[[length(cols) + 1L]] <- list(
         value  = paste0(tbl_nm, ".", cn),
         label  = column_label(lbl_src),
-        type   = column_meta_type(smp[[cn]]),
+        type   = column_meta_type(head0[[cn]]),
         table  = tbl_nm,
         column = cn
       )
-      if (identical(entry$type, "flag")) {
-        yes <- flag_affirmative_values(smp[[cn]])
-        if (length(yes)) entry$yes <- yes[[1L]]
-      }
-      cols[[length(cols) + 1L]] <- entry
     }
   }
   list(columns = cols, is_dm = TRUE)
@@ -440,28 +426,6 @@ table_head0 <- function(tbl) {
   as.data.frame(tbl)[0L, , drop = FALSE]
 }
 
-#' A BOUNDED sample of a table, for the checks that need values rather than
-#' just column names.
-#'
-#' `table_head0()` is enough to read names, labels and storage types, and it
-#' is what the shape templates use. Detecting a yes/no flag column
-#' ([flag_column()]) is different: "Y" is a VALUE, so a zero-row template can
-#' never see it, and the dm path would render a value select where the data
-#' frame path renders a checkbox.
-#'
-#' So this takes a LIMIT, not a collect. A remote table is still never pulled
-#' whole; it pays one bounded query per table at startup, which is far cheaper
-#' than the per-column distinct scans the lazy value loading exists to avoid.
-#' Reading past the bound would only sharpen the rendering, never correctness:
-#' a missed flag falls back to the select, and a false positive is recoverable
-#' from the mode pill.
-#' @noRd
-table_type_sample <- function(tbl, n = 200L) {
-  if (inherits(tbl, "tbl_lazy")) {
-    return(as.data.frame(dplyr::collect(utils::head(tbl, n))))
-  }
-  as.data.frame(utils::head(tbl, n))
-}
 
 #' One column's label attribute as a length-1 character ("" if none).
 #' @noRd
@@ -470,67 +434,11 @@ column_label <- function(col) {
   if (is.null(lbl)) "" else as.character(lbl)[1L]
 }
 
-# A yes/no vocabulary, uppercased. Deliberately NARROW: "Y"/"N"/"YES"/"NO"
-# only. Not "1"/"0" (too easy to hit a genuine numeric-ish code) and not
-# "TRUE"/"FALSE" (a real boolean is already logical). See flag_column().
-FLAG_AFFIRMATIVE <- c("Y", "YES")   # nolint: object_name_linter.
-FLAG_NEGATIVE <- c("N", "NO")       # nolint: object_name_linter.
-
-#' Is this a yes/no flag encoded as text?
-#'
-#' Character/factor columns whose values are drawn from a yes/no vocabulary
-#' are booleans that happen to be stored as text, which is how ADaM (and
-#' plenty of other exports) encode an indicator: `"Y"` with either `""`, `"N"`
-#' or `NA` for the absent case. Detecting them lets the filter render the same
-#' include-style checkbox it renders for a real logical, instead of a value
-#' select where the only sensible pick is `"Y"`.
-#'
-#' Missing and empty are ignored: they are the "not flagged" case, not a
-#' third category, so `{"", "Y"}`, `{"N", "Y"}` and `{"Y", NA}` all qualify.
-#' A column carrying ONLY `"Y"` qualifies too.
-#'
-#' The scan is BOUNDED. `build_column_meta_df()` runs over every column at
-#' startup and is deliberately cheap (the per-column value lists load lazily),
-#' so this must not pay a full pass over a long table. A false negative past
-#' the bound only costs the checkbox rendering, and a false positive is
-#' recoverable from the mode pill, so a bounded answer is good enough.
-#' @noRd
-flag_column <- function(col) {
-  if (is.factor(col)) {
-    vals <- levels(col)
-  } else if (is.character(col)) {
-    vals <- unique(utils::head(col, 10000L))
-  } else {
-    return(FALSE)
-  }
-  vals <- toupper(trimws(as.character(vals)))
-  vals <- vals[!is.na(vals) & nzchar(vals)]
-  length(vals) > 0L && all(vals %in% c(FLAG_AFFIRMATIVE, FLAG_NEGATIVE))
-}
-
-#' The literal(s) a checked flag box must match, taken from what the column
-#' actually carries, so the emitted code reads `AOCCFL %in% "Y"` rather than
-#' a normalising call over every possible spelling.
-#' @noRd
-flag_affirmative_values <- function(col) {
-  vals <- if (is.factor(col)) levels(col) else unique(utils::head(col, 10000L))
-  vals <- as.character(vals)
-  vals <- vals[!is.na(vals) & nzchar(vals)]
-  keep <- toupper(trimws(vals)) %in% FLAG_AFFIRMATIVE
-  unique(vals[keep])
-}
-
 #' Coarse column type for the JS side: "logical" columns render as a
 #' click-to-cycle value pill instead of a dropdown; everything else is "".
 #' @noRd
 column_meta_type <- function(col) {
-  if (is.logical(col)) {
-    "logical"
-  } else if (flag_column(col)) {
-    "flag"
-  } else {
-    ""
-  }
+  if (is.logical(col)) "logical" else ""
 }
 
 #' Lazily compute the value options for one column, by qualified key.
@@ -685,11 +593,10 @@ enforce_single_rule <- function(state, data) {
     v <- entry$values
     if (length(v) > 0L && !is.null(v)) next
     src <- column_source(data, entry)
-    # Flag columns are include-style checkboxes: empty values = unchecked
+    # Logical columns are include-style checkboxes: empty values = unchecked
     # = "no constraint from this flag" — a deliberate state, never filled.
-    # (The JS side adds fresh flag entries checked.) True for a real logical
-    # and for a yes/no column stored as text.
-    if (is.logical(src) || flag_column(src)) next
+    # (The JS side adds fresh flag entries as checked/TRUE.)
+    if (is.logical(src)) next
     fv <- first_value(src)
     if (!is.null(fv)) cols[[i]]$values <- fv
   }
@@ -856,17 +763,6 @@ column_condition_expr <- function(entry, src_df) {
   sym <- as.name(col)
 
   mode <- entry$mode %||% "single"
-
-  # A checked yes/no text flag: match whatever affirmative spelling the column
-  # actually uses. Unchecked never reaches here (empty values returns NULL
-  # above), which is the no-constraint rule the logical branch below shares.
-  if (identical(mode, "single") && length(real) == 1L &&
-      !has_na && !has_empty &&
-      is.data.frame(src_df) && col %in% names(src_df) &&
-      flag_column(src_df[[col]])) {
-    yes <- flag_affirmative_values(src_df[[col]])
-    if (length(yes)) return(bquote(.(sym) %in% .(yes)))
-  }
 
   if (identical(mode, "single") && length(real) == 1L &&
       !has_na && !has_empty &&
