@@ -379,3 +379,84 @@ test_that("an untabled claim filters on the FIRST evaluation, not the second", {
   # cohort.
   expect_identical(resolve_claim_tables(res$state, shape)$state, res$state)
 })
+
+test_that("reconciling against fresh data keeps a claim that has no table", {
+
+  # `enforce_single_rule()` drops an entry whose column it cannot find, and on
+  # a dm it finds a column through the entry's table. An untabled claim is
+  # therefore indistinguishable from a stale entry, and the data observer used
+  # to delete it.
+  d <- drill_test_dm()
+  st <- claim(name = "SEX", mode = "multi", values = "F")
+
+  expect_length(enforce_single_rule(st, d)$columns, 0L)
+
+  out <- reconcile_state(st, d, drill = TRUE)
+
+  expect_length(out$columns, 1L)
+  expect_identical(out$columns[[1L]]$table, "adsl")
+  expect_identical(out$columns[[1L]]$values, "F")
+
+  # A plain value filter reconciles as before: no claims reach it untabled.
+  expect_length(reconcile_state(st, d, drill = FALSE)$columns, 0L)
+
+  # A column no table carries is still dropped here; the resolution pass is
+  # what reports it (see the derived-column test above).
+  expect_length(
+    reconcile_state(claim(name = "DEATH", mode = "multi", values = "Died"),
+                    d, drill = TRUE)$columns,
+    0L
+  )
+})
+
+test_that("a claim landing while the upstream is dormant survives its return", {
+
+  # The off-screen drill. With the target's panel off screen the upstream is
+  # dormant, so the claim parks untabled: the shape the resolution pass needs
+  # is not there yet. When the panel comes back the data observer runs FIRST,
+  # and until this was fixed it dropped the untabled claim as stale -- the
+  # sender's status line said "Filtered: SEX = F" and the board went on
+  # showing everyone.
+  block <- new_drill_filter_block()
+  awake <- shiny::reactiveVal(FALSE)
+
+  shiny::testServer(
+    blockr.core:::get_s3_method("block_server", block),
+    {
+      session$flushReact()
+
+      # The claim lands while there is nothing upstream to resolve it against.
+      session$returned$state$state(
+        list(columns = list(list(name = "SEX", mode = "multi", values = "F")))
+      )
+      session$flushReact()
+
+      awake(TRUE)
+      for (i in 1:5) session$flushReact()
+
+      st <- session$returned$state$state()
+
+      expect_length(st$columns, 1L)
+      expect_identical(st$columns[[1L]]$table, "adsl")
+      expect_identical(st$columns[[1L]]$values, "F")
+
+      # and that state is the one that narrows the dm
+      shape <- filter_input_shape(drill_test_dm())
+      expect_equal(
+        make_filter_expr_from_shape(st$columns, shape),
+        make_filter_expr_from_shape(
+          claim(name = "SEX", table = "adsl", mode = "multi",
+                values = "F")$columns,
+          shape
+        )
+      )
+    },
+    args = list(
+      x = block,
+      data = list(data = function() {
+        shiny::req(awake())
+        drill_test_dm()
+      })
+    )
+  )
+})

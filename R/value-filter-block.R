@@ -172,7 +172,7 @@ value_filter_server <- function(state, drill = FALSE) {
           )
         )
         # Re-apply single-select rule against fresh data.
-        s <- enforce_single_rule(r_state(), d)
+        s <- reconcile_state(r_state(), d, drill = drill)
         if (!identical(s, r_state())) {
           self_write$active <- FALSE
           r_state(s)
@@ -660,6 +660,34 @@ first_value <- function(src) {
     uv <- sort(as.character(uv))
   }
   as.character(uv[[1L]])
+}
+
+#' Reconcile the held state against fresh data.
+#'
+#' `enforce_single_rule()` drops any entry whose column it cannot find in the
+#' data, and on a `dm` it looks a column up through the entry's `table`. A
+#' claim that arrived over the control channel has no table yet, so it looks
+#' exactly like a stale entry and gets dropped -- which is what happened
+#' whenever a drill landed while the target's panel was off screen: the
+#' upstream is dormant then, so the shape the resolution pass needs is not
+#' available, the claim was parked untabled, and the FIRST thing to run when
+#' the panel came back was this data observer, which deleted it before the
+#' resolution pass ever saw it. The drill reached a state nobody read, the
+#' sender's status line said "Filtered: SEX = F", and the profile showed
+#' everyone. Resolving first makes the entry findable, so only genuinely
+#' stale entries are dropped.
+#'
+#' @param state The filter state.
+#' @param data The block's current input.
+#' @param drill Resolve claim tables first (drill target only).
+#' @noRd
+reconcile_state <- function(state, data, drill = FALSE) {
+
+  if (isTRUE(drill) && length(state$columns %||% list())) {
+    state <- resolve_claim_tables(state, filter_input_shape(data))$state
+  }
+
+  enforce_single_rule(state, data)
 }
 
 #' Enforce "single-select always has a value" and drop schema-missing entries.
