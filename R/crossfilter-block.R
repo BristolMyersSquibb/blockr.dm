@@ -784,6 +784,14 @@ crossfilter_server <- function(active_dims, filters, range_filters,
             return(quote(identity(data)))
           }
 
+          # What this block contributes to the filter trail (see
+          # `?filter_trail`). Rendered from the live state, so it says what a
+          # reader needs ("SEX = F; lb.LBSTRESN 50 to 99") rather than the
+          # deparsed condition. The two `identity(data)` returns above are not
+          # wrapped: `identity()` hands the object back unchanged, so an
+          # incoming trail passes through them untouched.
+          clause <- crossfilter_clause(cat_filters, rng_filters)
+
           # Single-table input (data.frame or 1-table dm): use dplyr::filter
           if (r_input_is_df()) {
             # Combine all conditions (from the single table)
@@ -793,7 +801,13 @@ crossfilter_server <- function(active_dims, filters, range_filters,
             } else {
               Reduce(function(a, b) call("&", a, b), all_conds)
             }
-            return(as.call(list(quote(dplyr::filter), quote(data), combined)))
+            return(
+              trail_expr(
+                as.call(list(quote(dplyr::filter), quote(data), combined)),
+                trail_key(session),
+                clause
+              )
+            )
           }
 
           # Multi-table dm: use dm::dm_filter
@@ -802,7 +816,7 @@ crossfilter_server <- function(active_dims, filters, range_filters,
             expr[[tbl]] <- table_conditions[[tbl]]
           }
           expr[[1]] <- quote(dm::dm_filter)
-          expr
+          trail_expr(expr, trail_key(session), clause)
         }),
         state = list(
           active_dims = r_active_dims,

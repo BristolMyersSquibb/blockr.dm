@@ -135,7 +135,12 @@ new_dm_flatten_block <- function(
 
               req(tbl, nzchar(tbl))
 
-              if (length(include) == 0) {
+              # `dm_flatten_to_tbl()` builds a fresh tibble out of the dm, so
+              # the filter trail has to be carried across explicitly. This
+              # block adds no clause of its own; it only stops the
+              # dm-to-data-frame boundary from losing what the filters
+              # upstream recorded. See `?filter_trail`.
+              trail_expr(if (length(include) == 0) {
                 if (jtype == "left") {
                   bquote(
                     dm::dm_flatten_to_tbl(
@@ -184,7 +189,7 @@ new_dm_flatten_block <- function(
                   list(.recursive = is_recursive)
                 )
                 as.call(call_args)
-              }
+              })
             }),
             state = list(
               start_table = r_start_table,

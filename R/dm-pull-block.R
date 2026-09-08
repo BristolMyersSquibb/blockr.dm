@@ -84,9 +84,16 @@ new_dm_pull_block <- function(table = "", ...) {
             expr = reactive({
               tbl <- r_table()
               req(tbl, nzchar(tbl))
-              bquote(
-                dm::pull_tbl(data, .(tbl_sym)),
-                list(tbl_sym = as.name(tbl))
+              # `pull_tbl()` builds a fresh tibble out of the dm, so the filter
+              # trail has to be carried across explicitly. This block adds no
+              # clause of its own; it only stops the dm-to-data-frame boundary
+              # from losing what the filters upstream recorded. See
+              # `?filter_trail`.
+              trail_expr(
+                bquote(
+                  dm::pull_tbl(data, .(tbl_sym)),
+                  list(tbl_sym = as.name(tbl))
+                )
               )
             }),
             state = list(

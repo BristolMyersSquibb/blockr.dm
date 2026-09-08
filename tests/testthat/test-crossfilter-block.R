@@ -59,7 +59,7 @@ test_that("external write to r_filters updates expr and pushes to JS", {
 
       # expression now filters — downstream gets the right rows
       expr_after <- session$returned$expr()
-      txt <- paste(deparse(expr_after), collapse = " ")
+      txt <- paste(deparse(expr_after, width.cutoff = 500L), collapse = "")
       expect_match(txt, "dplyr::filter")
       expect_match(txt, "setosa")
       result <- eval(expr_after, list(data = iris, . = identity))
@@ -86,13 +86,15 @@ test_that("JS-shaped filter values become atomic literals, not list()", {
 
       vars$filters(list(.tbl = list(Species = list("setosa"))))
       session$flushReact()
-      txt <- paste(deparse(session$returned$expr()), collapse = " ")
+      txt <- paste(deparse(session$returned$expr(), width.cutoff = 500L),
+                   collapse = "")
       expect_match(txt, 'Species == "setosa"', fixed = TRUE)
       expect_no_match(txt, "list(", fixed = TRUE)
 
       vars$filters(list(.tbl = list(Species = list("setosa", "virginica"))))
       session$flushReact()
-      txt <- paste(deparse(session$returned$expr()), collapse = " ")
+      txt <- paste(deparse(session$returned$expr(), width.cutoff = 500L),
+                   collapse = "")
       expect_match(txt, 'Species %in% c("setosa", "virginica")', fixed = TRUE)
 
       result <- eval(session$returned$expr(), list(data = iris))
