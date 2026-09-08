@@ -162,8 +162,26 @@
     _buildDOM() {
       this.el.innerHTML = '';
 
-      // Gear header (top-right)
+      // Top bar: row counts on the left, reset + gear on the right. Reset
+      // lives here rather than under the panels because it doubles as the
+      // "you are looking at a subset" signal -- below the panels it was off
+      // screen on any board with more than two active dimensions.
       const gearHeader = el('div', 'jscf-gear-header');
+      this.statusEl = el('span', 'jscf-status-text');
+      gearHeader.appendChild(this.statusEl);
+      gearHeader.appendChild(el('span', 'jscf-topbar-spacer'));
+
+      this.resetBtn = el('button', 'jscf-reset-btn', ICON_RESET);
+      this.resetBtn.type = 'button';
+      this.resetBtn.title = 'Clear all filter values';
+      this.resetBtn.appendChild(el('span', null, 'Reset all'));
+      this.resetCountEl = el('span', 'jscf-reset-count');
+      this.resetCountEl.style.display = 'none';
+      this.resetBtn.appendChild(this.resetCountEl);
+      this.resetBtn.disabled = true;
+      this.resetBtn.addEventListener('click', () => this._resetAllFilters());
+      gearHeader.appendChild(this.resetBtn);
+
       const anchor = el('div', 'jscf-popover-anchor');
       this.gearBtn = el('button', 'jscf-gear-btn', ICON_GEAR);
       this.gearBtn.type = 'button';
@@ -235,10 +253,6 @@
       // Filter panels container
       this.panelsEl = el('div', 'jscf-panels');
       this.el.appendChild(this.panelsEl);
-
-      // Status footer (below panels)
-      this.statusEl = el('div', 'jscf-status-footer');
-      this.el.appendChild(this.statusEl);
     }
 
     _togglePopover() {
@@ -1479,11 +1493,20 @@
     // -- Status bar ---------------------------------------------------------
 
     _updateStatus() {
-      this.statusEl.innerHTML = '';
       const childTables = Object.keys(this.instances);
-      if (childTables.length === 0) return;
+      const nFilters = Object.keys(this.filters).length;
 
-      const filterEntries = Object.entries(this.filters);
+      // The filter count rides on the button rather than the status text:
+      // it is what makes the tinted state readable at a glance, and it keeps
+      // the status line one item long when six dimensions are active.
+      this.resetBtn.disabled = nFilters === 0;
+      this.resetCountEl.textContent = nFilters > 0 ? String(nFilters) : '';
+      this.resetCountEl.style.display = nFilters > 0 ? '' : 'none';
+
+      if (childTables.length === 0) {
+        this.statusEl.textContent = '';
+        return;
+      }
 
       let totalRows = 0;
       let filteredRows = 0;
@@ -1492,24 +1515,10 @@
         filteredRows += this.instances[ct].allFiltered().length;
       }
 
-      // Compact footer: "N filters active · X / Y rows · Reset all"
-      const parts = [];
-
-      if (filterEntries.length > 0) {
-        parts.push(`${filterEntries.length} filter${filterEntries.length > 1 ? 's' : ''} active`);
-        parts.push(`${fmtCount(filteredRows)} / ${fmtCount(totalRows)} rows`);
-      } else {
-        parts.push(`${fmtCount(totalRows)} rows` +
-          (childTables.length > 1 ? ` in ${childTables.length} tables` : ''));
-      }
-
-      this.statusEl.appendChild(el('span', 'jscf-status-text', parts.join(' \u00b7 ')));
-
-      if (filterEntries.length > 0) {
-        const resetBtn = el('button', 'jscf-status-reset', 'Reset all');
-        resetBtn.addEventListener('click', () => this._resetAllFilters());
-        this.statusEl.appendChild(resetBtn);
-      }
+      this.statusEl.textContent = nFilters > 0
+        ? `${fmtCount(filteredRows)} / ${fmtCount(totalRows)} rows`
+        : `${fmtCount(totalRows)} rows` +
+          (childTables.length > 1 ? ` in ${childTables.length} tables` : '');
     }
 
     // -- Shiny communication ------------------------------------------------

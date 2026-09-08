@@ -22,8 +22,13 @@
 .jscf-gear-header {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
-  margin-bottom: 6px;
+  gap: 8px;
+  padding-bottom: 8px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid var(--blockr-grey-200, #e5e7eb);
+}
+.jscf-topbar-spacer {
+  flex: 1;
 }
 .jscf-gear-btn {
   display: inline-flex;
@@ -249,35 +254,57 @@
 
 
 /* ============================================================
-   Status footer (below panels)
+   Status text + reset button (top bar)
    ============================================================ */
-.jscf-status-footer {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 2px 0;
-  margin-top: 8px;
-  border-top: 1px solid var(--blockr-grey-200, #e5e7eb);
-}
 .jscf-status-text {
   font-size: var(--blockr-font-size-xs, 0.75rem);
   color: var(--blockr-grey-500, #6b7280);
   font-variant-numeric: tabular-nums;
 }
-.jscf-status-reset {
+
+/* Reset all: tinted while filters are on, so the button is also the
+   "you are looking at a subset" signal. Disabled rather than hidden when
+   nothing is filtered -- a control that appears and disappears under the
+   cursor is worse than a dim one. */
+.jscf-reset-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 9px;
   font-size: var(--blockr-font-size-xs, 0.75rem);
-  color: var(--blockr-grey-400, #9ca3af);
-  background: none;
-  border: none;
-  cursor: pointer;
-  padding: 0;
-  text-decoration: underline;
-  text-decoration-color: transparent;
-  transition: color 0.15s, text-decoration-color 0.15s;
-}
-.jscf-status-reset:hover {
+  font-weight: var(--blockr-font-weight-medium, 500);
   color: var(--blockr-color-primary, #2563eb);
-  text-decoration-color: currentColor;
+  background: rgba(37, 99, 235, 0.07);
+  border: 1px solid rgba(37, 99, 235, 0.35);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+.jscf-reset-btn:hover {
+  background: rgba(37, 99, 235, 0.13);
+  border-color: var(--blockr-color-primary, #2563eb);
+}
+.jscf-reset-btn:disabled {
+  color: var(--blockr-grey-500, #6b7280);
+  background: transparent;
+  border-color: var(--blockr-color-border, #e5e7eb);
+  opacity: 0.4;
+  cursor: default;
+}
+.jscf-reset-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 4px;
+  border-radius: 9999px;
+  background: var(--blockr-color-primary, #2563eb);
+  color: #fff;
+  font-size: 10px;
+  font-weight: var(--blockr-font-weight-semibold, 600);
+  line-height: 1;
 }
 
 /* ============================================================
