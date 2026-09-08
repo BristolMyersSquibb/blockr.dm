@@ -6,6 +6,7 @@
 .js-crossfilter-container {
   font: inherit;
   position: relative;
+  container-type: inline-size;
   margin: 0 -16px -10px -16px;
   padding: 14px 10px 6px;
 }
@@ -29,6 +30,11 @@
 }
 .jscf-topbar-spacer {
   flex: 1;
+}
+/* The gear sits in this wrapper; without it the wrapper, not the button,
+   is the flex item that gives way when the block gets very narrow. */
+.jscf-popover-anchor {
+  flex-shrink: 0;
 }
 .jscf-gear-btn {
   display: inline-flex;
@@ -260,6 +266,11 @@
   font-size: var(--blockr-font-size-xs, 0.75rem);
   color: var(--blockr-grey-500, #6b7280);
   font-variant-numeric: tabular-nums;
+  /* Shrinks and ellipsises before the buttons give up any width. */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Reset all: tinted while filters are on, so the button is also the
@@ -279,6 +290,10 @@
   border: 1px solid rgba(37, 99, 235, 0.35);
   border-radius: 4px;
   cursor: pointer;
+  /* The label must never wrap: a two-line label makes the button taller than
+     the gear beside it and the row stops reading as one strip. */
+  white-space: nowrap;
+  flex-shrink: 0;
   transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
 }
 .jscf-reset-btn:hover {
@@ -292,6 +307,18 @@
   opacity: 0.4;
   cursor: default;
 }
+/* Narrow block: drop the label, keep the glyph and the count. The button
+   stays 26px square like the gear, and its title carries the wording. */
+@container (max-width: 420px) {
+  .jscf-reset-label {
+    display: none;
+  }
+  .jscf-reset-btn {
+    gap: 4px;
+    padding: 0 7px;
+  }
+}
+
 .jscf-reset-count {
   display: inline-flex;
   align-items: center;

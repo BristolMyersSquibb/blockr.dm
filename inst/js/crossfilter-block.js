@@ -174,7 +174,7 @@
       this.resetBtn = el('button', 'jscf-reset-btn', ICON_RESET);
       this.resetBtn.type = 'button';
       this.resetBtn.title = 'Clear all filter values';
-      this.resetBtn.appendChild(el('span', null, 'Reset all'));
+      this.resetBtn.appendChild(el('span', 'jscf-reset-label', 'Reset all'));
       this.resetCountEl = el('span', 'jscf-reset-count');
       this.resetCountEl.style.display = 'none';
       this.resetBtn.appendChild(this.resetCountEl);
