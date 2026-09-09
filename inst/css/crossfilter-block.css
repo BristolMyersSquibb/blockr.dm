@@ -645,89 +645,147 @@
 }
 
 /* ============================================================
-   Featured chip shelf + pinned card
+   Featured pill row + pinned card
    ============================================================ */
 .jscf-shelf {
   display: flex;
   flex-wrap: wrap;
-  gap: 5px;
+  gap: 5px 6px;
   align-items: center;
   margin: 0 0 12px;
 }
-/* Dashed while dormant: the chip is an invitation to build a filter, not a
-   filter. Once clicked it leaves the shelf and becomes a card. */
-.jscf-shelf-chip {
+
+/* The pill is the design system's tag (.blockr-select__tag): grey-100 on
+   grey-200 at 4px, not a dashed capsule. It carries two facts at once -- the
+   radio inside it is the group, the fill is "this column has a card". */
+.jscf-pill {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 2px 8px;
-  font-size: var(--blockr-font-size-xs, 0.75rem);
+  gap: 5px;
+  padding: 2px 7px;
+  font-size: var(--blockr-font-size-sm, 0.8125rem);
   font-weight: var(--blockr-font-weight-medium, 500);
+  line-height: 1.4;
   color: var(--blockr-grey-700, #374151);
   background: #fff;
-  border: 1px dashed var(--blockr-grey-400, #9ca3af);
-  border-radius: 9999px;
-  cursor: pointer;
+  border: 1px solid var(--blockr-grey-200, #e5e7eb);
+  border-radius: 4px; /* --blockr-radius-sm */
   white-space: nowrap;
-  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+  user-select: none;
+  transition: background 0.15s ease, border-color 0.15s ease;
 }
-.jscf-shelf-chip:hover {
+/* Three facts, three channels, so every combination of them is legible:
+   the FILL says a card is open, the BORDER says this column groups the board,
+   the LEFT EDGE says it is cutting rows. The group used to own the fill as
+   well, which made "grouping with a card" and "grouping without one"
+   pixel-identical, and left the accent edge invisible against an already
+   blue border. */
+.jscf-pill--open {
+  background: var(--blockr-grey-100, #f3f4f6);
+}
+/* Cutting rows, as opposed to merely having a card. Blue-700, so it reads
+   against the group's own softer blue border as well as against grey. The
+   2px comes out of the pill's padding (1 + 7 becomes 2 + 6), so the width
+   does not change when a level is picked and a wrapped row can never re-flow
+   under the pointer. */
+.jscf-pill--filtering {
+  border-left: 2px solid var(--blockr-blue-700, #1d4ed8);
+  padding-left: 6px;
+}
+/* The group keeps the border rather than the fill, and keeps it light: at
+   full primary, doubled by an inset shadow, one pill in the row turned into a
+   heavy blue box. Three quiet cues that agree -- border, filled radio, blue
+   name -- carry it without any of them shouting. */
+.jscf-pill--group {
+  border-color: rgba(37, 99, 235, 0.55);
+}
+.jscf-pill--group .jscf-pill-name {
   color: var(--blockr-color-primary, #2563eb);
-  border-style: solid;
-  border-color: rgba(37, 99, 235, 0.5);
-  background: rgba(37, 99, 235, 0.05);
 }
+
+/* One of these, not many. A radio is the web's one-of-many mark; a pin is a
+   toggle, and a row of toggles reads as "you may set several". */
+.jscf-pill-radio {
+  width: 12px;
+  height: 12px;
+  padding: 0;
+  flex-shrink: 0;
+  border: 1.5px solid var(--blockr-grey-300, #d1d5db);
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: border-color 0.15s ease;
+}
+.jscf-pill-radio:hover:not(:disabled) {
+  border-color: var(--blockr-color-primary, #2563eb);
+}
+.jscf-pill-radio--on,
+.jscf-pill-radio--on:hover {
+  border-color: var(--blockr-color-primary, #2563eb);
+}
+.jscf-pill-radio--on::after {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--blockr-color-primary, #2563eb);
+}
+/* A column that cannot group the board keeps its radio so the names stay in
+   line, and says why on hover rather than going missing. */
+.jscf-pill-radio--blocked {
+  border-color: var(--blockr-grey-200, #e5e7eb);
+  border-style: dashed;
+  cursor: not-allowed;
+}
+
+.jscf-pill-name {
+  padding: 0;
+  border: none;
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+.jscf-pill-name:hover {
+  color: var(--blockr-color-primary, #2563eb);
+}
+/* The pinned column's card is held open on the R side, so its name is a
+   label and not a button. */
+.jscf-pill-name--static {
+  cursor: default;
+}
+.jscf-pill-name--static:hover {
+  color: inherit;
+}
+
+/* The gear's featured chips take the same radio, at the size their row uses. */
+.jscf-chip-radio {
+  margin-right: 1px;
+}
+
 .jscf-shelf-more {
   border: none;
+  background: transparent;
   color: var(--blockr-grey-400, #9ca3af);
+  font-size: var(--blockr-font-size-xs, 0.75rem);
   font-weight: 400;
-  padding-left: 2px;
+  padding: 2px 4px;
+  cursor: pointer;
 }
 .jscf-shelf-more:hover {
-  border: none;
+  color: var(--blockr-color-primary, #2563eb);
   background: transparent;
 }
 
-/* The pinned card is the one card that is always open, so it gets a band of
-   its own -- the tint is what says "different in kind", not just "first". */
-.jscf-pinned-band {
-  background: var(--blockr-color-bg-subtle, #f9fafb);
-  border: 1px solid var(--blockr-grey-200, #e5e7eb);
-  border-radius: 6px;
-  padding: 8px 10px 9px;
-  margin: 0 0 12px;
-}
-.jscf-pinned-band .dm-cf-filter-card {
-  max-width: none;
-}
-/* Its picker replaces the label, so it has to sit on the label's baseline
-   rather than read as a form control dropped into a card header. */
-.jscf-pin-wrap {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-}
-.jscf-pin-select {
-  height: 22px;
-  padding: 0 4px;
-  font: inherit;
-  font-size: var(--blockr-font-size-sm, 0.8125rem);
-  font-weight: var(--blockr-font-weight-medium, 500);
-  color: var(--blockr-color-text-primary, #111827);
-  background: #fff;
-  border: 1px solid var(--blockr-color-border, #e5e7eb);
-  border-radius: 4px;
-  cursor: pointer;
-  /* A native select sizes to its widest option, and the vocabulary contains
-     names like BEST_OVERALL_RESPONSE. Capped so one long name cannot take the
-     whole card header; the select ellipsises what it cannot show. */
-  max-width: 60%;
-}
-.jscf-pin-select:focus {
-  outline: none;
-  border-color: var(--blockr-color-primary, #2563eb);
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+/* The group's card is an ordinary card in an ordinary place: no band, no
+   indent, no hoist to the top. Only its label picks up the pill's colour, so
+   the eye can pair the card with the pill that named it. Grouping by a column
+   and filtering on it are separate facts, and the card may not exist at all. */
+.jscf-pinned-card .dm-cf-filter-card-label {
+  color: var(--blockr-color-primary, #2563eb);
 }
 
 /* Featured vocabulary, edited in the gear ---------------------------------- */
@@ -741,11 +799,9 @@
   color: var(--blockr-grey-400, #9ca3af);
   font-style: italic;
 }
-/* The same pin in three places: a search row (add to the vocabulary), a
-   featured chip (make it the group) and the card itself. One glyph, one
-   meaning: this column is held up front. */
-.jscf-feature-btn,
-.jscf-chip-pin {
+/* The pin means one thing: this column is held up front. Choosing the group
+   is a radio (.jscf-pill-radio), because only one column can be it. */
+.jscf-feature-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -760,13 +816,7 @@
   cursor: pointer;
   transition: color 0.15s ease, background 0.15s ease;
 }
-.jscf-chip-pin {
-  width: 16px;
-  height: 16px;
-  margin-left: -2px;
-}
-.jscf-feature-btn:hover,
-.jscf-chip-pin:hover {
+.jscf-feature-btn:hover {
   color: var(--blockr-grey-700, #374151);
   background: var(--blockr-grey-100, #f3f4f6);
 }
@@ -774,6 +824,7 @@
 .jscf-feature-on:hover {
   color: var(--blockr-color-primary, #2563eb);
 }
+
 .jscf-chip-pinned {
   border-color: rgba(37, 99, 235, 0.35);
   background: rgba(37, 99, 235, 0.07);

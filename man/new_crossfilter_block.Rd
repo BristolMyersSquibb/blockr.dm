@@ -31,15 +31,17 @@ for row counts. E.g., \code{"orders.amount"}.}
 \item{agg_func}{Aggregation function: \code{"sum"} or \code{"mean"}. Only used
 when \code{measure} is set.}
 
-\item{featured}{Columns worth showing up front: they appear as one-click
-"add filter" chips above the cards, rank first in the search, and supply
-the choices for \code{pinned}. E.g. \code{c("SEX", "RACE", "AGE")}. Empty (the
-default) means no chip shelf, as before.}
+\item{featured}{Columns worth showing up front: they get a pill each above
+the cards, rank first in the search, and are the columns \code{pinned} may
+name. A pill's name opens and closes that column's filter card, and its
+radio makes the column the group. E.g. \code{c("SEX", "RACE", "AGE")}. Empty
+(the default) means no pill row, as before.}
 
-\item{pinned}{A single column kept in an always-open card at the top of the
-block: first, never removable, and picked through a select in its own card
-header rather than a label. Only \code{featured} columns on the parent table
-qualify. \code{NULL} (the default) means no pinned card.}
+\item{pinned}{The single column the block reports as the board's group,
+marked by the filled radio on its pill. Only \code{featured} columns on the
+parent table qualify. Grouping is independent of filtering: a pinned
+column need not have a card, and a card does not make a column the group.
+\code{NULL} (the default) means no group.}
 
 \item{...}{Forwarded to \code{\link[blockr.core:new_transform_block]{blockr.core::new_transform_block()}}. A package
 building on this block passes its own \code{class} here: the subclass has to be

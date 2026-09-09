@@ -91,9 +91,10 @@ test_that("featured and pinned round-trip through block state", {
   expect_null(state$pinned)
 })
 
-test_that("the pinned column is made an active dimension", {
-  # The pinned card draws counts and bars from the ordinary crossfilter
-  # machinery, so its column has to be active or there is nothing to draw.
+test_that("grouping by a column does not open its filter card", {
+  # The two are separate facts: a column can split every exhibit on the board
+  # without any of its levels being filtered out. Cards are opened from the
+  # pill row, the group's included.
   blk <- new_crossfilter_block(featured = "Species", pinned = "Species")
 
   testServer(
@@ -101,7 +102,8 @@ test_that("the pinned column is made an active dimension", {
     args = list(x = blk, data = list(data = function() iris)),
     {
       session$flushReact()
-      expect_equal(session$returned$state$active_dims(), list(.tbl = "Species"))
+      expect_equal(session$returned$state$pinned(), "Species")
+      expect_equal(session$returned$state$active_dims(), list())
     }
   )
 })
@@ -136,6 +138,7 @@ test_that("moving the pin keeps the previous column and its filter", {
   blk <- new_crossfilter_block(
     featured = c("Species", "Site"),
     pinned = "Species",
+    active_dims = list(.tbl = "Species"),
     filters = list(.tbl = list(Species = "setosa"))
   )
 
@@ -150,8 +153,9 @@ test_that("moving the pin keeps the previous column and its filter", {
       session$flushReact()
 
       expect_equal(session$returned$state$pinned(), "Site")
-      expect_setequal(session$returned$state$active_dims()$.tbl,
-                      c("Species", "Site"))
+      # The column that lost the pin keeps its card and its filter. Site gains
+      # the pin without gaining a card.
+      expect_equal(session$returned$state$active_dims()$.tbl, "Species")
       expect_equal(session$returned$state$filters(),
                    list(.tbl = list(Species = "setosa")))
 
@@ -161,8 +165,13 @@ test_that("moving the pin keeps the previous column and its filter", {
   )
 })
 
-test_that("clearing all dimensions leaves the pinned card standing", {
-  blk <- new_crossfilter_block(featured = "Species", pinned = "Species")
+test_that("clearing all dimensions leaves the group standing", {
+  # Clear all takes the cards, including the group's own card if it has one.
+  # What it must not take is the split: the board keeps grouping.
+  blk <- new_crossfilter_block(
+    featured = "Species", pinned = "Species",
+    active_dims = list(.tbl = "Species")
+  )
 
   testServer(
     blockr.core:::get_s3_method("block_server", blk),
@@ -171,7 +180,7 @@ test_that("clearing all dimensions leaves the pinned card standing", {
       session$flushReact()
       session$setInputs(`expr-clear_filters` = 1)
       session$flushReact()
-      expect_equal(session$returned$state$active_dims(), list(.tbl = "Species"))
+      expect_equal(session$returned$state$pinned(), "Species")
     }
   )
 })
@@ -197,7 +206,7 @@ test_that("the featured vocabulary is editable from the client", {
       session$setInputs(`expr-set_pinned` = "Species")
       session$flushReact()
       expect_equal(session$returned$state$pinned(), "Species")
-      expect_equal(session$returned$state$active_dims(), list(.tbl = "Species"))
+      expect_equal(session$returned$state$active_dims(), list())
 
       # Un-featuring the pinned column drops the pin with it: the pin is a mark
       # on a member of the vocabulary, not a value of its own.
@@ -209,7 +218,10 @@ test_that("the featured vocabulary is editable from the client", {
 })
 
 test_that("an empty pick unpins without clearing the cards", {
-  blk <- new_crossfilter_block(featured = "Species", pinned = "Species")
+  blk <- new_crossfilter_block(
+    featured = "Species", pinned = "Species",
+    active_dims = list(.tbl = "Species")
+  )
 
   testServer(
     blockr.core:::get_s3_method("block_server", blk),

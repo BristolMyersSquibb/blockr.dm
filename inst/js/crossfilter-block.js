@@ -260,15 +260,10 @@
         }
       });
 
-      // The pinned card sits in its own band above everything else: it is the
-      // one card that is always open, and the band is what tells a reader the
-      // card is different in kind from the ones below it.
-      this.pinnedEl = el('div', 'jscf-pinned-band');
-      this.pinnedEl.style.display = 'none';
-      this.el.appendChild(this.pinnedEl);
-
-      // One-click shelf for the columns a board declared `featured`. The gear
-      // popover stays for everything else, reached through the "more" chip.
+      // The pill row comes first, above every card: it is the vocabulary the
+      // cards below are drawn from, and the group is chosen on it. The group's
+      // own card is an ordinary card in the list, in the place it was added --
+      // grouping by a column and filtering on it are separate facts.
       this.shelfEl = el('div', 'jscf-shelf');
       this.shelfEl.style.display = 'none';
       this.el.appendChild(this.shelfEl);
@@ -468,24 +463,33 @@
       }
 
       const chipWrap = el('div', 'jscf-active-dims-chips');
+
+      // No "none" option, and the radio does not clear on a second click.
+      // Ungrouped is where a board starts -- `pinned` is NULL by default --
+      // but it is not a state to step into from here: on a board whose
+      // exhibits bind a stamped column by name, dropping the group takes that
+      // column away with it. A board that wants no group does not set one.
       for (const f of this.featured) {
         const chip = el('span', 'jscf-active-chip');
         const isPinned = f.dim === this.pinned;
         const pinnable = this.pinnable.includes(f.dim);
         if (isPinned) chip.classList.add('jscf-chip-pinned');
 
+        // The same radio as the pill row. The pin next door in the search
+        // list means "held up front", which is a different fact, and one
+        // glyph cannot carry both.
         if (pinnable) {
-          const pin = el('button', 'jscf-chip-pin', ICON_PIN);
-          pin.type = 'button';
-          pin.title = isPinned
-            ? `${f.dim} is the group`
-            : `Group by ${f.dim}`;
-          if (isPinned) pin.classList.add('jscf-feature-on');
-          pin.addEventListener('click', (e) => {
+          const radio = el('button', 'jscf-pill-radio jscf-chip-radio');
+          radio.type = 'button';
+          radio.title = isPinned
+            ? `${f.dim} groups the board`
+            : `Group the board by ${f.dim}`;
+          if (isPinned) radio.classList.add('jscf-pill-radio--on');
+          radio.addEventListener('click', (e) => {
             e.stopPropagation();
-            this._setPinned(isPinned ? '' : f.dim);
+            if (!isPinned) this._setPinned(f.dim);
           });
-          chip.appendChild(pin);
+          chip.appendChild(radio);
         }
 
         chip.appendChild(document.createTextNode(f.dim));
@@ -576,20 +580,19 @@
       Shiny.setInputValue(nsBase + '-set_pinned', dim, { priority: 'event' });
     }
 
-    // -- Featured chip shelf ------------------------------------------------
-    // The columns a board declared worth showing, minus the ones already on
-    // screen. One click each, against three through the gear. The gear stays
-    // for everything else and is reached from the same row, so the shelf never
-    // has to grow past the vocabulary it was given.
+    // -- Featured pill row --------------------------------------------------
+    // One pill per featured column, whether or not it has a card, because the
+    // radio has to be reachable on all of them. Each pill says two things at
+    // once: the radio is the group (exactly one, which is why it is a radio
+    // and not a pin -- a pin is a toggle and toggles are many-of-many), and
+    // the pill's own fill says a card is open. A column that is actually
+    // cutting rows takes a 2px accent edge, which comes out of the pill's
+    // existing padding: no width changes when a filter is applied, so
+    // picking a level can never re-wrap the row underneath the pointer.
     _renderShelf() {
       if (!this.shelfEl) return;
       this.shelfEl.innerHTML = '';
-
-      const dormant = this.featured.filter((f) => {
-        if (!f || !f.dim) return false;
-        if (f.dim === this.pinned) return false;
-        return !asArray(this.activeDims[f.table]).includes(f.dim);
-      });
+      this._pillEls = {};
 
       if (this.featured.length === 0) {
         this.shelfEl.style.display = 'none';
@@ -597,17 +600,45 @@
       }
       this.shelfEl.style.display = '';
 
-      for (const f of dormant) {
-        const chip = el('button', 'jscf-shelf-chip', '+ ');
-        chip.type = 'button';
-        chip.appendChild(document.createTextNode(f.dim));
-        chip.title = f.label ? `${f.label} (${f.table})` : f.table;
-        chip.addEventListener('click', () => this._addDimension(f.table, f.dim));
-        this.shelfEl.appendChild(chip);
+      for (const f of this.featured) {
+        if (!f || !f.dim) continue;
+        const pill = el('span', 'jscf-pill');
+        pill.dataset.dim = f.dim;
+
+        // The group mark. Disabled rather than absent where the column cannot
+        // split the board (crossfilter_pinnable()): the row keeps its
+        // alignment and the title says why.
+        const pinnable = this.pinnable.includes(f.dim);
+        const radio = el('button', 'jscf-pill-radio');
+        radio.type = 'button';
+        if (pinnable) {
+          radio.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (f.dim !== this.pinned) this._setPinned(f.dim);
+          });
+        } else {
+          radio.disabled = true;
+          radio.classList.add('jscf-pill-radio--blocked');
+          radio.title = `${f.dim} is on ${f.table}, it cannot group the board`;
+        }
+        pill.appendChild(radio);
+
+        // The name opens and closes the column's own filter card, the group's
+        // included: a column can group the board without filtering it.
+        const name = el('button', 'jscf-pill-name', f.dim);
+        name.type = 'button';
+        name.addEventListener('click', () => {
+          asArray(this.activeDims[f.table]).includes(f.dim)
+            ? this._removeDimension(f.table, f.dim)
+            : this._addDimension(f.table, f.dim);
+        });
+        pill.appendChild(name);
+
+        this._pillEls[f.dim] = { pill, radio, table: f.table };
+        this.shelfEl.appendChild(pill);
       }
 
-      const more = el('button', 'jscf-shelf-chip jscf-shelf-more',
-        dormant.length ? 'more\u2026' : 'add a filter\u2026');
+      const more = el('button', 'jscf-shelf-more', 'more\u2026');
       more.type = 'button';
       more.title = 'Search all columns';
       more.addEventListener('click', (e) => {
@@ -615,6 +646,36 @@
         this._openPopover();
       });
       this.shelfEl.appendChild(more);
+
+      this._syncShelfState();
+    }
+
+    // Whether a column is cutting rows, as opposed to merely having a card:
+    // `filters` holds an array for a categorical dim and {min,max} for a
+    // range one, and an empty array is a card with nothing picked.
+    _isFiltering(dim) {
+      const v = this.filters[dim];
+      if (!v) return false;
+      return Array.isArray(v) ? v.length > 0 : v.min !== undefined;
+    }
+
+    // The three states, written as classes on pills that already exist. A
+    // filter click must not rebuild the row: the pointer is on it.
+    _syncShelfState() {
+      if (!this._pillEls) return;
+      for (const [dim, { pill, radio, table }] of Object.entries(this._pillEls)) {
+        const isGroup = dim === this.pinned;
+        pill.classList.toggle('jscf-pill--group', isGroup);
+        pill.classList.toggle('jscf-pill--open',
+          asArray(this.activeDims[table]).includes(dim));
+        pill.classList.toggle('jscf-pill--filtering', this._isFiltering(dim));
+        radio.classList.toggle('jscf-pill-radio--on', isGroup);
+        if (!radio.disabled) {
+          radio.title = isGroup
+            ? `${dim} groups the board`
+            : `Group the board by ${dim}`;
+        }
+      }
     }
 
     // -- Receive data from R ------------------------------------------------
@@ -949,30 +1010,15 @@
 
     _buildPanels() {
       this.panelsEl.innerHTML = '';
-      this.pinnedEl.innerHTML = '';
-      this.pinnedEl.style.display = 'none';
       const dims = Object.keys(this.dimSource);
       if (dims.length === 0) return;
 
-      // The pinned dim is a normal dimension with different chrome: it is
-      // drawn first, in its own band, and left out of the grouping below so it
-      // does not appear twice.
-      const pinned = this.pinned;
-      if (pinned && this.dimensions[pinned] &&
-          this._getDimType(pinned) === 'categorical') {
-        const card = this._createCategoricalCard(
-          pinned, this.dimSource[pinned], { pinned: true }
-        );
-        this.pinnedEl.appendChild(card);
-        this.pinnedEl.style.display = '';
-        this.panels[pinned] = card;
-      }
-
-      // Group dims by source table
+      // Group dims by source table. The pinned dim is not lifted out: it is an
+      // ordinary card and stays where it was added, so choosing a group never
+      // moves a card the reader was looking at.
       const grouped = {};
       for (const dim of dims) {
         if (!this.dimensions[dim]) continue;
-        if (dim === pinned && this.panels[dim]) continue;
         const src = this.dimSource[dim];
         (grouped[src] = grouped[src] || []).push(dim);
       }
@@ -993,7 +1039,8 @@
           const type = this._getDimType(dim);
           const card = (type === 'range' || type === 'date')
             ? this._createRangeCard(dim, tbl, type)
-            : this._createCategoricalCard(dim, tbl);
+            : this._createCategoricalCard(dim, tbl,
+                { pinned: dim === this.pinned });
           wrap.appendChild(card);
           this.panels[dim] = card;
         }
@@ -1011,35 +1058,17 @@
         isPinned ? 'dm-cf-filter-card jscf-pinned-card' : 'dm-cf-filter-card');
       card.dataset.dim = dim;
 
-      // Header. The pinned card carries the picker where every other card
-      // carries a label: the column it holds is a choice, and this is the only
-      // place that choice can be made.
+      // Header. Every card carries a label, the pinned one included: the
+      // group is chosen on the pill row above, where the choice sits beside
+      // the columns it is chosen from. A select in this header was the first
+      // cut and read as a form field dropped into a card.
       const header = el('div', 'dm-cf-filter-card-header');
-      if (isPinned && this.pinnable.length > 1) {
-        const wrap = el('span', 'jscf-pin-wrap');
-        const select = el('select', 'jscf-pin-select');
-        for (const opt of this.pinnable) {
-          const o = el('option');
-          o.value = opt;
-          o.textContent = opt;
-          if (opt === dim) o.selected = true;
-          select.appendChild(o);
-        }
-        select.addEventListener('change', () => this._setPinned(select.value));
-        wrap.appendChild(select);
-        const sublabel = this._getDimLabel(dim);
-        if (sublabel) {
-          wrap.appendChild(el('span', 'dm-cf-filter-card-sublabel', sublabel));
-        }
-        header.appendChild(wrap);
-      } else {
-        const labelEl = el('span', 'dm-cf-filter-card-label', dim);
-        const sublabel = this._getDimLabel(dim);
-        if (sublabel) {
-          labelEl.appendChild(el('span', 'dm-cf-filter-card-sublabel', sublabel));
-        }
-        header.appendChild(labelEl);
+      const labelEl = el('span', 'dm-cf-filter-card-label', dim);
+      const sublabel = this._getDimLabel(dim);
+      if (sublabel) {
+        labelEl.appendChild(el('span', 'dm-cf-filter-card-sublabel', sublabel));
       }
+      header.appendChild(labelEl);
 
       const actions = el('div', 'dm-cf-filter-card-actions');
       const resetBtn = el('button', 'dm-cf-reset-btn', ICON_RESET);
@@ -1742,6 +1771,9 @@
     _updateStatus() {
       const childTables = Object.keys(this.instances);
       const nFilters = Object.keys(this.filters).length;
+
+      // The pill row carries the same fact one level up, as an accent edge.
+      this._syncShelfState();
 
       // The filter count rides on the button rather than the status text:
       // it is what makes the tinted state readable at a glance, and it keeps

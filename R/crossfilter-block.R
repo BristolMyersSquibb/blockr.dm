@@ -15,14 +15,16 @@
 #'   for row counts. E.g., `"orders.amount"`.
 #' @param agg_func Aggregation function: `"sum"` or `"mean"`. Only used
 #'   when `measure` is set.
-#' @param featured Columns worth showing up front: they appear as one-click
-#'   "add filter" chips above the cards, rank first in the search, and supply
-#'   the choices for `pinned`. E.g. `c("SEX", "RACE", "AGE")`. Empty (the
-#'   default) means no chip shelf, as before.
-#' @param pinned A single column kept in an always-open card at the top of the
-#'   block: first, never removable, and picked through a select in its own card
-#'   header rather than a label. Only `featured` columns on the parent table
-#'   qualify. `NULL` (the default) means no pinned card.
+#' @param featured Columns worth showing up front: they get a pill each above
+#'   the cards, rank first in the search, and are the columns `pinned` may
+#'   name. A pill's name opens and closes that column's filter card, and its
+#'   radio makes the column the group. E.g. `c("SEX", "RACE", "AGE")`. Empty
+#'   (the default) means no pill row, as before.
+#' @param pinned The single column the block reports as the board's group,
+#'   marked by the filled radio on its pill. Only `featured` columns on the
+#'   parent table qualify. Grouping is independent of filtering: a pinned
+#'   column need not have a card, and a card does not make a column the group.
+#'   `NULL` (the default) means no group.
 #' @param ... Forwarded to [blockr.core::new_transform_block()]. A package
 #'   building on this block passes its own `class` here: the subclass has to be
 #'   set at construction, which is where block metadata is resolved from the
@@ -524,27 +526,19 @@ crossfilter_server <- function(active_dims, filters, range_filters,
         }
       })
 
-      # The pinned card is an ordinary crossfilter dimension wearing different
-      # chrome: its counts and bars come from the same machinery as any other
-      # card, so the column has to be active for the client to have anything to
-      # draw. Kept first in the table's dims so panel order agrees with the UI.
-      shiny::observe({
-        pin <- pin_info()
-        if (is.null(pin$pinned) || is.null(pin$pinned_table)) {
-          return()
-        }
-        active <- r_active_dims()
-        current <- active[[pin$pinned_table]] %||% character()
-        if (!pin$pinned %in% current) {
-          active[[pin$pinned_table]] <- c(pin$pinned, current)
-          r_active_dims(active)
-        }
-      })
+      # Grouping does not open a card. The two are separate facts: a column can
+      # split every exhibit on the board without any of its levels being
+      # filtered out, and the reverse. An observer used to force the pinned
+      # column into `active_dims` and to the front of its table, which made
+      # every group pick create a card and move the one already on screen.
+      # The pill row is where a card is opened now, the group's included.
 
       # Moving the pin leaves the previous column exactly as it is: an ordinary
       # card, filter and all. Dropping its filter here would widen the
       # population under a reader who was looking at something else. An empty
-      # string unpins: the block keeps its cards and stops splitting.
+      # string unpins, which is how a board or a test clears the split; the UI
+      # does not offer it, because a board whose exhibits bind a stamped column
+      # by name loses that column when the group goes.
       shiny::observeEvent(input$set_pinned, {
         val <- input$set_pinned
         if (is.null(val)) {
