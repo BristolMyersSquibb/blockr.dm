@@ -432,6 +432,23 @@ crossfilter_arguments <- function() {
       ),
       example = "sum",
       type = arg_enum(c("sum", "mean"))
+    ),
+    featured = new_arg_spec(
+      paste0(
+        "Columns worth showing up front: they appear as one-click chips ",
+        "above the filter cards and supply the choices for `pinned`. Array ",
+        "of column names, resolved to whichever table carries them."
+      ),
+      example = list("SEX", "RACE", "ARM"),
+      type = arg_array(arg_string())
+    ),
+    pinned = new_arg_spec(
+      paste0(
+        "Column kept in an always-open card at the top of the block, picked ",
+        "through a select in that card's header. Must be one of `featured` ",
+        "and live on the parent table. Null for no pinned card."
+      ),
+      example = "ARM"
     )
   )
 }

@@ -150,6 +150,9 @@
       this.columnInfo = {};
       this.allColumns = {};   // full catalog for search
       this.activeDims = {};   // table -> [dim, ...]
+      this.featured = [];     // [{table, dim, type, label}, ...] shelf chips
+      this.pinnable = [];     // featured dims the pinned picker may offer
+      this.pinned = null;     // dim held in the always-open card, or null
       this.measure = '.count';
       this.aggFunc = 'sum';
       this.panels = {};
@@ -249,6 +252,19 @@
           this._closePopover();
         }
       });
+
+      // The pinned card sits in its own band above everything else: it is the
+      // one card that is always open, and the band is what tells a reader the
+      // card is different in kind from the ones below it.
+      this.pinnedEl = el('div', 'jscf-pinned-band');
+      this.pinnedEl.style.display = 'none';
+      this.el.appendChild(this.pinnedEl);
+
+      // One-click shelf for the columns a board declared `featured`. The gear
+      // popover stays for everything else, reached through the "more" chip.
+      this.shelfEl = el('div', 'jscf-shelf');
+      this.shelfEl.style.display = 'none';
+      this.el.appendChild(this.shelfEl);
 
       // Filter panels container
       this.panelsEl = el('div', 'jscf-panels');
@@ -359,6 +375,9 @@
       const activeDims = [];
       for (const [tbl, dims] of Object.entries(this.activeDims)) {
         for (const dim of asArray(dims)) {
+          // The pinned dim is not removable: it is the block's split, and the
+          // card it draws is the only place to change it.
+          if (dim === this.pinned) continue;
           activeDims.push({ tbl, dim });
         }
       }
@@ -456,6 +475,53 @@
         { priority: 'event' });
     }
 
+    _setPinned(dim) {
+      const id = this.el.id;
+      const nsBase = id.replace(/-crossfilter_input$/, '');
+      Shiny.setInputValue(nsBase + '-set_pinned', dim, { priority: 'event' });
+    }
+
+    // -- Featured chip shelf ------------------------------------------------
+    // The columns a board declared worth showing, minus the ones already on
+    // screen. One click each, against three through the gear. The gear stays
+    // for everything else and is reached from the same row, so the shelf never
+    // has to grow past the vocabulary it was given.
+    _renderShelf() {
+      if (!this.shelfEl) return;
+      this.shelfEl.innerHTML = '';
+
+      const dormant = this.featured.filter((f) => {
+        if (!f || !f.dim) return false;
+        if (f.dim === this.pinned) return false;
+        return !asArray(this.activeDims[f.table]).includes(f.dim);
+      });
+
+      if (this.featured.length === 0) {
+        this.shelfEl.style.display = 'none';
+        return;
+      }
+      this.shelfEl.style.display = '';
+
+      for (const f of dormant) {
+        const chip = el('button', 'jscf-shelf-chip', '+ ');
+        chip.type = 'button';
+        chip.appendChild(document.createTextNode(f.dim));
+        chip.title = f.label ? `${f.label} (${f.table})` : f.table;
+        chip.addEventListener('click', () => this._addDimension(f.table, f.dim));
+        this.shelfEl.appendChild(chip);
+      }
+
+      const more = el('button', 'jscf-shelf-chip jscf-shelf-more',
+        dormant.length ? 'more\u2026' : 'add a filter\u2026');
+      more.type = 'button';
+      more.title = 'Search all columns';
+      more.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this._openPopover();
+      });
+      this.shelfEl.appendChild(more);
+    }
+
     // -- Receive data from R ------------------------------------------------
 
     setData(msg) {
@@ -494,6 +560,9 @@
       this.columnInfo = msg.column_info || {};
       this.allColumns = msg.all_columns || msg.column_info || {};
       this.activeDims = msg.active_dims || {};
+      this.featured = asArray(msg.featured);
+      this.pinnable = asArray(msg.pinnable);
+      this.pinned = msg.pinned == null ? null : asArray(msg.pinned)[0];
       this.measure = msg.measure || '.count';
       this.aggFunc = msg.agg_func || 'sum';
 
@@ -568,6 +637,7 @@
       this._updateMeasureUI();
       this._renderActiveDimsInPopover('');
       this._buildPanels();
+      this._renderShelf();
       this._applyInitialFilters(msg.cat_filters, msg.rng_filters);
       this._updateAllCounts();
       // First setData has populated `this.filters` (either from
@@ -783,13 +853,30 @@
 
     _buildPanels() {
       this.panelsEl.innerHTML = '';
+      this.pinnedEl.innerHTML = '';
+      this.pinnedEl.style.display = 'none';
       const dims = Object.keys(this.dimSource);
       if (dims.length === 0) return;
+
+      // The pinned dim is a normal dimension with different chrome: it is
+      // drawn first, in its own band, and left out of the grouping below so it
+      // does not appear twice.
+      const pinned = this.pinned;
+      if (pinned && this.dimensions[pinned] &&
+          this._getDimType(pinned) === 'categorical') {
+        const card = this._createCategoricalCard(
+          pinned, this.dimSource[pinned], { pinned: true }
+        );
+        this.pinnedEl.appendChild(card);
+        this.pinnedEl.style.display = '';
+        this.panels[pinned] = card;
+      }
 
       // Group dims by source table
       const grouped = {};
       for (const dim of dims) {
         if (!this.dimensions[dim]) continue;
+        if (dim === pinned && this.panels[dim]) continue;
         const src = this.dimSource[dim];
         (grouped[src] = grouped[src] || []).push(dim);
       }
@@ -797,6 +884,7 @@
       const multiTable = Object.keys(grouped).length > 1;
 
       for (const [tbl, tblDims] of Object.entries(grouped)) {
+        if (tblDims.length === 0) continue;
         const section = el('div', 'dm-cf-table-section');
 
         if (multiTable) {
@@ -821,24 +909,56 @@
 
     // -- Categorical card ---------------------------------------------------
 
-    _createCategoricalCard(dim, tbl) {
-      const card = el('div', 'dm-cf-filter-card');
+    _createCategoricalCard(dim, tbl, opts = {}) {
+      const isPinned = !!opts.pinned;
+      const card = el('div',
+        isPinned ? 'dm-cf-filter-card jscf-pinned-card' : 'dm-cf-filter-card');
       card.dataset.dim = dim;
 
-      // Header
+      // Header. The pinned card carries the picker where every other card
+      // carries a label: the column it holds is a choice, and this is the only
+      // place that choice can be made.
       const header = el('div', 'dm-cf-filter-card-header');
-      const labelEl = el('span', 'dm-cf-filter-card-label', dim);
-      const sublabel = this._getDimLabel(dim);
-      if (sublabel) {
-        labelEl.appendChild(el('span', 'dm-cf-filter-card-sublabel', sublabel));
+      if (isPinned && this.pinnable.length > 1) {
+        const wrap = el('span', 'jscf-pin-wrap');
+        const select = el('select', 'jscf-pin-select');
+        for (const opt of this.pinnable) {
+          const o = el('option');
+          o.value = opt;
+          o.textContent = opt;
+          if (opt === dim) o.selected = true;
+          select.appendChild(o);
+        }
+        select.addEventListener('change', () => this._setPinned(select.value));
+        wrap.appendChild(select);
+        const sublabel = this._getDimLabel(dim);
+        if (sublabel) {
+          wrap.appendChild(el('span', 'dm-cf-filter-card-sublabel', sublabel));
+        }
+        header.appendChild(wrap);
+      } else {
+        const labelEl = el('span', 'dm-cf-filter-card-label', dim);
+        const sublabel = this._getDimLabel(dim);
+        if (sublabel) {
+          labelEl.appendChild(el('span', 'dm-cf-filter-card-sublabel', sublabel));
+        }
+        header.appendChild(labelEl);
       }
-      header.appendChild(labelEl);
 
       const actions = el('div', 'dm-cf-filter-card-actions');
       const resetBtn = el('button', 'dm-cf-reset-btn', ICON_RESET);
       resetBtn.title = 'Reset filter';
       resetBtn.addEventListener('click', () => this._clearFilter(dim));
       actions.appendChild(resetBtn);
+      // Removing a card is a one-click job on the card itself. The gear keeps
+      // its chips for the same thing; this is the same action where the user
+      // is already looking. The pinned card has no remove: it is the split.
+      if (!isPinned) {
+        const removeBtn = el('button', 'dm-cf-remove-btn', ICON_REMOVE_SM);
+        removeBtn.title = `Remove ${dim}`;
+        removeBtn.addEventListener('click', () => this._removeDimension(tbl, dim));
+        actions.appendChild(removeBtn);
+      }
       header.appendChild(actions);
       card.appendChild(header);
 
@@ -868,7 +988,11 @@
 
       const valueTh = el('th', 'dm-cf-tw-th');
       const countTh = el('th', 'dm-cf-tw-th');
-      countTh.style.width = '160px';
+      // Width follows the widest number the card actually renders
+      // (_sizeCountColumn); this is the starting point, replaced on first
+      // render. table-layout is fixed, so whatever this column does not take
+      // goes to the values, which is where long level names need it.
+      countTh.style.width = '120px';
 
       const updateThLabels = () => {
         valueTh.innerHTML = '';
@@ -910,6 +1034,7 @@
       card.appendChild(scroll);
 
       card._tbody = tbody;
+      card._countTh = countTh;
       return card;
     }
 
@@ -947,6 +1072,7 @@
       const maxVal = sorted.reduce((m, d) => Math.max(m, Math.abs(gv(d))), 0);
 
       tbody.innerHTML = '';
+      let widestLabel = 0;
       for (const item of sorted) {
         const count = gv(item);
         // Decode once: item.key is an int code for encoded dims. The label
@@ -981,6 +1107,7 @@
         track.appendChild(fill);
         barCell.appendChild(track);
         const label = hasMeasure ? fmtNum(count) : fmtCount(count);
+        if (label.length > widestLabel) widestLabel = label.length;
         barCell.appendChild(el('span', 'dm-cf-tw-bar-label', label));
         tdBar.appendChild(barCell);
         tr.appendChild(tdBar);
@@ -990,6 +1117,26 @@
         });
 
         tbody.appendChild(tr);
+      }
+
+      this._sizeCountColumn(card, widestLabel);
+    }
+
+    // The count column was a flat 160px, which is right for "1,234,567" and
+    // wastes half the card on a study with two-digit counts -- the bar and its
+    // number ended up at opposite ends of the row. Size it to the widest
+    // number this card actually renders instead, and give what is left to the
+    // values, where a long level name ("BLACK OR AFRICAN AMERICAN") is
+    // otherwise wrapped to four lines. One width per card, not per row, so the
+    // bars still line up.
+    _sizeCountColumn(card, widestLabel) {
+      const chars = Math.max(2, widestLabel || 0);
+      // ch is the digit width in a tabular-numeral font, plus a little for the
+      // padding the cell already carries.
+      card.style.setProperty('--jscf-count-w', `calc(${chars}ch + 8px)`);
+      if (card._countTh) {
+        // Track (80px cap) + the gap between it and the number + the number.
+        card._countTh.style.width = `calc(86px + ${chars}ch)`;
       }
     }
 
@@ -1035,6 +1182,10 @@
       resetBtn.title = 'Reset filter';
       resetBtn.addEventListener('click', () => this._clearFilter(dim));
       actions.appendChild(resetBtn);
+      const removeBtn = el('button', 'dm-cf-remove-btn', ICON_REMOVE_SM);
+      removeBtn.title = `Remove ${dim}`;
+      removeBtn.addEventListener('click', () => this._removeDimension(tbl, dim));
+      actions.appendChild(removeBtn);
       header.appendChild(actions);
       card.appendChild(header);
 

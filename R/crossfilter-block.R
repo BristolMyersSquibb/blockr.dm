@@ -15,7 +15,19 @@
 #'   for row counts. E.g., `"orders.amount"`.
 #' @param agg_func Aggregation function: `"sum"` or `"mean"`. Only used
 #'   when `measure` is set.
-#' @param ... Forwarded to [blockr.core::new_transform_block()]
+#' @param featured Columns worth showing up front: they appear as one-click
+#'   "add filter" chips above the cards, rank first in the search, and supply
+#'   the choices for `pinned`. E.g. `c("SEX", "RACE", "AGE")`. Empty (the
+#'   default) means no chip shelf, as before.
+#' @param pinned A single column kept in an always-open card at the top of the
+#'   block: first, never removable, and picked through a select in its own card
+#'   header rather than a label. Only `featured` columns on the parent table
+#'   qualify. `NULL` (the default) means no pinned card.
+#' @param ... Forwarded to [blockr.core::new_transform_block()]. A package
+#'   building on this block passes its own `class` here: the subclass has to be
+#'   set at construction, which is where block metadata is resolved from the
+#'   registry. It is not a formal because every constructor formal has to come
+#'   back out as block state.
 #'
 #' @return A blockr transform block with client-side crossfiltering
 #'
@@ -26,19 +38,32 @@ new_crossfilter_block <- function(
   range_filters = list(),
   measure = NULL,
   agg_func = NULL,
+  featured = character(),
+  pinned = NULL,
   ...
 ) {
-  blockr.core::new_transform_block(
-    server = crossfilter_server(
-      active_dims, filters, range_filters, measure, agg_func
-    ),
-    ui = crossfilter_ui,
-    allow_empty_state = c(
-      "active_dims", "filters", "range_filters", "measure", "agg_func"
-    ),
-    external_ctrl = TRUE,
-    class = "crossfilter_block",
-    ...
+  args <- list(...)
+  cls <- args[["class"]] %||% "crossfilter_block"
+  args[["class"]] <- NULL
+
+  do.call(
+    blockr.core::new_transform_block,
+    c(
+      list(
+        server = crossfilter_server(
+          active_dims, filters, range_filters, measure, agg_func, featured,
+          pinned
+        ),
+        ui = crossfilter_ui,
+        allow_empty_state = c(
+          "active_dims", "filters", "range_filters", "measure", "agg_func",
+          "featured", "pinned"
+        ),
+        external_ctrl = TRUE,
+        class = cls
+      ),
+      args
+    )
   )
 }
 
@@ -219,8 +244,75 @@ block_render_trigger.crossfilter_block <- function(
 
 # -- Server ------------------------------------------------------------------
 
+# The table everything else hangs off: the one no foreign key leaves. A
+# featured column may only be pinned when it lives there -- a pinned card
+# splits the whole block, and a column on a child table (one row per event)
+# cannot split its parent (one row per subject).
+crossfilter_parent_table <- function(info) {
+  tbls <- info$table_names
+  if (length(tbls) <= 1L) {
+    return(if (length(tbls)) tbls[[1L]] else NULL)
+  }
+  fks <- info$fks
+  if (is.null(fks) || nrow(fks) == 0L) {
+    return(NULL)
+  }
+  counts <- table(as.character(fks$parent_table))
+  names(counts)[[which.max(counts)]]
+}
+
+# Featured column names resolved to a table and a type, in the order the board
+# wrote them. A name no table offers as a dimension is dropped rather than
+# reported: `featured` is a vocabulary written once for a board, and boards
+# outlive the columns of any one study.
+crossfilter_featured_dims <- function(featured, col_info, parent = NULL) {
+  out <- list()
+  search_order <- c(parent, setdiff(names(col_info), parent))
+  for (nm in as.character(featured)) {
+    for (tbl in search_order) {
+      info <- col_info[[tbl]]
+      if (is.null(info)) next
+      type <- if (nm %in% unlist(info$dimensions)) {
+        "categorical"
+      } else if (nm %in% unlist(info$range_dimensions)) {
+        "range"
+      } else if (nm %in% unlist(info$date_dimensions)) {
+        "date"
+      } else {
+        NULL
+      }
+      if (!is.null(type)) {
+        out[[length(out) + 1L]] <- list(
+          table = tbl,
+          dim = nm,
+          type = type,
+          label = info$labels[[nm]] %||% ""
+        )
+        break
+      }
+    }
+  }
+  out
+}
+
+# Which featured columns may take the pinned slot: the categorical ones on the
+# parent table. Everything else stays on the shelf. With no parent to resolve
+# (a single table, or a schema with no keys) every featured category qualifies.
+crossfilter_pinnable <- function(featured_dims, parent = NULL) {
+  keep <- vapply(
+    featured_dims,
+    function(f) {
+      identical(f$type, "categorical") &&
+        (is.null(parent) || identical(f$table, parent))
+    },
+    logical(1)
+  )
+  vapply(featured_dims[keep], `[[`, character(1), "dim")
+}
+
 crossfilter_server <- function(active_dims, filters, range_filters,
-                               measure, agg_func) {
+                               measure, agg_func, featured = character(),
+                               pinned = NULL) {
   function(id, data) {
     shiny::moduleServer(id, function(input, output, session) {
       ns <- session$ns
@@ -350,6 +442,35 @@ crossfilter_server <- function(active_dims, filters, range_filters,
       r_range_filters <- shiny::reactiveVal(range_filters)
       r_measure <- shiny::reactiveVal(measure %||% ".count")
       r_agg_func <- shiny::reactiveVal(agg_func %||% "sum")
+      r_featured <- shiny::reactiveVal(as.character(featured %||% character()))
+      r_pinned <- shiny::reactiveVal(as.character(pinned %||% character()))
+
+      # Everything the client needs for the chip shelf and the pinned card. A
+      # pin naming a column that is not (or no longer) pinnable is dropped
+      # here, so a saved board whose study lost the column opens without one
+      # rather than with a card that cannot be drawn.
+      pin_info <- shiny::reactive({
+        col_info <- column_info_per_table()
+        parent <- crossfilter_parent_table(dm_info())
+        feat <- crossfilter_featured_dims(r_featured(), col_info, parent)
+        pinnable <- crossfilter_pinnable(feat, parent)
+        pin <- intersect(r_pinned(), pinnable)
+        pin_tbl <- NULL
+        if (length(pin)) {
+          for (f in feat) {
+            if (identical(f$dim, pin[[1L]])) {
+              pin_tbl <- f$table
+              break
+            }
+          }
+        }
+        list(
+          featured = unname(feat),
+          pinnable = as.list(pinnable),
+          pinned = if (length(pin)) pin[[1L]] else NULL,
+          pinned_table = pin_tbl
+        )
+      })
 
       # Self-write guard: when the JS UI submits state to R, the
       # matching R->JS push observer below would echo it back and the
@@ -403,6 +524,38 @@ crossfilter_server <- function(active_dims, filters, range_filters,
         }
       })
 
+      # The pinned card is an ordinary crossfilter dimension wearing different
+      # chrome: its counts and bars come from the same machinery as any other
+      # card, so the column has to be active for the client to have anything to
+      # draw. Kept first in the table's dims so panel order agrees with the UI.
+      shiny::observe({
+        pin <- pin_info()
+        if (is.null(pin$pinned) || is.null(pin$pinned_table)) {
+          return()
+        }
+        active <- r_active_dims()
+        current <- active[[pin$pinned_table]] %||% character()
+        if (!pin$pinned %in% current) {
+          active[[pin$pinned_table]] <- c(pin$pinned, current)
+          r_active_dims(active)
+        }
+      })
+
+      # Moving the pin leaves the previous column exactly as it is: an ordinary
+      # card, filter and all. Dropping its filter here would widen the
+      # population under a reader who was looking at something else.
+      shiny::observeEvent(input$set_pinned, {
+        val <- input$set_pinned
+        if (is.null(val)) {
+          return()
+        }
+        val <- as.character(val)
+        if (!length(val) || !nzchar(val[[1L]])) {
+          return()
+        }
+        r_pinned(val[[1L]])
+      }, ignoreInit = TRUE)
+
       shiny::observeEvent(input$clear_filters, {
         self_write$active <- TRUE
         r_active_dims(list())
@@ -447,12 +600,13 @@ crossfilter_server <- function(active_dims, filters, range_filters,
         col_info <- column_info_per_table()
         cur_measure <- r_measure()
         cur_agg_func <- r_agg_func()
+        pin <- pin_info()
 
         # Everything that shapes the payload. dm_data() compares by pointer
         # when upstream re-evals were skipped, so this is cheap. Filter state
         # is deliberately NOT part of the key: filter changes travel through
         # the dedicated js-crossfilter-filters observer, not a data re-ship.
-        send_key <- list(dm_data(), active, cur_measure, cur_agg_func)
+        send_key <- list(dm_data(), active, cur_measure, cur_agg_func, pin)
         if (identical(send_key, last_send$key)) {
           message("[js-crossfilter] payload unchanged, send skipped")
           return()
@@ -560,7 +714,10 @@ crossfilter_server <- function(active_dims, filters, range_filters,
             cat_filters = safe_cat,
             rng_filters = safe_rng,
             measure = cur_measure,
-            agg_func = cur_agg_func
+            agg_func = cur_agg_func,
+            featured = pin$featured,
+            pinnable = pin$pinnable,
+            pinned = pin$pinned
           )
           session$sendCustomMessage("js-crossfilter-data", payload)
           last_send$key <- send_key
@@ -577,7 +734,10 @@ crossfilter_server <- function(active_dims, filters, range_filters,
             child_fk_cols = list(),
             column_info = col_info,
             all_columns = col_info,
-            active_dims = safe_active
+            active_dims = safe_active,
+            featured = pin$featured,
+            pinnable = pin$pinnable,
+            pinned = pin$pinned
           )
           session$sendCustomMessage("js-crossfilter-data", payload)
           last_send$key <- send_key
@@ -823,7 +983,12 @@ crossfilter_server <- function(active_dims, filters, range_filters,
           filters = r_filters,
           range_filters = r_range_filters,
           measure = r_measure,
-          agg_func = r_agg_func
+          agg_func = r_agg_func,
+          # Config as state: a serialized board is rebuilt from its
+          # constructor plus its state, so a `featured` vocabulary that lived
+          # only in the constructor call would not survive a save.
+          featured = r_featured,
+          pinned = r_pinned
         )
       )
     })

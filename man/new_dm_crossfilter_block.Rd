@@ -29,7 +29,11 @@ for row counts. E.g., \code{"orders.amount"}.}
 \item{agg_func}{Aggregation function: \code{"sum"} or \code{"mean"}. Only used
 when \code{measure} is set.}
 
-\item{...}{Forwarded to \code{\link[blockr.core:new_transform_block]{blockr.core::new_transform_block()}}}
+\item{...}{Forwarded to \code{\link[blockr.core:new_transform_block]{blockr.core::new_transform_block()}}. A package
+building on this block passes its own \code{class} here: the subclass has to be
+set at construction, which is where block metadata is resolved from the
+registry. It is not a formal because every constructor formal has to come
+back out as block state.}
 }
 \value{
 A crossfilter block carrying a \code{dm_crossfilter_block} subclass.

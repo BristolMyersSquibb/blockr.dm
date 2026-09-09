@@ -515,7 +515,10 @@
 }
 .dm-cf-tw-bar-label {
   font-size: var(--blockr-font-size-xs, 0.75rem);
-  width: 60px;
+  /* Set per card by _sizeCountColumn() from the widest number rendered; the
+     fallback is the old fixed width. One width per card keeps the bars
+     aligned down the column. */
+  width: var(--jscf-count-w, 60px);
   text-align: right;
   flex-shrink: 0;
   white-space: nowrap;
@@ -639,4 +642,90 @@
   justify-content: space-between;
   font-size: var(--blockr-font-size-xs, 0.75rem);
   color: var(--blockr-grey-400, #9ca3af);
+}
+
+/* ============================================================
+   Featured chip shelf + pinned card
+   ============================================================ */
+.jscf-shelf {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  align-items: center;
+  margin: 0 0 12px;
+}
+/* Dashed while dormant: the chip is an invitation to build a filter, not a
+   filter. Once clicked it leaves the shelf and becomes a card. */
+.jscf-shelf-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  font-size: var(--blockr-font-size-xs, 0.75rem);
+  font-weight: var(--blockr-font-weight-medium, 500);
+  color: var(--blockr-grey-700, #374151);
+  background: #fff;
+  border: 1px dashed var(--blockr-grey-400, #9ca3af);
+  border-radius: 9999px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+.jscf-shelf-chip:hover {
+  color: var(--blockr-color-primary, #2563eb);
+  border-style: solid;
+  border-color: rgba(37, 99, 235, 0.5);
+  background: rgba(37, 99, 235, 0.05);
+}
+.jscf-shelf-more {
+  border: none;
+  color: var(--blockr-grey-400, #9ca3af);
+  font-weight: 400;
+  padding-left: 2px;
+}
+.jscf-shelf-more:hover {
+  border: none;
+  background: transparent;
+}
+
+/* The pinned card is the one card that is always open, so it gets a band of
+   its own -- the tint is what says "different in kind", not just "first". */
+.jscf-pinned-band {
+  background: var(--blockr-color-bg-subtle, #f9fafb);
+  border: 1px solid var(--blockr-grey-200, #e5e7eb);
+  border-radius: 6px;
+  padding: 8px 10px 9px;
+  margin: 0 0 12px;
+}
+.jscf-pinned-band .dm-cf-filter-card {
+  max-width: none;
+}
+/* Its picker replaces the label, so it has to sit on the label's baseline
+   rather than read as a form control dropped into a card header. */
+.jscf-pin-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.jscf-pin-select {
+  height: 22px;
+  padding: 0 4px;
+  font: inherit;
+  font-size: var(--blockr-font-size-sm, 0.8125rem);
+  font-weight: var(--blockr-font-weight-medium, 500);
+  color: var(--blockr-color-text-primary, #111827);
+  background: #fff;
+  border: 1px solid var(--blockr-color-border, #e5e7eb);
+  border-radius: 4px;
+  cursor: pointer;
+  /* A native select sizes to its widest option, and the vocabulary contains
+     names like BEST_OVERALL_RESPONSE. Capped so one long name cannot take the
+     whole card header; the select ellipsises what it cannot show. */
+  max-width: 60%;
+}
+.jscf-pin-select:focus {
+  outline: none;
+  border-color: var(--blockr-color-primary, #2563eb);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
 }

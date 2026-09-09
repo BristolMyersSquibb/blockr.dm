@@ -10,6 +10,8 @@ new_crossfilter_block(
   range_filters = list(),
   measure = NULL,
   agg_func = NULL,
+  featured = character(),
+  pinned = NULL,
   ...
 )
 }
@@ -29,7 +31,21 @@ for row counts. E.g., \code{"orders.amount"}.}
 \item{agg_func}{Aggregation function: \code{"sum"} or \code{"mean"}. Only used
 when \code{measure} is set.}
 
-\item{...}{Forwarded to \code{\link[blockr.core:new_transform_block]{blockr.core::new_transform_block()}}}
+\item{featured}{Columns worth showing up front: they appear as one-click
+"add filter" chips above the cards, rank first in the search, and supply
+the choices for \code{pinned}. E.g. \code{c("SEX", "RACE", "AGE")}. Empty (the
+default) means no chip shelf, as before.}
+
+\item{pinned}{A single column kept in an always-open card at the top of the
+block: first, never removable, and picked through a select in its own card
+header rather than a label. Only \code{featured} columns on the parent table
+qualify. \code{NULL} (the default) means no pinned card.}
+
+\item{...}{Forwarded to \code{\link[blockr.core:new_transform_block]{blockr.core::new_transform_block()}}. A package
+building on this block passes its own \code{class} here: the subclass has to be
+set at construction, which is where block metadata is resolved from the
+registry. It is not a formal because every constructor formal has to come
+back out as block state.}
 }
 \value{
 A blockr transform block with client-side crossfiltering
