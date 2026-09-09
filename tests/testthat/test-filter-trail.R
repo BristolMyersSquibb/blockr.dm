@@ -161,3 +161,125 @@ test_that("value_filter_clause renders columns the way the crossfilter does", {
   expect_null(value_filter_clause(list(list(name = "A", values = character()))))
   expect_null(value_filter_clause(NULL))
 })
+
+test_that("a clause scoped to one table leaves with that table", {
+
+  # Frame level first: the scope rides on the trail vector, and `tables`
+  # drops what is out of scope and strips the scope from what survives.
+  f <- add_filter_trail(data.frame(x = 1), NULL, "ae_flags", "TRTEMFL",
+                        table = "ae")
+  f <- add_filter_trail(f, f, "global_filter", "SEX = F")
+  expect_identical(attr(filter_trail(f), "tables"), list(ae_flags = "ae"))
+
+  lab <- add_filter_trail(data.frame(x = 1), f, tables = c("lb", "adsl"))
+  expect_identical(filter_trail(lab), c(global_filter = "SEX = F"))
+  expect_null(attr(filter_trail(lab), "tables"))
+
+  aes <- add_filter_trail(data.frame(x = 1), f, tables = "ae")
+  expect_identical(unname(filter_trail(aes)), c("TRTEMFL", "SEX = F"))
+  expect_null(attr(filter_trail(aes), "tables"))
+
+  # Re-evaluating the same block without a table drops the old scope along
+  # with the old clause.
+  g <- add_filter_trail(f, f, "ae_flags", "TRTEMFL")
+  expect_null(attr(filter_trail(g), "tables"))
+
+  # The generated call names the arguments only when they are given, so the
+  # common carry is unchanged.
+  expect_identical(
+    trail_expr(quote(dm::pull_tbl(data, lb))),
+    quote(blockr.dm::add_filter_trail(dm::pull_tbl(data, lb), data))
+  )
+  expect_identical(
+    trail_expr(quote(dm::pull_tbl(data, lb)), tables = "lb"),
+    quote(blockr.dm::add_filter_trail(dm::pull_tbl(data, lb), data,
+                                      tables = "lb"))
+  )
+  expect_identical(
+    trail_expr(quote(f(data)), "k", "TRTEMFL", table = "ae"),
+    quote(blockr.dm::add_filter_trail(f(data), data, "k", "TRTEMFL",
+                                      table = "ae"))
+  )
+})
+
+test_that("the devmaster shape: an AE-only flag leaves the lab branch alone", {
+
+  skip_if_not_installed("dm")
+
+  adsl <- data.frame(
+    USUBJID = paste0("S", 1:3),
+    SEX = c("F", "M", "F"),
+    stringsAsFactors = FALSE
+  )
+  ae <- data.frame(
+    USUBJID = c("S1", "S1", "S2"),
+    TRTEMFL = c("Y", "N", "Y"),
+    stringsAsFactors = FALSE
+  )
+  lb <- data.frame(
+    USUBJID = c("S1", "S2", "S3"),
+    LBSTRESN = c(10, 20, 30),
+    stringsAsFactors = FALSE
+  )
+  d <- dm::dm(adsl = adsl, ae = ae, lb = lb) |>
+    dm::dm_add_pk(adsl, USUBJID) |>
+    dm::dm_add_fk(ae, USUBJID, adsl) |>
+    dm::dm_add_fk(lb, USUBJID, adsl)
+
+  # What the flag filter emits in dm mode: one table narrowed without a
+  # cascade, the clause scoped to it.
+  flagged <- eval(
+    trail_expr(
+      quote(dm::dm_update_zoomed(
+        dplyr::filter(dm::dm_zoom_to(data, ae), TRTEMFL == "Y")
+      )),
+      "ae_flags", "TRTEMFL", table = "ae"
+    ),
+    list(data = d)
+  )
+  # as.vector(): the scope rides on the vector, and unname() keeps it.
+  expect_identical(as.vector(filter_trail(flagged)), "TRTEMFL")
+  expect_identical(attr(filter_trail(flagged), "tables"), list(ae_flags = "ae"))
+  expect_equal(nrow(dm::pull_tbl(flagged, adsl)), 3L)
+
+  # The crossfilter on top: unscoped, because dm_filter cascades.
+  both <- eval(
+    trail_expr(
+      quote(dm::dm_filter(data, adsl = SEX == "F")),
+      "global_filter", "SEX = F"
+    ),
+    list(data = flagged)
+  )
+  expect_identical(names(filter_trail(both)), c("ae_flags", "global_filter"))
+  expect_identical(attr(filter_trail(both), "tables"), list(ae_flags = "ae"))
+
+  # Leaving the dm through lb + adsl, as the Lab flatten does: the AE clause
+  # stays behind and the global one comes along.
+  lab <- eval(
+    trail_expr(
+      quote(dm::dm_flatten_to_tbl(data, lb, adsl)),
+      tables = c("lb", "adsl")
+    ),
+    list(data = both)
+  )
+  expect_identical(filter_trail(lab), c(global_filter = "SEX = F"))
+  expect_identical(sort(lab$USUBJID), c("S1", "S3"))
+
+  # Leaving through ae keeps it, in the order the filters applied.
+  aes <- eval(
+    trail_expr(
+      quote(dm::dm_flatten_to_tbl(data, ae, adsl)),
+      tables = c("ae", "adsl")
+    ),
+    list(data = both)
+  )
+  expect_identical(unname(filter_trail(aes)), c("TRTEMFL", "SEX = F"))
+  expect_identical(aes$USUBJID, "S1")
+
+  # And a pull of adsl alone, as the Population view does.
+  pop <- eval(
+    trail_expr(quote(dm::pull_tbl(data, adsl)), tables = "adsl"),
+    list(data = both)
+  )
+  expect_identical(filter_trail(pop), c(global_filter = "SEX = F"))
+})

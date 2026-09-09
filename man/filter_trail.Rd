@@ -9,11 +9,25 @@
 \usage{
 filter_trail(x)
 
-add_filter_trail(out, input = NULL, key = NULL, clause = NULL)
+add_filter_trail(
+  out,
+  input = NULL,
+  key = NULL,
+  clause = NULL,
+  table = NULL,
+  tables = NULL
+)
 
 trail_key(session = shiny::getDefaultReactiveDomain())
 
-trail_expr(inner, key = NULL, clause = NULL, data = quote(data))
+trail_expr(
+  inner,
+  key = NULL,
+  clause = NULL,
+  data = quote(data),
+  table = NULL,
+  tables = NULL
+)
 }
 \arguments{
 \item{x}{Object to read a trail from (a \code{dm}, a data frame, or anything
@@ -32,6 +46,15 @@ block that reshapes rather than filters wants.}
 \code{"SEX = F; AGE 18 to 64"}. An empty or missing clause adds nothing, so a
 filter block with nothing selected leaves no trace.}
 
+\item{table}{Name of the one table \code{clause} narrowed, for a block that
+filters a single table of a dm without cascading. \code{NULL} (the default)
+records an unscoped clause, which every branch carries.}
+
+\item{tables}{The tables the output was built from, passed by a block that
+turns a dm into a data frame. Entries scoped to a table outside this set
+are dropped, and the rest lose their scope. \code{NULL} (the default) drops
+nothing.}
+
 \item{session}{The block server's Shiny session, used to derive the key.}
 
 \item{inner}{The expression the block would otherwise return.}
@@ -42,9 +65,11 @@ with \code{expr_type = "bquoted"} must pass its own input slot instead, or the
 generated code carries a bare \code{data} that resolves to \code{\link[utils:data]{utils::data()}}.}
 }
 \value{
-\code{filter_trail()} returns a named character vector or \code{NULL}.
-\code{add_filter_trail()} returns \code{out}, with a \code{blockr_filters} attribute when
-there is a trail to carry.
+\code{filter_trail()} returns a named character vector or \code{NULL}. An
+entry recorded with \code{table} carries its scope in a \code{tables} attribute on
+the vector, a named list keyed like the trail. \code{add_filter_trail()}
+returns \code{out}, with a \code{blockr_filters} attribute when there is a trail to
+carry.
 }
 \description{
 The record of which filters produced a table, carried on the data itself as
@@ -74,6 +99,25 @@ On the data-frame side dplyr does preserve attributes (\code{filter}, \code{muta
 merely reshape need no wrapping. \code{summarise()} and \code{tidyr::pivot_wider()}
 do not preserve them, and a block that aggregates has to carry the trail
 across with \code{add_filter_trail(out, data)} explicitly.
+}
+
+\section{Table scope}{
+
+A block that narrows ONE table of a dm without cascading over the keys
+(blockr.pharma's flag filter with \code{table} set) records its clause with
+\code{table}, and the entry carries that scope. The crossfilter and the value
+filter do not: \code{dm::dm_filter()} cascades, so a filter written against
+\code{ae} narrows \code{adsl} and through it every table hanging off \code{adsl}, and the
+clause belongs on every branch.
+
+The scope is applied where a branch leaves the dm. The pull and flatten
+blocks pass the tables they read as \code{tables}, and an entry scoped to a
+table outside that set is dropped: a lab chart fed from \code{lb} and \code{adsl}
+does not print the \code{TRTEMFL} filter that only ever touched \code{ae}. The
+entries that survive are carried without their scope, a data frame having
+no tables. A flatten with an empty include list and \code{.recursive = TRUE}
+reads every table reachable from the start table but passes only the
+start table; the boards do not use that form.
 }
 
 \examples{

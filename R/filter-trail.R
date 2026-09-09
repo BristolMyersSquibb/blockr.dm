@@ -26,6 +26,23 @@
 #' do not preserve them, and a block that aggregates has to carry the trail
 #' across with `add_filter_trail(out, data)` explicitly.
 #'
+#' @section Table scope:
+#' A block that narrows ONE table of a dm without cascading over the keys
+#' (blockr.pharma's flag filter with `table` set) records its clause with
+#' `table`, and the entry carries that scope. The crossfilter and the value
+#' filter do not: `dm::dm_filter()` cascades, so a filter written against
+#' `ae` narrows `adsl` and through it every table hanging off `adsl`, and the
+#' clause belongs on every branch.
+#'
+#' The scope is applied where a branch leaves the dm. The pull and flatten
+#' blocks pass the tables they read as `tables`, and an entry scoped to a
+#' table outside that set is dropped: a lab chart fed from `lb` and `adsl`
+#' does not print the `TRTEMFL` filter that only ever touched `ae`. The
+#' entries that survive are carried without their scope, a data frame having
+#' no tables. A flatten with an empty include list and `.recursive = TRUE`
+#' reads every table reachable from the start table but passes only the
+#' start table; the boards do not use that form.
+#'
 #' @param x Object to read a trail from (a `dm`, a data frame, or anything
 #'   else, in which case `NULL` is returned).
 #' @param out The block's result: the object the trail is written onto.
@@ -37,10 +54,19 @@
 #' @param clause Human-readable description of what this block filtered, e.g.
 #'   `"SEX = F; AGE 18 to 64"`. An empty or missing clause adds nothing, so a
 #'   filter block with nothing selected leaves no trace.
+#' @param table Name of the one table `clause` narrowed, for a block that
+#'   filters a single table of a dm without cascading. `NULL` (the default)
+#'   records an unscoped clause, which every branch carries.
+#' @param tables The tables the output was built from, passed by a block that
+#'   turns a dm into a data frame. Entries scoped to a table outside this set
+#'   are dropped, and the rest lose their scope. `NULL` (the default) drops
+#'   nothing.
 #'
-#' @return `filter_trail()` returns a named character vector or `NULL`.
-#'   `add_filter_trail()` returns `out`, with a `blockr_filters` attribute when
-#'   there is a trail to carry.
+#' @return `filter_trail()` returns a named character vector or `NULL`. An
+#'   entry recorded with `table` carries its scope in a `tables` attribute on
+#'   the vector, a named list keyed like the trail. `add_filter_trail()`
+#'   returns `out`, with a `blockr_filters` attribute when there is a trail to
+#'   carry.
 #'
 #' @examples
 #' d <- data.frame(x = 1:3)
@@ -58,9 +84,11 @@ filter_trail <- function(x) {
 
 #' @rdname filter_trail
 #' @export
-add_filter_trail <- function(out, input = NULL, key = NULL, clause = NULL) {
+add_filter_trail <- function(out, input = NULL, key = NULL, clause = NULL,
+                             table = NULL, tables = NULL) {
 
   trail <- filter_trail(input)
+  scope <- trail_scope(trail)
 
   # Start from `character()`, not `NULL`: `NULL[["key"]] <- value` builds a
   # LIST, and consumers paste the trail into a caption expecting a character
@@ -72,14 +100,38 @@ add_filter_trail <- function(out, input = NULL, key = NULL, clause = NULL) {
   if (!is.null(key) && length(clause) && !is.na(clause[[1L]]) &&
         nzchar(clause[[1L]])) {
     trail[[key]] <- clause[[1L]]
+    # Assigning NULL removes the entry, which is what an unscoped clause
+    # wants: a block re-evaluated without `table` after having had one must
+    # not keep the old scope.
+    scope[[key]] <- if (length(table)) as.character(table) else NULL
+  }
+
+  if (!is.null(tables) && length(trail)) {
+    keep <- vapply(
+      names(trail),
+      function(k) is.null(scope[[k]]) || any(scope[[k]] %in% tables),
+      logical(1L)
+    )
+    trail <- trail[keep]
+    scope <- list()
   }
 
   if (!length(trail)) {
     return(out)
   }
 
+  # Rebuilt rather than inherited: `[[<-` keeps the input's attribute and
+  # `[` drops it, so neither path can be trusted to reflect `scope`.
+  attr(trail, "tables") <- if (length(scope)) scope else NULL
   attr(out, "blockr_filters") <- trail
   out
+}
+
+# The per-entry table scope, a named list keyed like the trail; empty when
+# no entry is scoped.
+trail_scope <- function(trail) {
+  s <- attr(trail, "tables", exact = TRUE)
+  if (is.list(s)) s else list()
 }
 
 #' @param session The block server's Shiny session, used to derive the key.
@@ -108,22 +160,25 @@ trail_key <- function(session = shiny::getDefaultReactiveDomain()) {
 #' @rdname filter_trail
 #' @export
 trail_expr <- function(inner, key = NULL, clause = NULL,
-                       data = quote(data)) {
+                       data = quote(data), table = NULL, tables = NULL) {
 
   # Self-qualified: block expressions are deparsed into the exported script.
-  if (is.null(key) || !length(clause) || !nzchar(clause[[1L]])) {
-    return(
-      bquote(
-        blockr.dm::add_filter_trail(.(inner), .(data)),
-        list(inner = inner, data = data)
-      )
-    )
+  # Named arguments only when given, so the common carry stays the two-line
+  # call it was.
+  args <- list(quote(blockr.dm::add_filter_trail), inner, data)
+
+  if (!is.null(key) && length(clause) && nzchar(clause[[1L]])) {
+    args <- c(args, list(key, clause[[1L]]))
+    if (length(table)) {
+      args <- c(args, list(table = as.character(table)))
+    }
   }
 
-  bquote(
-    blockr.dm::add_filter_trail(.(inner), .(data), .(key), .(clause)),
-    list(inner = inner, data = data, key = key, clause = clause[[1L]])
-  )
+  if (length(tables)) {
+    args <- c(args, list(tables = as.character(tables)))
+  }
+
+  as.call(args)
 }
 
 # How many values a categorical clause spells out before eliding. Keeps a
