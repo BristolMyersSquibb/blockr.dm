@@ -144,6 +144,49 @@ trail_values <- function(x) {
   paste(vals, collapse = ", ")
 }
 
+# Render a value filter's columns as one clause, the twin of
+# crossfilter_clause() below. A dm-backed filter names the table only when
+# more than one is filtered, for the same reason; the NA / empty sentinels
+# the widget stores read as words. NULL when nothing is selected, so an
+# unconfigured filter leaves no trace.
+value_filter_clause <- function(columns, operator = "&") {
+
+  cols <- Filter(
+    function(e) length(e$values) && nzchar(e$name %||% ""),
+    columns %||% list()
+  )
+
+  if (!length(cols)) {
+    return(NULL)
+  }
+
+  tables <- vapply(cols, function(e) e$table %||% "", character(1L))
+  qualify <- length(unique(tables[nzchar(tables)])) > 1L
+  parts <- character()
+
+  for (i in seq_along(cols)) {
+
+    e <- cols[[i]]
+    vals <- as.character(unlist(e$values, use.names = FALSE))
+    vals[vals == VALUE_FILTER_NA] <- "NA"
+    vals[vals == VALUE_FILTER_EMPTY] <- "(empty)"
+    shown <- trail_values(vals)
+
+    if (is.null(shown)) {
+      next
+    }
+
+    prefix <- if (qualify && nzchar(tables[[i]])) paste0(tables[[i]], ".") else ""
+    parts <- c(parts, paste0(prefix, e$name, " = ", shown))
+  }
+
+  if (!length(parts)) {
+    return(NULL)
+  }
+
+  paste(parts, collapse = if (identical(operator, "|")) " or " else "; ")
+}
+
 # Render the crossfilter's live state as one clause. The table is named only
 # when more than one is filtered: on a single-table filter the column alone
 # reads better, and on a multi-table one it is the whole point (a filter

@@ -15,7 +15,6 @@ register_dm_blocks <- function() {
       "new_dm_select_block",
       "new_dm_add_keys_block",
       "new_dm_filter_block",
-      "new_dm_filter_by_data_block",
       "new_dm_pull_block",
       "new_dm_flatten_block",
       "new_temporal_join_block",
@@ -33,7 +32,6 @@ register_dm_blocks <- function() {
       "Select tables",
       "Add keys",
       "Filter dm",
-      "Filter dm by data",
       "Pull table",
       "Flatten dm",
       "Temporal join",
@@ -59,10 +57,6 @@ register_dm_blocks <- function() {
       paste(
         "Filter dm by condition in any table,",
         "cascading to related tables via FKs"
-      ),
-      paste(
-        "Semi-join a dm to ids supplied by a second data frame input,",
-        "cascading via FKs"
       ),
       "Extract a single table from dm as a data frame",
       "Flatten dm into a single data frame by joining",
@@ -108,7 +102,6 @@ register_dm_blocks <- function() {
       "structured",
       "structured",
       "structured",
-      "structured",
       "input",
       "structured",
       "structured"
@@ -121,7 +114,6 @@ register_dm_blocks <- function() {
       "check2-square",
       "key",
       "funnel",
-      "link-45deg",
       "box-arrow-up-right",
       "layers",
       "clock-history",
@@ -187,19 +179,6 @@ register_dm_blocks <- function() {
         "expression) combined with & or |.",
         "\n\nDo NOT use blockr.dplyr::filter_block on a dm - it doesn't",
         "understand cascading."
-      ),
-      # new_dm_filter_by_data_block:
-      paste(
-        "Filters a dm by matching rows in a secondary data frame input (`by`).",
-        "Use to bridge drill-down / table outputs (data frames) back into a",
-        "dm: e.g. click a patient on a trajectory chart, feed the resulting",
-        "data frame in via `by`, and all downstream dm consumers (patient",
-        "profile, flatten, summaries) see the restricted dm.",
-        "\n\nThe block has TWO inputs: \"data\" (the dm) and \"by\" (the",
-        "filtering data frame). dm::dm_filter cascades via FKs, so setting",
-        "`table = \"adsl\"` with `key_col = \"USUBJID\"` restricts every",
-        "related table in one step. Any table/column combination that exists",
-        "in both inputs works."
       ),
       # new_dm_pull_block:
       paste(
@@ -273,7 +252,6 @@ register_dm_blocks <- function() {
       dm_select_arguments(),
       dm_add_keys_arguments(),
       dm_filter_arguments(),
-      dm_filter_by_data_arguments(),
       dm_pull_arguments(),
       dm_flatten_arguments(),
       temporal_join_arguments(),

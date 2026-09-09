@@ -17,12 +17,12 @@
 #'   when `measure` is set.
 #' @param featured Columns worth showing up front: they get a pill each above
 #'   the cards, rank first in the search, and are the columns `pinned` may
-#'   name. A pill's name opens and closes that column's filter card, and its
-#'   radio makes the column the group. E.g. `c("SEX", "RACE", "AGE")`. Empty
-#'   (the default) means no pill row, as before.
+#'   name. A pill's one job is to open and close that column's filter card.
+#'   E.g. `c("SEX", "RACE", "AGE")`. Empty (the default) means no pill row,
+#'   as before.
 #' @param pinned The single column the block reports as the board's group,
-#'   marked by the filled radio on its pill. Only `featured` columns on the
-#'   parent table qualify. Grouping is independent of filtering: a pinned
+#'   chosen in the `Group by` select at the top of the block. Only `featured`
+#'   columns on the parent table qualify. Grouping is independent of filtering: a pinned
 #'   column need not have a card, and a card does not make a column the group.
 #'   `NULL` (the default) means no group.
 #' @param ... Forwarded to [blockr.core::new_transform_block()]. A package
@@ -1191,6 +1191,12 @@ crossfilter_ui <- function(id) {
 
 crossfilter_deps <- memoise0(function() {
   htmltools::tagList(
+    # The Group by field is the shared select component, the same one the dm
+    # table pickers and every blockr.dplyr block mount, not a lookalike:
+    # a block's controls are the design system's or they drift from it.
+    blockr.dplyr::blockr_core_js_dep(),
+    blockr.dplyr::blockr_blocks_css_dep(),
+    blockr.dplyr::blockr_select_dep(),
     htmltools::htmlDependency(
       name = "crossfilter2",
       version = "1.5.4",

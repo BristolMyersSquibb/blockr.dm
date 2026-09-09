@@ -350,10 +350,25 @@ value_filter_server <- function(state, drill = FALSE) {
           if (isTRUE(drill)) {
             st <- resolve_claim_tables(st, derived$shape)$state
           }
-          make_filter_expr_from_shape(
+          op <- st$operator %||% "&"
+          inner <- make_filter_expr_from_shape(
             st$columns %||% list(),
             derived$shape,
-            operator = st$operator %||% "&"
+            operator = op
+          )
+          # Stamp the trail (filter-trail.R). `dm::dm_filter()` drops the
+          # attributes on its input, so the incoming trail is re-read off the
+          # input slot and this block's clause appended to it. That is how a
+          # downstream reader -- a chart caption, the patient profile's cohort
+          # pill -- learns what narrowed its data from the data itself, with
+          # no second channel and nothing held in state. The key is this
+          # block's module namespace, which carries its board id, so the
+          # reader can tell the drill filter's clause from the global one.
+          trail_expr(
+            inner,
+            trail_key(session),
+            value_filter_clause(st$columns, op),
+            data = data_slot()
           )
         }),
         state = list(state = r_state)

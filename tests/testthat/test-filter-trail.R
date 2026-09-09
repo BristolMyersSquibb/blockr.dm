@@ -132,3 +132,32 @@ test_that("two filter blocks on one path do not overwrite each other", {
   expect_identical(trail_key(NULL), "block")
   expect_identical(trail_key(ns_of("x")), trail_key(ns_of("x")))
 })
+
+test_that("value_filter_clause renders columns the way the crossfilter does", {
+  cols <- list(
+    list(name = "SEX", mode = "multi", values = c("F", "M"), table = "adsl"),
+    list(name = "AESEV", mode = "single", values = "SEVERE", table = "adae")
+  )
+  # Two tables filtered: qualified.
+  expect_identical(
+    value_filter_clause(cols),
+    "adsl.SEX = F, M; adae.AESEV = SEVERE"
+  )
+  # One table: the column alone.
+  expect_identical(value_filter_clause(cols[1L]), "SEX = F, M")
+  # The or-operator reads as words; sentinels read as words.
+  expect_identical(
+    value_filter_clause(
+      list(
+        list(name = "A", values = "<NA>"),
+        list(name = "B", values = c("x", "<empty>"))
+      ),
+      operator = "|"
+    ),
+    "A = NA or B = x, (empty)"
+  )
+  # Nothing selected leaves no trace.
+  expect_null(value_filter_clause(list()))
+  expect_null(value_filter_clause(list(list(name = "A", values = character()))))
+  expect_null(value_filter_clause(NULL))
+})

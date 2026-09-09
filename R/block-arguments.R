@@ -210,38 +210,6 @@ dm_filter_arguments <- function() {
 }
 
 #' @noRd
-dm_filter_by_data_arguments <- function() {
-  new_arg_specs(
-    table = new_arg_spec(
-      paste0(
-        "Character. Name of the dm table to filter. Rows whose `key_col` ",
-        "value is absent from `by[[key_col]]` are dropped; matching rows ",
-        "cascade to related tables via FKs. Default \"adsl\"."
-      ),
-      example = "adsl",
-      type = arg_string()
-    ),
-    key_col = new_arg_spec(
-      paste0(
-        "Character. Column used for the match. Must exist in both ",
-        "`by` (the second input data frame) and `table` (the selected dm ",
-        "table). Default \"USUBJID\"."
-      ),
-      example = "USUBJID",
-      type = arg_string()
-    ),
-    distinct_only = new_arg_spec(
-      paste0(
-        "Logical. TRUE (default) deduplicates `by[[key_col]]` before ",
-        "matching. FALSE passes the raw column through."
-      ),
-      example = TRUE,
-      type = arg_boolean()
-    )
-  )
-}
-
-#' @noRd
 dm_pull_arguments <- function() {
   new_arg_specs(
     table = new_arg_spec(

@@ -780,6 +780,14 @@ test_that("a checked dm flag filters the right table", {
 # member). Tracking it must not cost a re-evaluation on every spurious upstream
 # invalidation: blockr.core's block-server.R only skips a block when its
 # expression compares equal BY OBJECT IDENTITY (`same_ref()`), and
+# The server wraps every expression in `blockr.dm::add_filter_trail()` (the
+# filter trail, filter-trail.R). The tests below are about the FILTER, so they
+# look inside the wrapper -- and check, once per read, that it is there.
+filter_of <- function(e) {
+  expect_identical(e[[1L]], quote(blockr.dm::add_filter_trail))
+  paste(deparse(e[[2L]]), collapse = " ")
+}
+
 # `make_filter_block_expr()` builds with `bquote()`, which allocates a fresh
 # call tree on every read. See blockr.cdex/dev/profiling-plan.md, "Settled"
 # item 8, where this block re-evaluated on every dock view switch.
@@ -818,7 +826,7 @@ test_that("expr keeps its object identity on an equal-but-fresh data frame", {
       session$flushReact()
       e1 <- session$returned$expr()
       expect_equal(
-        paste(deparse(e1), collapse = " "),
+        filter_of(e1),
         "dplyr::filter(.(data), Species %in% \"setosa\")"
       )
 
@@ -860,7 +868,7 @@ test_that("expr keeps its object identity on an equal-but-fresh dm", {
       session$flushReact()
       e1 <- session$returned$expr()
       expect_equal(
-        paste(deparse(e1), collapse = " "),
+        filter_of(e1),
         "dm::dm_filter(.(data), policies = policy_id %in% \"P001\")"
       )
 
@@ -900,7 +908,7 @@ test_that("a real selection change yields a new, correct expression", {
 
       expect_false(identical(rlang::obj_address(e1), rlang::obj_address(e2)))
       expect_equal(
-        paste(deparse(e2), collapse = " "),
+        filter_of(e2),
         "dplyr::filter(.(data), Species %in% \"versicolor\")"
       )
       out <- eval(e2, list(data = d, . = identity))
@@ -936,7 +944,7 @@ test_that("a data frame -> dm shape flip still reshapes the expression", {
       session$flushReact()
       e1 <- session$returned$expr()
       # No dm yet: the data-frame branch is built (the documented behaviour).
-      expect_match(paste(deparse(e1), collapse = " "), "dplyr::filter", fixed = TRUE)
+      expect_match(filter_of(e1), "dplyr::filter", fixed = TRUE)
 
       box$d <- mk_demo_dm()
       tick(1L)
@@ -945,7 +953,7 @@ test_that("a data frame -> dm shape flip still reshapes the expression", {
 
       expect_false(identical(rlang::obj_address(e1), rlang::obj_address(e2)))
       expect_equal(
-        paste(deparse(e2), collapse = " "),
+        filter_of(e2),
         "dm::dm_filter(.(data), policies = policy_id %in% \"P001\")"
       )
     },
@@ -983,7 +991,7 @@ test_that("the shape decision lands within a single flush", {
     {
       session$flushReact()
       expect_equal(
-        paste(deparse(session$returned$expr()), collapse = " "),
+        filter_of(session$returned$expr()),
         "dplyr::filter(.(data), year %in% c(\"2024\", \"2026\"))"
       )
       expect_equal(nrow(session$returned$result()), 2L)
@@ -994,7 +1002,7 @@ test_that("the shape decision lands within a single flush", {
 
       e <- session$returned$expr()
       expect_equal(
-        paste(deparse(e), collapse = " "),
+        filter_of(e),
         "dplyr::filter(.(data), year %in% c(2024L, 2026L))"
       )
       res <- session$returned$result()
@@ -1035,7 +1043,7 @@ test_that("an upstream that stops propagates the stop, it does not go stale", {
     {
       session$flushReact()
       expect_equal(
-        paste(deparse(session$returned$expr()), collapse = " "),
+        filter_of(session$returned$expr()),
         "dplyr::filter(.(data), Species %in% \"setosa\")"
       )
 
@@ -1047,7 +1055,7 @@ test_that("an upstream that stops propagates the stop, it does not go stale", {
       ok(TRUE)
       session$flushReact()
       expect_equal(
-        paste(deparse(session$returned$expr()), collapse = " "),
+        filter_of(session$returned$expr()),
         "dplyr::filter(.(data), Species %in% \"setosa\")"
       )
     },

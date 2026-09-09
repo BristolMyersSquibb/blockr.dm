@@ -20,13 +20,21 @@
 /* ============================================================
    Gear button + popover (matches blockr.dplyr pattern)
    ============================================================ */
+/* The filter section's header: "Filter by" on the left, then the row count,
+   the reset and the gear. No rule under it -- the group field above draws the
+   only divider the block needs, and a second one here would cut the label off
+   the pills it names. */
 .jscf-gear-header {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding-bottom: 8px;
-  margin-bottom: 10px;
-  border-bottom: 1px solid var(--blockr-grey-200, #e5e7eb);
+  /* Same 12px the section leaves under the pill row: the header is a header,
+     not the first line of the pills. */
+  margin-bottom: 12px;
+}
+.jscf-gear-header .blockr-label {
+  margin: 0;
+  flex-shrink: 0;
 }
 .jscf-topbar-spacer {
   flex: 1;
@@ -61,18 +69,35 @@
   background: rgba(37, 99, 235, 0.08);
 }
 
+/* Gear options band. Not a floating popover: an in-flow, full-width band
+   under the header, so opening it pushes the block content down instead of
+   covering the pills and cards, and it shrinks to the block width instead of
+   overflowing a narrow sidebar. Same band the value filter block uses
+   (.bi-filter-settings), which mirrors blockr.viz's settings-band.css. */
 .jscf-popover {
   display: none;
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: auto;
-  z-index: 1000;
+  position: relative;
   background: #fff;
   border: 1px solid var(--blockr-color-border, #e5e7eb);
   border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-  padding: 12px 14px;
+  padding: 12px 14px 14px;
+  margin-bottom: 12px;
+  box-sizing: border-box;
+}
+/* Beak on the top-right edge pointing at the gear button, which is the last
+   thing on the header row above (shown only while open -- the band is
+   display:none when closed, so ::before never renders). */
+.jscf-popover::before {
+  content: "";
+  position: absolute;
+  top: -6px;
+  right: 8px;
+  width: 10px;
+  height: 10px;
+  background: #fff;
+  border-left: 1px solid var(--blockr-color-border, #e5e7eb);
+  border-top: 1px solid var(--blockr-color-border, #e5e7eb);
+  transform: rotate(45deg);
 }
 
 /* Search inside popover */
@@ -95,9 +120,11 @@
 }
 
 /* Search results inside popover */
+/* The band is in flow, so this list's height is height the block takes from
+   the cards below it: 220px shows about seven columns and still scrolls. */
 .jscf-popover-results {
   margin-top: 8px;
-  max-height: 300px;
+  max-height: 220px;
   overflow-y: auto;
 }
 .jscf-search-group-header {
@@ -120,6 +147,15 @@
 }
 .jscf-search-item:hover {
   background: var(--blockr-grey-100, #f3f4f6);
+}
+/* A column that already has a card. Same channel the pill row uses -- fill
+   means "this one is open" -- so the list can hold every column without the
+   active ones looking like new ones. Clicking such a row closes the card. */
+.jscf-search-item--active {
+  background: var(--blockr-grey-100, #f3f4f6);
+}
+.jscf-search-item--active:hover {
+  background: var(--blockr-grey-200, #e5e7eb);
 }
 .jscf-search-item-icon {
   color: var(--blockr-grey-400, #9ca3af);
@@ -157,23 +193,18 @@
   font-size: var(--blockr-font-size-sm, 0.8125rem);
 }
 /* Active dims in popover */
-.jscf-active-dims {
-  margin: 8px 0;
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--blockr-grey-200, #e5e7eb);
-}
-.jscf-active-dims-header {
+.jscf-featured-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   margin-bottom: 4px;
 }
-.jscf-active-dims-label {
+.jscf-featured-label {
   font-size: var(--blockr-font-size-xs, 0.75rem);
   font-weight: var(--blockr-font-weight-medium, 500);
   color: var(--blockr-grey-500, #6b7280);
 }
-.jscf-active-dims-clear {
+.jscf-featured-clear {
   font-size: var(--blockr-font-size-xs, 0.75rem);
   color: var(--blockr-grey-400, #9ca3af);
   background: none;
@@ -182,25 +213,52 @@
   padding: 0;
   transition: color 0.15s;
 }
-.jscf-active-dims-clear:hover {
+.jscf-featured-clear:hover {
   color: #dc3545;
 }
-.jscf-active-dims-chips {
+.jscf-featured-chips {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
 }
+/* The chip IS the shelf pill (.jscf-pill carries the look): a column that is
+   bold and grey-filled in the gear and plain white on the pill row reads as
+   two different things. All this adds is room for the x, and the drag. */
 .jscf-active-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 6px;
-  font-size: 12px;
-  font-weight: 500;
-  background: var(--blockr-grey-100, #f3f4f6);
-  border: 1px solid var(--blockr-color-border, #e5e7eb);
-  border-radius: 4px;
-  color: var(--blockr-color-text-primary, #111827);
+  position: relative;
+  padding-right: 4px;
+  cursor: grab;
+}
+.jscf-chip--dragging {
+  opacity: 0.4;
+}
+/* Where the drop would land: a 2px caret between chips, the same indicator
+   Blockr.Select's multi tags use. */
+.jscf-chip--drop-before {
+  margin-left: 8px;
+}
+.jscf-chip--drop-before::before {
+  content: "";
+  position: absolute;
+  left: -6px;
+  top: 2px;
+  bottom: 2px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--blockr-color-primary, #2563eb);
+}
+.jscf-chip--drop-after {
+  margin-right: 8px;
+}
+.jscf-chip--drop-after::after {
+  content: "";
+  position: absolute;
+  right: -6px;
+  top: 2px;
+  bottom: 2px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--blockr-color-primary, #2563eb);
 }
 .jscf-active-chip-x {
   display: inline-flex;
@@ -353,7 +411,7 @@
 .dm-cf-dims-wrap {
   display: flex;
   flex-wrap: wrap;
-  gap: 16px;
+  gap: 10px 16px;
 }
 
 /* ============================================================
@@ -369,7 +427,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 4px;
+  margin-bottom: 2px;
 }
 .dm-cf-filter-card-label {
   font-weight: var(--blockr-font-weight-medium, 500);
@@ -392,8 +450,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
+  width: 20px;
+  height: 20px;
   padding: 0;
   background: transparent;
   border: none;
@@ -414,13 +472,18 @@
 /* ============================================================
    Categorical table widget
    ============================================================ */
+/* Density: this widget is a list you scan, and every row costs the block a
+   line it could have spent on another card. Rows, header, search and the bars
+   are all one notch tighter than the block defaults, and the bar is a
+   supporting mark, so it gives up width before the label does. */
 .dm-cf-tw-search {
   width: 100%;
-  padding: 4px 8px;
+  padding: 2px 8px;
   font-size: var(--blockr-font-size-xs, 0.75rem);
+  line-height: 1.4;
   border: 1px solid var(--blockr-color-border, #e5e7eb);
   border-radius: 4px;
-  margin-bottom: 4px;
+  margin-bottom: 3px;
   box-sizing: border-box;
   outline: none;
 }
@@ -444,7 +507,8 @@
   background: #fff;
   font-size: var(--blockr-font-size-xs, 0.75rem);
   font-weight: var(--blockr-font-weight-semibold, 600);
-  padding: 4px 8px;
+  line-height: 1.3;
+  padding: 2px 6px;
   text-align: left;
   user-select: none;
   white-space: nowrap;
@@ -476,7 +540,8 @@
   background: var(--blockr-grey-100, #f3f4f6);
 }
 .dm-cf-tw-row td {
-  padding: 3px 8px;
+  padding: 2px 6px;
+  line-height: 1.25;
 }
 .dm-cf-tw-row.dimmed td {
   color: var(--blockr-grey-400, #9ca3af);
@@ -488,15 +553,15 @@
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 6px;
+  gap: 5px;
 }
 /* Track and fill both round on the RIGHT only: the left end is zero, shared by
    every row, and rounding it would lift the bar off its baseline. See
    --blockr-mark-radius in blockr.dock's design-system CSS for the full rule. */
 .dm-cf-tw-bar-track {
   flex: 1;
-  max-width: 80px;
-  height: 14px;
+  max-width: 96px;
+  height: 12px;
   background: var(--blockr-grey-100, #f3f4f6);
   border-radius: 0 var(--blockr-mark-radius, 2px) var(--blockr-mark-radius, 2px) 0;
   overflow: hidden;
@@ -645,19 +710,38 @@
 }
 
 /* ============================================================
+   Group by field
+   ============================================================ */
+/* The board's split, stated once, at the top of the block. The control is
+   Blockr.Select (blockr.dplyr::blockr_select_dep(), mounted in
+   _renderGroupField), so it looks and behaves like every other blockr field;
+   nothing here restyles it. */
+.jscf-group-field {
+  margin: 0 0 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--blockr-grey-200, #e5e7eb);
+}
+
+/* ============================================================
    Featured pill row + pinned card
    ============================================================ */
+/* The filter section: its header row, then the pill row. Both sections of the
+   block name themselves -- "Group by" over the select, "Filter by" over the
+   pills -- and each keeps the controls that belong to it. */
+.jscf-filter-section {
+  margin: 0 0 12px;
+}
 .jscf-shelf {
   display: flex;
   flex-wrap: wrap;
   gap: 5px 6px;
   align-items: center;
-  margin: 0 0 12px;
+  margin: 0;
 }
 
 /* The pill is the design system's tag (.blockr-select__tag): grey-100 on
-   grey-200 at 4px, not a dashed capsule. It carries two facts at once -- the
-   radio inside it is the group, the fill is "this column has a card". */
+   grey-200 at 4px, not a dashed capsule. Its fill says "this column has a
+   card"; the group is not on it, it is the select above. */
 .jscf-pill {
   display: inline-flex;
   align-items: center;
@@ -673,73 +757,30 @@
   border-radius: 4px; /* --blockr-radius-sm */
   white-space: nowrap;
   user-select: none;
-  transition: background 0.15s ease, border-color 0.15s ease;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 }
-/* Three facts, three channels, so every combination of them is legible:
-   the FILL says a card is open, the BORDER says this column groups the board,
-   the LEFT EDGE says it is cutting rows. The group used to own the fill as
-   well, which made "grouping with a card" and "grouping without one"
-   pixel-identical, and left the accent edge invisible against an already
-   blue border. */
+/* Two facts, two channels: a GREY SHIFT says this column has a card open, and
+   COLOUR says it is cutting rows. Grouping is not on the pill at all any more
+   -- it is a select above the row (.jscf-group-field), because the group is
+   exactly one and the filters are many of many, and one row of identical
+   pills cannot say which of those two questions it is asking. */
 .jscf-pill--open {
   background: var(--blockr-grey-100, #f3f4f6);
 }
-/* Cutting rows, as opposed to merely having a card. Blue-700, so it reads
-   against the group's own softer blue border as well as against grey. The
-   2px comes out of the pill's padding (1 + 7 becomes 2 + 6), so the width
-   does not change when a level is picked and a wrapped row can never re-flow
-   under the pointer. */
-.jscf-pill--filtering {
-  border-left: 2px solid var(--blockr-blue-700, #1d4ed8);
-  padding-left: 6px;
-}
-/* The group keeps the border rather than the fill, and keeps it light: at
-   full primary, doubled by an inset shadow, one pill in the row turned into a
-   heavy blue box. Three quiet cues that agree -- border, filled radio, blue
-   name -- carry it without any of them shouting. */
-.jscf-pill--group {
-  border-color: rgba(37, 99, 235, 0.55);
-}
-.jscf-pill--group .jscf-pill-name {
-  color: var(--blockr-color-primary, #2563eb);
-}
+/* Cutting rows, as opposed to merely having a card. This is the fact worth
+   ink, so it gets the whole pill: blue-50 fill, tinted border, blue-700 text.
+   It was a 2px left edge, which at 13px type is a hairline at the outer edge
+   of a 7px-padded box -- and a filter whose card is closed (the two classes
+   are independent) then had no visible mark at all.
 
-/* One of these, not many. A radio is the web's one-of-many mark; a pin is a
-   toggle, and a row of toggles reads as "you may set several". */
-.jscf-pill-radio {
-  width: 12px;
-  height: 12px;
-  padding: 0;
-  flex-shrink: 0;
-  border: 1.5px solid var(--blockr-grey-300, #d1d5db);
-  border-radius: 50%;
-  background: transparent;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  transition: border-color 0.15s ease;
-}
-.jscf-pill-radio:hover:not(:disabled) {
-  border-color: var(--blockr-color-primary, #2563eb);
-}
-.jscf-pill-radio--on,
-.jscf-pill-radio--on:hover {
-  border-color: var(--blockr-color-primary, #2563eb);
-}
-.jscf-pill-radio--on::after {
-  content: "";
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--blockr-color-primary, #2563eb);
-}
-/* A column that cannot group the board keeps its radio so the names stay in
-   line, and says why on hover rather than going missing. */
-.jscf-pill-radio--blocked {
-  border-color: var(--blockr-grey-200, #e5e7eb);
-  border-style: dashed;
-  cursor: not-allowed;
+   Declared after --open so the tint wins the background on a pill that is
+   both. No font-weight: 500 would re-measure the label and a wrapped row
+   could re-flow under the pointer on a pick, which is the property this
+   treatment was chosen for. */
+.jscf-pill--filtering {
+  background: var(--blockr-blue-50, #eff6ff);
+  border-color: rgba(37, 99, 235, 0.35);
+  color: var(--blockr-blue-700, #1d4ed8);
 }
 
 .jscf-pill-name {
@@ -753,20 +794,6 @@
 .jscf-pill-name:hover {
   color: var(--blockr-color-primary, #2563eb);
 }
-/* The pinned column's card is held open on the R side, so its name is a
-   label and not a button. */
-.jscf-pill-name--static {
-  cursor: default;
-}
-.jscf-pill-name--static:hover {
-  color: inherit;
-}
-
-/* The gear's featured chips take the same radio, at the size their row uses. */
-.jscf-chip-radio {
-  margin-right: 1px;
-}
-
 .jscf-shelf-more {
   border: none;
   background: transparent;
@@ -800,8 +827,8 @@
   color: var(--blockr-grey-400, #9ca3af);
   font-style: italic;
 }
-/* The pin means one thing: this column is held up front. Choosing the group
-   is a radio (.jscf-pill-radio), because only one column can be it. */
+/* The pin means one thing: this column is held up front. The group is chosen
+   in the field at the top of the block, not here. */
 .jscf-feature-btn {
   display: inline-flex;
   align-items: center;

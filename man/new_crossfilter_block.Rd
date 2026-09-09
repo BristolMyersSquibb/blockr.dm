@@ -33,13 +33,13 @@ when \code{measure} is set.}
 
 \item{featured}{Columns worth showing up front: they get a pill each above
 the cards, rank first in the search, and are the columns \code{pinned} may
-name. A pill's name opens and closes that column's filter card, and its
-radio makes the column the group. E.g. \code{c("SEX", "RACE", "AGE")}. Empty
-(the default) means no pill row, as before.}
+name. A pill's one job is to open and close that column's filter card.
+E.g. \code{c("SEX", "RACE", "AGE")}. Empty (the default) means no pill row,
+as before.}
 
 \item{pinned}{The single column the block reports as the board's group,
-marked by the filled radio on its pill. Only \code{featured} columns on the
-parent table qualify. Grouping is independent of filtering: a pinned
+chosen in the \verb{Group by} select at the top of the block. Only \code{featured}
+columns on the parent table qualify. Grouping is independent of filtering: a pinned
 column need not have a card, and a card does not make a column the group.
 \code{NULL} (the default) means no group.}
 
