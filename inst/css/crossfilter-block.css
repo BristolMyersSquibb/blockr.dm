@@ -664,7 +664,8 @@
   gap: 5px;
   padding: 2px 7px;
   font-size: var(--blockr-font-size-sm, 0.8125rem);
-  font-weight: var(--blockr-font-weight-medium, 500);
+  /* No font-weight: .blockr-select__tag does not set one either, so a pill
+     weighs the same as the tags every other block shows a column with. */
   line-height: 1.4;
   color: var(--blockr-grey-700, #374151);
   background: #fff;
