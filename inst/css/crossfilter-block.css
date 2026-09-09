@@ -729,3 +729,53 @@
   border-color: var(--blockr-color-primary, #2563eb);
   box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
 }
+
+/* Featured vocabulary, edited in the gear ---------------------------------- */
+.jscf-featured {
+  margin: 8px 0;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--blockr-grey-200, #e5e7eb);
+}
+.jscf-featured-hint {
+  font-size: var(--blockr-font-size-xs, 0.75rem);
+  color: var(--blockr-grey-400, #9ca3af);
+  font-style: italic;
+}
+/* The same pin in three places: a search row (add to the vocabulary), a
+   featured chip (make it the group) and the card itself. One glyph, one
+   meaning: this column is held up front. */
+.jscf-feature-btn,
+.jscf-chip-pin {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  border-radius: 3px;
+  color: var(--blockr-grey-200, #e5e7eb);
+  cursor: pointer;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+.jscf-chip-pin {
+  width: 16px;
+  height: 16px;
+  margin-left: -2px;
+}
+.jscf-feature-btn:hover,
+.jscf-chip-pin:hover {
+  color: var(--blockr-grey-700, #374151);
+  background: var(--blockr-grey-100, #f3f4f6);
+}
+.jscf-feature-on,
+.jscf-feature-on:hover {
+  color: var(--blockr-color-primary, #2563eb);
+}
+.jscf-chip-pinned {
+  border-color: rgba(37, 99, 235, 0.35);
+  background: rgba(37, 99, 235, 0.07);
+  color: var(--blockr-color-primary, #2563eb);
+}

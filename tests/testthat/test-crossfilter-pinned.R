@@ -175,3 +175,53 @@ test_that("clearing all dimensions leaves the pinned card standing", {
     }
   )
 })
+
+test_that("the featured vocabulary is editable from the client", {
+  # A board built without `featured =` has to be able to grow one, or the
+  # feature is only reachable by editing board code.
+  blk <- new_crossfilter_block()
+
+  testServer(
+    blockr.core:::get_s3_method("block_server", blk),
+    args = list(x = blk, data = list(data = function() iris)),
+    {
+      session$flushReact()
+      expect_equal(session$returned$state$featured(), character())
+
+      session$setInputs(`expr-set_featured` = list("Species", "Sepal.Length"))
+      session$flushReact()
+      expect_equal(session$returned$state$featured(),
+                   c("Species", "Sepal.Length"))
+
+      # ... and then pinned, which is the only route to a group on such a board
+      session$setInputs(`expr-set_pinned` = "Species")
+      session$flushReact()
+      expect_equal(session$returned$state$pinned(), "Species")
+      expect_equal(session$returned$state$active_dims(), list(.tbl = "Species"))
+
+      # Un-featuring the pinned column drops the pin with it: the pin is a mark
+      # on a member of the vocabulary, not a value of its own.
+      session$setInputs(`expr-set_featured` = list("Sepal.Length"))
+      session$flushReact()
+      expect_equal(session$returned$state$featured(), "Sepal.Length")
+    }
+  )
+})
+
+test_that("an empty pick unpins without clearing the cards", {
+  blk <- new_crossfilter_block(featured = "Species", pinned = "Species")
+
+  testServer(
+    blockr.core:::get_s3_method("block_server", blk),
+    args = list(x = blk, data = list(data = function() iris)),
+    {
+      session$flushReact()
+      session$setInputs(`expr-set_pinned` = "")
+      session$flushReact()
+      expect_equal(session$returned$state$pinned(), character())
+      # The card stays: unpinning stops the split, it does not narrow or widen
+      # the population.
+      expect_equal(session$returned$state$active_dims(), list(.tbl = "Species"))
+    }
+  )
+})

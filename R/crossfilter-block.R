@@ -543,18 +543,26 @@ crossfilter_server <- function(active_dims, filters, range_filters,
 
       # Moving the pin leaves the previous column exactly as it is: an ordinary
       # card, filter and all. Dropping its filter here would widen the
-      # population under a reader who was looking at something else.
+      # population under a reader who was looking at something else. An empty
+      # string unpins: the block keeps its cards and stops splitting.
       shiny::observeEvent(input$set_pinned, {
         val <- input$set_pinned
         if (is.null(val)) {
           return()
         }
         val <- as.character(val)
-        if (!length(val) || !nzchar(val[[1L]])) {
-          return()
-        }
-        r_pinned(val[[1L]])
+        r_pinned(if (length(val) && nzchar(val[[1L]])) val[[1L]] else character())
       }, ignoreInit = TRUE)
+
+      # The vocabulary is edited in the gear, not only in board code: a board
+      # built before this existed, or by someone who never wrote `featured =`,
+      # has to be able to grow one. `ignoreNULL = FALSE` so clearing it back to
+      # nothing arrives as a value rather than as silence.
+      shiny::observeEvent(input$set_featured, {
+        vals <- as.character(unlist(input$set_featured))
+        vals <- vals[nzchar(vals)]
+        r_featured(unique(vals))
+      }, ignoreInit = TRUE, ignoreNULL = FALSE)
 
       shiny::observeEvent(input$clear_filters, {
         self_write$active <- TRUE

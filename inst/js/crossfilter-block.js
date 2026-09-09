@@ -18,6 +18,8 @@
 
   const ICON_REMOVE_SM = '<svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708z"/></svg>';
 
+  const ICON_PIN = '<svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M4.146.146A.5.5 0 0 1 4.5 0h7a.5.5 0 0 1 .5.5c0 .68-.342 1.174-.646 1.479-.126.125-.25.224-.354.298v4.431l.078.048c.203.127.476.314.751.555C12.36 7.775 13 8.527 13 9.5a.5.5 0 0 1-.5.5h-4v4.5c0 .276-.224 1.5-.5 1.5s-.5-1.224-.5-1.5V10h-4a.5.5 0 0 1-.5-.5c0-.973.64-1.725 1.17-2.189A6 6 0 0 1 5 6.708V2.277a3 3 0 0 1-.354-.298C4.342 1.674 4 1.18 4 .5a.5.5 0 0 1 .146-.354"/></svg>';
+
   // Type icons for search results
   const TYPE_ICONS = { categorical: '\u2261', range: '#', date: '\u25f4' };
 
@@ -203,6 +205,11 @@
       this.searchInput.autocomplete = 'off';
       this.searchInput.addEventListener('input', () => this._onSearchInput());
       this.popoverEl.appendChild(this.searchInput);
+      // The vocabulary itself is editable here, not only from board code: a
+      // board that was built without one still has to be able to grow one.
+      this.featuredEl = el('div', 'jscf-featured');
+      this.popoverEl.appendChild(this.featuredEl);
+
       this.searchResultsEl = el('div', 'jscf-popover-results');
       this.popoverEl.appendChild(this.searchResultsEl);
 
@@ -293,6 +300,7 @@
     _onSearchInput() {
       const query = this.searchInput.value.trim().toLowerCase();
 
+      this._renderFeaturedInPopover();
       // Show active dims with remove buttons
       this._renderActiveDimsInPopover(query);
 
@@ -353,6 +361,19 @@
             row.appendChild(
               el('span', `jscf-search-item-badge ${badgeCls}`, badgeText)
             );
+
+            const star = el('button', 'jscf-feature-btn', ICON_PIN);
+            star.type = 'button';
+            const isFeatured = this.featured.some(f => f.dim === item.dim);
+            if (isFeatured) star.classList.add('jscf-feature-on');
+            star.title = isFeatured
+              ? `Stop showing ${item.dim} up front`
+              : `Show ${item.dim} up front`;
+            star.addEventListener('click', (e) => {
+              e.stopPropagation();
+              this._toggleFeatured(item.dim);
+            });
+            row.appendChild(star);
 
             row.addEventListener('click', () => {
               this._addDimension(item.tbl, item.dim);
@@ -417,6 +438,80 @@
         chipWrap.appendChild(chip);
       }
       this._activeDimsEl.appendChild(chipWrap);
+    }
+
+    // The featured vocabulary, editable: each entry can be dropped, and the one
+    // that carries the pin is the group. This is the only route to a pinned
+    // column on a board that starts with neither.
+    _renderFeaturedInPopover() {
+      if (!this.featuredEl) return;
+      this.featuredEl.innerHTML = '';
+
+      const headerRow = el('div', 'jscf-active-dims-header');
+      headerRow.appendChild(
+        el('span', 'jscf-active-dims-label', 'Shown up front')
+      );
+      if (this.featured.length) {
+        const clear = el('button', 'jscf-active-dims-clear', 'Clear');
+        clear.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this._setFeatured([]);
+        });
+        headerRow.appendChild(clear);
+      }
+      this.featuredEl.appendChild(headerRow);
+
+      if (!this.featured.length) {
+        this.featuredEl.appendChild(el('div', 'jscf-featured-hint',
+          'Pin a column below to keep it one click away.'));
+        return;
+      }
+
+      const chipWrap = el('div', 'jscf-active-dims-chips');
+      for (const f of this.featured) {
+        const chip = el('span', 'jscf-active-chip');
+        const isPinned = f.dim === this.pinned;
+        const pinnable = this.pinnable.includes(f.dim);
+        if (isPinned) chip.classList.add('jscf-chip-pinned');
+
+        if (pinnable) {
+          const pin = el('button', 'jscf-chip-pin', ICON_PIN);
+          pin.type = 'button';
+          pin.title = isPinned
+            ? `${f.dim} is the group`
+            : `Group by ${f.dim}`;
+          if (isPinned) pin.classList.add('jscf-feature-on');
+          pin.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this._setPinned(isPinned ? '' : f.dim);
+          });
+          chip.appendChild(pin);
+        }
+
+        chip.appendChild(document.createTextNode(f.dim));
+        const x = el('button', 'jscf-active-chip-x', '\u00d7');
+        x.title = `Stop showing ${f.dim} up front`;
+        x.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this._toggleFeatured(f.dim);
+        });
+        chip.appendChild(x);
+        chipWrap.appendChild(chip);
+      }
+      this.featuredEl.appendChild(chipWrap);
+    }
+
+    _toggleFeatured(dim) {
+      const cur = this.featured.map(f => f.dim);
+      this._setFeatured(
+        cur.includes(dim) ? cur.filter(d => d !== dim) : cur.concat(dim)
+      );
+    }
+
+    _setFeatured(dims) {
+      const id = this.el.id;
+      const nsBase = id.replace(/-crossfilter_input$/, '');
+      Shiny.setInputValue(nsBase + '-set_featured', dims, { priority: 'event' });
     }
 
     _setMeasure(val) {
@@ -638,6 +733,7 @@
       this._renderActiveDimsInPopover('');
       this._buildPanels();
       this._renderShelf();
+      this._renderFeaturedInPopover();
       this._applyInitialFilters(msg.cat_filters, msg.rng_filters);
       this._updateAllCounts();
       // First setData has populated `this.filters` (either from
