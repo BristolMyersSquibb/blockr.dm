@@ -538,7 +538,10 @@ test_that("binding announce re-sends columns and state (lazy-panel handshake)", 
       root$sendCustomMessage <- function(type, message) {
         msgs[[length(msgs) + 1L]] <<- list(type = type, message = message)
       }
-      session$setInputs(filter_input_ready = 1)
+      # The block server mounts the filter under an `expr` child module, so
+      # the announce arrives namespaced (in the app:
+      # `<board>-block_<id>-expr-filter_input_ready`).
+      session$setInputs("expr-filter_input_ready" = 1)
       types <- vapply(msgs, function(m) m$type, character(1))
       expect_true("bi-filter-columns" %in% types)
       expect_true("bi-filter-update" %in% types)
@@ -1092,5 +1095,64 @@ test_that("filter_input_shape keeps the dm branch and column types", {
   expect_identical(
     make_filter_expr_from_shape(cols, sh),
     make_filter_block_expr(cols, mk_demo_dm())
+  )
+})
+
+test_that("column metadata is sent once per change, and always on announce", {
+  # `data()` invalidates whenever the board churns, and the columns are the
+  # same columns. At ~44 kB a push on a socket that does not compress, the
+  # duplicate was 574 kB over a ten minute CDEx session.
+  testthat::skip_if_not_installed("blockr.core")
+  blk <- new_value_filter_block()
+
+  src <- new.env(parent = emptyenv())
+  src$d <- iris
+  tick <- shiny::reactiveVal(0L)
+  # A reactive, not a reactiveVal: reactiveVal skips an identical value, and
+  # the case under test is an equal-but-new frame reaching the block.
+  dat <- shiny::reactive({
+    tick()
+    src$d[seq_len(nrow(src$d)), , drop = FALSE]
+  })
+
+  shiny::testServer(
+    blockr.core:::get_s3_method("block_server", blk),
+    {
+      sent <- new.env(parent = emptyenv())
+      sent$msgs <- list()
+      root <- session$rootScope()
+      root$sendCustomMessage <- function(type, message) {
+        sent$msgs <- c(sent$msgs, list(list(type = type, message = message)))
+        invisible(NULL)
+      }
+      n_cols <- function() {
+        length(Filter(function(m) identical(m$type, "bi-filter-columns"),
+                      sent$msgs))
+      }
+
+      session$flushReact()
+      expect_identical(n_cols(), 1L)
+
+      for (i in 1:3) {
+        tick(i)
+        session$flushReact()
+      }
+      expect_identical(n_cols(), 1L)
+
+      # A client that just bound holds nothing, announce or not.
+      # The block server mounts the filter under an `expr` child module, so
+      # the announce arrives namespaced (in the app:
+      # `<board>-block_<id>-expr-filter_input_ready`).
+      session$setInputs("expr-filter_input_ready" = 1)
+      session$flushReact()
+      expect_identical(n_cols(), 2L)
+
+      # Different columns travel.
+      src$d <- iris[, c("Sepal.Length", "Species")]
+      tick(4L)
+      session$flushReact()
+      expect_identical(n_cols(), 3L)
+    },
+    args = list(x = blk, data = list(data = dat))
   )
 })

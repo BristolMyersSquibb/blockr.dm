@@ -159,18 +159,31 @@ value_filter_server <- function(state, drill = FALSE) {
       # lazily on first dropdown-open (see the request handler below). In
       # dm mode this is what avoids paying N-tables x uniques at startup,
       # and never collects a remote (e.g. DuckDB-backed) table.
+      # Sent once per change of the metadata. `data()` invalidates on board
+      # churn a view switch causes, and the columns are the same columns; at
+      # ~44 kB a push on a socket that does not compress, an unchanged copy
+      # is bytes for nothing. `force` is for the announce arm below, where
+      # the client is new and holds nothing.
+      last_cols <- NULL
+      send_columns <- function(meta, force = FALSE) {
+        msg <- list(
+          id      = ns("filter_input"),
+          columns = meta$columns,
+          is_dm   = meta$is_dm
+        )
+        if (!force && identical(msg, last_cols)) {
+          return(invisible(FALSE))
+        }
+        last_cols <<- msg
+        session$sendCustomMessage("bi-filter-columns", msg)
+        invisible(TRUE)
+      }
+
       shiny::observeEvent(data(), {
         d <- data()
         meta <- build_column_meta(d)
         if (is.null(meta)) return()
-        session$sendCustomMessage(
-          "bi-filter-columns",
-          list(
-            id      = ns("filter_input"),
-            columns = meta$columns,
-            is_dm   = meta$is_dm
-          )
-        )
+        send_columns(meta)
         # Re-apply single-select rule against fresh data.
         s <- reconcile_state(r_state(), d, drill = drill)
         if (!identical(s, r_state())) {
@@ -248,14 +261,7 @@ value_filter_server <- function(state, drill = FALSE) {
         d <- tryCatch(data(), error = function(e) NULL)
         meta <- build_column_meta(d)
         if (!is.null(meta)) {
-          session$sendCustomMessage(
-            "bi-filter-columns",
-            list(
-              id      = ns("filter_input"),
-              columns = meta$columns,
-                is_dm   = meta$is_dm
-            )
-          )
+          send_columns(meta, force = TRUE)
         }
         session$sendCustomMessage(
           "bi-filter-update",
