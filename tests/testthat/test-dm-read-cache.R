@@ -137,7 +137,10 @@ test_that("a changed source republishes the pin under the same name", {
 
   src_dir <- withr::local_tempdir()
   f <- write_sas_fixture(src_dir)
-  board <- pins::board_temp(versioned = TRUE)
+  # unversioned: both writes land in the same second, and on a versioned
+  # board pins orders same-second versions by content hash, so which one
+  # pin_meta() returns would depend on the parquet bytes
+  board <- pins::board_temp()
 
   dm_read_tables(f, cache_dir = "", cache_board = board)
   name <- blockr.dm:::dm_read_pin_name(f)
