@@ -81,7 +81,7 @@
   }
 
   function kdeToSvgPath(grid, min, max, maxY, svgW, svgH) {
-    if (maxY <= 0) return '';
+    if (maxY <= 0 || !grid || !grid.length) return '';
     const scaleX = (x) => ((x - min) / (max - min)) * svgW;
     const scaleY = (y) => svgH - (y / maxY) * svgH * 0.9;
     let d = `M${scaleX(grid[0].x).toFixed(1)},${svgH}`;
@@ -90,6 +90,42 @@
     }
     d += ` L${scaleX(grid[grid.length - 1].x).toFixed(1)},${svgH} Z`;
     return d;
+  }
+
+  // -- Density helpers ------------------------------------------------------
+  // The blue overlay is the GRAY curve, cut at the handles. It is NOT a fresh
+  // KDE of the filtered rows: that re-smooths a truncated sample, so the
+  // curve sagged inside the selection and bled roughly one bandwidth
+  // (range/20) past both handles -- blue and gray disagreed exactly where the
+  // user is reading the cut.
+  //
+  // Nothing is scaled, because there is nothing to scale: gray is already
+  // "every row the OTHER filters leave" (_rebuildRangeDensity clears this
+  // dim's own filter before measuring), and inside the cut this dim's filter
+  // drops nothing. A per-cell survival ratio was tried here and is worse than
+  // useless -- with 30-odd rows over 64 cells it is counts like 1/2 and 0/1,
+  // and it drew a jagged blue curve under a smooth gray one.
+
+  // Cut a grid at [lo, hi], interpolating the two end points so the path
+  // closes with a vertical edge exactly under each handle.
+  function clipGrid(grid, lo, hi) {
+    const inside = grid.filter(p => p.x >= lo && p.x <= hi);
+    if (!inside.length) return [];
+    const at = (x) => {
+      for (let i = 1; i < grid.length; i++) {
+        if (grid[i].x >= x) {
+          const a = grid[i - 1], b = grid[i];
+          const t = b.x === a.x ? 0 : (x - a.x) / (b.x - a.x);
+          return { x, y: a.y + (b.y - a.y) * t };
+        }
+      }
+      return { x, y: grid[grid.length - 1].y };
+    };
+    const out = [];
+    if (inside[0].x > lo) out.push(at(lo));
+    out.push(...inside);
+    if (inside[inside.length - 1].x < hi) out.push(at(hi));
+    return out;
   }
 
   function fmtCount(n) {
@@ -1447,10 +1483,15 @@
       slider.appendChild(bubbleHi);
       card.appendChild(slider);
 
-      // Min/max labels
+      // Min/max labels. They read the HANDLES, not the data bounds: at rest
+      // the two are the same value, and once a filter is on, the numbers the
+      // user picked are the ones worth showing. Clicking one types it (see
+      // _makeRangeLabelEditable).
       const minMaxRow = el('div', 'dm-cf-range-minmax');
-      const labelMin = el('span', '');
-      const labelMax = el('span', '');
+      const labelMin = el('span', 'dm-cf-range-edit');
+      const labelMax = el('span', 'dm-cf-range-edit');
+      labelMin.title = 'Click to type a value';
+      labelMax.title = 'Click to type a value';
       minMaxRow.appendChild(labelMin);
       minMaxRow.appendChild(labelMax);
       card.appendChild(minMaxRow);
@@ -1467,10 +1508,32 @@
       const fmtVal = type === 'date' ? fmtDate : fmtNum;
       card._fmtVal = fmtVal;
 
+      // card._lo / card._hi are the values the card filters on; the range
+      // inputs only carry the thumbs. They are not the same thing: an input
+      // snaps its value to `step` ((max-min)/200 on a numeric card), so a
+      // typed 60 came back as 59.93. The inputs get the number for the thumb
+      // position, these keep it exactly.
+      card._lo = Number(inputLo.value);
+      card._hi = Number(inputHi.value);
+
+      card._setValues = (loV, hiV) => {
+        card._lo = Math.min(loV, hiV);
+        card._hi = Math.max(loV, hiV);
+        // step='any' for the write, so the DOM value starts from the exact
+        // number; restoring step re-rounds it, which is why the thumbs are
+        // positioned from card._lo / card._hi and not from the inputs.
+        const sLo = inputLo.step, sHi = inputHi.step;
+        inputLo.step = 'any'; inputHi.step = 'any';
+        inputLo.value = card._lo;
+        inputHi.value = card._hi;
+        inputLo.step = sLo; inputHi.step = sHi;
+        card._updateSlider();
+      };
+
       // Read card._min / card._max so this picks up bounds updates.
       card._updateSlider = () => {
-        let lo = Number(inputLo.value);
-        let hi = Number(inputHi.value);
+        let lo = card._lo;
+        let hi = card._hi;
         if (lo > hi) [lo, hi] = [hi, lo];
 
         const mn = card._min;
@@ -1485,16 +1548,37 @@
         bubbleLo.style.left = loP + '%';
         bubbleHi.textContent = fmtVal(hi);
         bubbleHi.style.left = hiP + '%';
+
+        // Skip while a label is being typed into -- the span is out of the
+        // DOM then, and writing to it would fight the input.
+        if (!card._editing) {
+          labelMin.textContent = fmtVal(lo);
+          labelMax.textContent = fmtVal(hi);
+        }
       };
 
-      const onInput = () => {
-        let lo = Number(inputLo.value);
-        let hi = Number(inputHi.value);
-        if (lo > hi) [lo, hi] = [hi, lo];
-        card._updateSlider();
+      // Show the bubbles for a moment after any programmatic move, the same
+      // way a drag does.
+      card._flashSlider = () => {
         slider.classList.add('dm-cf-active');
         clearTimeout(card._activeTimer);
-        card._activeTimer = setTimeout(() => slider.classList.remove('dm-cf-active'), 1500);
+        card._activeTimer = setTimeout(
+          () => slider.classList.remove('dm-cf-active'), 1500);
+      };
+
+      // `which` is the end the user dragged, and ONLY that end is re-read
+      // from the DOM -- the other one may hold a typed value the input
+      // rounded to its step. Called with no argument (from a typed commit)
+      // it reads neither and applies card._lo / card._hi as they stand.
+      const onInput = (which) => {
+        if (which === 'lo') card._lo = Number(inputLo.value);
+        if (which === 'hi') card._hi = Number(inputHi.value);
+        let lo = card._lo;
+        let hi = card._hi;
+        if (lo > hi) [lo, hi] = [hi, lo];
+        card._lo = lo; card._hi = hi;
+        card._updateSlider();
+        card._flashSlider();
 
         // Apply silently: the in-block bars / counts / status update live while
         // dragging, but the R round-trip (and downstream re-eval) is deferred
@@ -1514,15 +1598,104 @@
       // Drag-end (mouse-up / key commit): push the resting value to R once.
       const onChange = () => this._scheduleSubmit();
 
-      inputLo.addEventListener('input', onInput);
-      inputHi.addEventListener('input', onInput);
+      inputLo.addEventListener('input', () => onInput('lo'));
+      inputHi.addEventListener('input', () => onInput('hi'));
       inputLo.addEventListener('change', onChange);
       inputHi.addEventListener('change', onChange);
+
+      this._makeRangeLabelEditable(card, labelMin, 'lo', onInput);
+      this._makeRangeLabelEditable(card, labelMax, 'hi', onInput);
 
       // Apply initial bounds (sets attrs, values, KDE, labels, totalRows).
       this._applyRangeBounds(card, min0, max0);
 
       return card;
+    }
+
+    // Click a min/max label to type the value. The span is swapped for an
+    // input in place, so the card neither grows nor moves: a permanent pair of
+    // boxes would spend a frame on every card for something used once.
+    //
+    // A date card gets `type="date"`, which is the calendar picker -- the
+    // browser's own, opened on the same click via showPicker() where that
+    // exists. Numeric cards get a plain text box; the label is formatted
+    // ("1.2K"), so the input is seeded with the RAW number instead.
+    _makeRangeLabelEditable(card, span, which, onCommit) {
+      span.addEventListener('click', () => {
+        if (card._editing) return;
+        card._editing = true;
+
+        const isDate = card._type === 'date';
+        const inp = document.createElement('input');
+        inp.className = 'dm-cf-range-input';
+        const current = Number(which === 'lo' ? card._lo : card._hi);
+
+        if (isDate) {
+          inp.type = 'date';
+          inp.min = fmtDate(card._min);
+          inp.max = fmtDate(card._max);
+          inp.value = fmtDate(current);
+        } else {
+          inp.type = 'text';
+          inp.inputMode = 'decimal';
+          inp.value = String(Math.round(current * 1e6) / 1e6);
+          // Content width: a box half the card wide for four digits reads as
+          // a form field, which this is not.
+          inp.size = Math.max(4, inp.value.length + 1);
+        }
+
+        span.replaceWith(inp);
+        inp.focus();
+        if (!isDate) inp.select();
+        if (isDate && typeof inp.showPicker === 'function') {
+          // Not supported everywhere, and it throws if the input is not
+          // user-activated; the field still works without it.
+          try { inp.showPicker(); } catch (e) { /* no picker, type instead */ }
+        }
+
+        let done = false;
+        const finish = (commit) => {
+          if (done) return;
+          done = true;
+          card._editing = false;
+          inp.replaceWith(span);
+
+          if (commit) {
+            const raw = isDate
+              ? Math.round(toEpochDay(inp.value)) : parseFloat(inp.value);
+            if (isFinite(raw)) {
+              // Clamp into the data bounds, and keep the handles in order --
+              // typing a minimum past the maximum means "up to here", not an
+              // inverted range.
+              let v = Math.min(card._max, Math.max(card._min, raw));
+              const other = Number(which === 'lo' ? card._hi : card._lo);
+              if (which === 'lo' && v > other) v = other;
+              if (which === 'hi' && v < other) v = other;
+
+              card._setValues(
+                which === 'lo' ? v : Number(card._lo),
+                which === 'hi' ? v : Number(card._hi)
+              );
+            }
+          }
+
+          card._updateSlider();
+          if (commit) {
+            card._flashSlider();
+            onCommit();
+            this._scheduleSubmit();
+          }
+        };
+
+        inp.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') finish(true);
+          else if (e.key === 'Escape') finish(false);
+        });
+        inp.addEventListener('blur', () => finish(true));
+        // A date input's picker lives outside the field; committing on
+        // `change` means a pick from the calendar lands without a blur.
+        if (isDate) inp.addEventListener('change', () => finish(true));
+      });
     }
 
     // -- Range bounds helpers -----------------------------------------------
@@ -1540,12 +1713,31 @@
       const bottom = cfDim.bottom(1)[0];
       const top = cfDim.top(1)[0];
 
+      const toNum = type === 'date'
+        ? v => toEpochDay(v) : v => Number(v);
+      let min = bottom ? toNum(bottom[dim]) : NaN;
+      let max = top ? toNum(top[dim]) : NaN;
+
+      // A column with missing values can put a NaN at either end of the
+      // sort, and the card then had no bounds at all: `AENDT` (473 of 1191
+      // AE end dates missing) rendered as a bare header, no slider, no
+      // density. Fall back to a scan of the rows this dim can see -- same
+      // pass the gray density already makes, and only on a bounds change.
+      if (!isFinite(min) || !isFinite(max)) {
+        const childTable = this.dimChild[dim];
+        const rows = childTable ? this.instances[childTable].allFiltered() : [];
+        min = Infinity; max = -Infinity;
+        for (const r of rows) {
+          const v = toNum(r[dim]);
+          if (!isFinite(v)) continue;
+          if (v < min) min = v;
+          if (v > max) max = v;
+        }
+      }
+
       if (hasOwnFilter) this._reapplyFilter(dim, savedFilter);
 
-      if (!bottom || !top) return null;
-      const min = type === 'date' ? toEpochDay(bottom[dim]) : Number(bottom[dim]);
-      const max = type === 'date' ? toEpochDay(top[dim]) : Number(top[dim]);
-      if (isNaN(min) || isNaN(max)) return null;
+      if (!isFinite(min) || !isFinite(max)) return null;
       return { min, max };
     }
 
@@ -1588,22 +1780,38 @@
       lo.min = min; lo.max = max; lo.step = step;
       hi.min = min; hi.max = max; hi.step = step;
 
-      if (hasRangeFilter) {
-        // Clamp filter values into the new bounds (HTML clamps too, but be
-        // explicit). If the filter no longer intersects, snap to endpoints.
-        lo.value = Math.max(min, Math.min(max, ownFilter.min));
-        hi.value = Math.max(min, Math.min(max, ownFilter.max));
+      // Clamp filter values into the new bounds (HTML clamps too, but be
+      // explicit). If the filter no longer intersects, snap to endpoints.
+      const loV = hasRangeFilter
+        ? Math.max(min, Math.min(max, ownFilter.min)) : min;
+      const hiV = hasRangeFilter
+        ? Math.max(min, Math.min(max, ownFilter.max)) : max;
+
+      // Labels follow the handles; _setValues -> _updateSlider writes them.
+      if (card._setValues) {
+        card._setValues(loV, hiV);
       } else {
-        lo.value = min;
-        hi.value = max;
+        lo.value = loV;
+        hi.value = hiV;
       }
 
-      card._labelMin.textContent = card._fmtVal(min);
-      card._labelMax.textContent = card._fmtVal(max);
-      card._updateSlider();
+      this._rebuildRangeDensity(card);
+    }
 
-      // Rebuild gray KDE + refresh totalRows from data filtered by all-but-
-      // this-dim. Mirrors _getRangeBounds: temporarily clear own filter.
+    // Rebuild the gray curve + totalRows from the data filtered by
+    // all-but-this-dim. Mirrors _getRangeBounds: temporarily clear own
+    // filter, read, restore.
+    //
+    // Runs whenever ANOTHER dim's filter changes, not only when the bounds
+    // move: gray is "everything the other filters left", and a filter that
+    // drops rows without moving the extremes left it showing the old shape
+    // (and the old "of N rows").
+    _rebuildRangeDensity(card) {
+      const dim = card._dim;
+      const min = card._min;
+      const max = card._max;
+      if (!(max > min)) return;
+
       const childTable = this.dimChild[dim];
       if (childTable) {
         const cfDim = this.dimensions[dim];
@@ -1611,18 +1819,30 @@
         const hadOwnFilter = savedFilter !== undefined && savedFilter !== null;
         if (hadOwnFilter) cfDim.filterAll();
 
+        const toNum0 = card._type === 'date'
+          ? r => toEpochDay(r[dim]) : r => +r[dim];
         const allRows = this.instances[childTable].allFiltered();
         card._totalRows = allRows.length;
 
         if (card._pathAll) {
-          const toNum = card._type === 'date'
-            ? r => toEpochDay(r[dim]) : r => +r[dim];
-          const allValues = allRows.map(toNum).filter(v => isFinite(v));
+          const allValues = allRows.map(toNum0).filter(v => isFinite(v));
           const kdeAll = kde(allValues, min, max);
           const kdeMaxY = Math.max(...kdeAll.map(p => p.y), 1);
           card._kdeMaxY = kdeMaxY;
           card._pathAll.setAttribute('d',
             kdeToSvgPath(kdeAll, min, max, kdeMaxY, 300, 80));
+          // The blue overlay is this grid, cut (clipGrid), so it repaints
+          // for free on every filter change -- no second KDE.
+          card._kdeGrid = kdeAll;
+
+          // Integer column: drag in whole units. The default step,
+          // (max-min)/200, gave AGE a thumb that stopped on 75.96 and a
+          // label reading "76.0" for a column that only holds whole years.
+          if (allValues.every(Number.isInteger)) {
+            const stepInt = Math.max(1, Math.round((max - min) / 200));
+            card._inputLo.step = stepInt;
+            card._inputHi.step = stepInt;
+          }
         }
 
         if (hadOwnFilter) this._reapplyFilter(dim, savedFilter);
@@ -1632,7 +1852,7 @@
     // Recompute and apply bounds when other filters change. If the slider
     // had a range filter that no longer intersects the new bounds, clear it
     // (mutate state directly to avoid re-entering _applyFilter).
-    _updateRangeBounds(dim) {
+    _updateRangeBounds(dim, silent = false) {
       const card = this.panels[dim];
       if (!card || !card._inputLo) return; // not a fully-built range card
 
@@ -1641,7 +1861,12 @@
       const { min, max } = bounds;
       if (min === max) return;
       if (Math.abs(card._min - min) < 1e-9 &&
-          Math.abs(card._max - max) < 1e-9) return;
+          Math.abs(card._max - max) < 1e-9) {
+        // Bounds held, but the rows behind them may not have: refresh the
+        // gray curve in place. Skipped mid-drag, see _updateAllCounts.
+        if (!silent) this._rebuildRangeDensity(card);
+        return;
+      }
 
       this._applyRangeBounds(card, min, max);
 
@@ -1654,17 +1879,13 @@
         if (newLo >= newHi) {
           this.dimensions[dim].filterAll();
           delete this.filters[dim];
-          card._inputLo.value = min;
-          card._inputHi.value = max;
-          card._updateSlider();
+          card._setValues(min, max);
         } else if (newLo !== filter.min || newHi !== filter.max) {
           this.dimensions[dim].filterFunction(
             v => typeof v === 'number' && v >= newLo && v <= newHi
           );
           this.filters[dim] = { ...filter, min: newLo, max: newHi };
-          card._inputLo.value = newLo;
-          card._inputHi.value = newHi;
-          card._updateSlider();
+          card._setValues(newLo, newHi);
         }
       }
     }
@@ -1705,20 +1926,32 @@
       }
 
       this._syncSiblingKeys();
-      this._updateAllCounts(dim);
+      this._updateAllCounts(dim, { silent });
       this._updateStatus();
       if (!silent) this._scheduleSubmit();
     }
 
     _clearFilter(dim) {
       this._applyFilter(dim, null);
+      this._resetRangeCardValues(dim);
+    }
+
+    // A range card that has just been reset must SHOW the full range: the
+    // filter is gone, so leaving the thumbs (and the labels that read them)
+    // where they were says the card is still cutting when it is not.
+    _resetRangeCardValues(dim) {
+      const card = this.panels[dim];
+      if (!card || !card._setValues) return;
+      card._setValues(card._min, card._max);
     }
 
     _resetAllFilters() {
       for (const dim of Object.keys(this.filters)) {
         this.dimensions[dim].filterAll();
       }
+      const cleared = Object.keys(this.panels || {});
       this.filters = {};
+      for (const dim of cleared) this._resetRangeCardValues(dim);
       this._syncSiblingKeys();
       this._updateAllCounts(null);
       this._updateStatus();
@@ -1779,7 +2012,10 @@
     // changedDim: the dim whose filter just changed (skip its own bounds
     // update — its filter doesn't affect its own all-but-self bounds).
     // Pass null to refresh all bounds (e.g., after a global reset).
-    _updateAllCounts(changedDim) {
+    // `silent` is a drag in progress (see _applyFilter). The other cards'
+    // gray curves do move while a slider is dragged, but rebuilding them is a
+    // KDE per card per frame; they catch up on the drag-end pass.
+    _updateAllCounts(changedDim, { silent = false } = {}) {
       // Iterate dimensions, not groups: range/date dims have no group (see
       // setData), only categorical dims do.
       // Update range bounds first so range cards show new min/max before
@@ -1787,7 +2023,7 @@
       for (const dim of Object.keys(this.dimensions)) {
         const type = this._getDimType(dim);
         if ((type === 'range' || type === 'date') && dim !== changedDim) {
-          this._updateRangeBounds(dim);
+          this._updateRangeBounds(dim, silent);
         }
       }
       for (const dim of Object.keys(this.dimensions)) {
@@ -1810,14 +2046,15 @@
       const total = card._totalRows || 0;
       card._infoEl.textContent = `${fmtCount(filteredRows.length)} of ${fmtCount(total)} rows`;
 
-      // Update KDE filtered overlay
-      if (card._pathFiltered && card._dim && card._kdeMaxY) {
-        const toNum = card._type === 'date'
-          ? r => toEpochDay(r[card._dim]) : r => +r[card._dim];
-        const filteredValues = filteredRows.map(toNum).filter(v => isFinite(v));
-        const kdeFiltered = kde(filteredValues, card._min, card._max);
+      // Update the blue overlay: the gray curve, cut at the handles. See the
+      // density helpers for why this is not a KDE of the filtered rows.
+      if (card._pathFiltered && card._dim && card._kdeMaxY && card._kdeGrid) {
+        const own = this.filters[card._dim];
+        const lo = own && own.min !== undefined ? own.min : card._min;
+        const hi = own && own.max !== undefined ? own.max : card._max;
         card._pathFiltered.setAttribute('d',
-          kdeToSvgPath(kdeFiltered, card._min, card._max, card._kdeMaxY, 300, 80));
+          kdeToSvgPath(clipGrid(card._kdeGrid, lo, hi), card._min, card._max,
+            card._kdeMaxY, 300, 80));
       }
     }
 

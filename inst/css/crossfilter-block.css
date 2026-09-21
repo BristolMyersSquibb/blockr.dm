@@ -709,6 +709,39 @@
   color: var(--blockr-grey-400, #9ca3af);
 }
 
+/* The two numbers are editable: click one and it becomes an input in place
+   (a date card gets the browser's date field, calendar included). At rest
+   they look exactly as they did -- a permanent pair of boxes would spend a
+   framed control on every range card for something used once, on the
+   narrowest card in the block. The dashed underline is the whole hint, and
+   it only appears under the cursor. */
+.dm-cf-range-edit {
+  cursor: text;
+  border-bottom: 1px dashed transparent;
+  transition: color 0.15s, border-color 0.15s;
+}
+.dm-cf-range-edit:hover {
+  color: var(--blockr-color-primary, #2563eb);
+  border-bottom-color: var(--blockr-grey-300, #d1d5db);
+}
+.dm-cf-range-input {
+  /* Sized to its content (the `size` attribute on numeric cards, the
+     browser's intrinsic width on date ones), so swapping the label for the
+     box does not push the other end of the row off the card. */
+  font-family: inherit;
+  font-size: var(--blockr-font-size-xs, 0.75rem);
+  line-height: 1.4;
+  padding: 0 4px;
+  width: auto;
+  max-width: 60%;
+  color: var(--blockr-color-text-primary, #111827);
+  background: #fff;
+  border: 1px solid var(--blockr-color-primary, #2563eb);
+  border-radius: 4px;
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+}
+
 /* ============================================================
    Group by field
    ============================================================ */
