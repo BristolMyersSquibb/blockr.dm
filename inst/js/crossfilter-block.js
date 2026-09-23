@@ -369,6 +369,13 @@
       // Filter panels container
       this.panelsEl = el('div', 'jscf-panels');
       this.el.appendChild(this.panelsEl);
+
+      // The data source's note (R: `blockr_note` on a table), one grey line
+      // under the cards. Below them on purpose: it is there for whoever looks
+      // for it and scrolls away once several cards are open.
+      this.noteEl = el('div', 'jscf-note');
+      this.noteEl.style.display = 'none';
+      this.el.appendChild(this.noteEl);
     }
 
     // Both bands are titled: each is opened from a different control and has
@@ -850,6 +857,10 @@
       this.pinned = msg.pinned == null ? null : asArray(msg.pinned)[0];
       this.measure = msg.measure || '.count';
       this.aggFunc = msg.agg_func || 'sum';
+
+      const note = typeof msg.note === 'string' ? msg.note : '';
+      this.noteEl.textContent = note;
+      this.noteEl.style.display = note ? '' : 'none';
 
       // Create crossfilter instances from columnar data
       // Shiny delivers pre-serialized json verbatim as parsed objects

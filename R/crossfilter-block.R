@@ -724,7 +724,8 @@ crossfilter_server <- function(active_dims, filters, range_filters,
             agg_func = cur_agg_func,
             featured = pin$featured,
             pinnable = pin$pinnable,
-            pinned = pin$pinned
+            pinned = pin$pinned,
+            note = crossfilter_note(dm_data())
           )
           session$sendCustomMessage("js-crossfilter-data", payload)
           last_send$key <- send_key
@@ -744,7 +745,8 @@ crossfilter_server <- function(active_dims, filters, range_filters,
             active_dims = safe_active,
             featured = pin$featured,
             pinnable = pin$pinnable,
-            pinned = pin$pinned
+            pinned = pin$pinned,
+            note = crossfilter_note(dm_data())
           )
           session$sendCustomMessage("js-crossfilter-data", payload)
           last_send$key <- send_key
@@ -1182,6 +1184,23 @@ build_lookups_independent <- function(
 
 
 # -- UI ----------------------------------------------------------------------
+
+# The one line of text a data source can put under the cards, e.g. which
+# study and extract the board is looking at. It rides as a `blockr_note`
+# attribute on a TABLE rather than on the dm: every dm verb (filter, key
+# edits, dm_mutate_tbl) rebuilds the dm and drops its attributes, while a
+# table's attributes come through, the way `blockr_kinds` does. The first
+# table carrying one wins.
+crossfilter_note <- function(dm_obj) {
+  for (tbl in dm::dm_get_tables(dm_obj)) {
+    note <- attr(tbl, "blockr_note", exact = TRUE)
+    if (is.character(note) && length(note) == 1L && !is.na(note) &&
+        nzchar(note)) {
+      return(note)
+    }
+  }
+  NULL
+}
 
 crossfilter_ui <- function(id) {
   ns <- shiny::NS(id)

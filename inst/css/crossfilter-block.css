@@ -927,3 +927,12 @@
 .jscf-popover-done:hover {
   color: var(--blockr-color-primary, #2563eb);
 }
+
+.jscf-note {
+  margin-top: 4px;
+  padding: 7px 2px 0;
+  border-top: 1px solid var(--blockr-grey-100, #f3f4f6);
+  font-size: 11px;
+  color: var(--blockr-grey-400, #9ca3af);
+  font-variant-numeric: tabular-nums;
+}
