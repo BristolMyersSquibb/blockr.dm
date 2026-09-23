@@ -182,6 +182,49 @@
   font-weight: 500;
   flex-shrink: 0;
 }
+/* The row's answer to its own click: the type badge steps aside and a state
+   chip takes its slot, so the row says what it did without changing width.
+   Both are the badge's geometry. Hover an added row and it offers the undo,
+   which is what a second click on it is. */
+.jscf-search-item-state {
+  display: none;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+  padding: 1px 8px;
+  border-radius: 9999px;
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.jscf-search-item--active .jscf-search-item-badge {
+  display: none;
+}
+.jscf-search-item--active .jscf-search-item-state {
+  display: inline-flex;
+  color: var(--blockr-blue-700, #1d4ed8);
+  background: var(--blockr-blue-50, #eff6ff);
+}
+.jscf-state-added,
+.jscf-state-remove {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.jscf-state-remove {
+  display: none;
+}
+.jscf-search-item--active:hover .jscf-search-item-state {
+  color: #dc3545;
+  background: rgba(220, 53, 69, 0.08);
+}
+.jscf-search-item--active:hover .jscf-state-added {
+  display: none;
+}
+.jscf-search-item--active:hover .jscf-state-remove {
+  display: inline-flex;
+}
+
 .jscf-badge-categorical { color: #7c3aed; background: #f3e8ff; }
 .jscf-badge-numeric     { color: #059669; background: #ecfdf5; }
 .jscf-badge-date        { color: #d97706; background: #fffbeb; }
@@ -715,14 +758,41 @@
    framed control on every range card for something used once, on the
    narrowest card in the block. The dashed underline is the whole hint, and
    it only appears under the cursor. */
+/* The bounds carry `.blockr-slot` as well (see the range card in the JS), so
+   all that is left here is the one thing a typed number does differently from
+   a word that opens a menu: the caret. */
 .dm-cf-range-edit {
   cursor: text;
-  border-bottom: 1px dashed transparent;
+}
+
+/* ============================================================
+   Editable word (`.blockr-slot`)
+   ============================================================ */
+/* A word that is also a control: blue, dashed underline, solid on hover --
+   dashed says you can change this, solid says you are about to. The mark is
+   the colour plus the rule and nothing else, no padding and no tint, so it
+   can sit inside a line of text and a unit can touch it.
+
+   Copied from blockr.viz `inst/css/chart.css`, where the same mark hangs a
+   chart's sentence-style dropdowns off a word in the title. Both packages
+   declare it identically on purpose and the `blockr-` prefix is reserved for
+   it: it belongs in the shared layer (blockr.ui) and moves there with the
+   rest of it. Rules and the marks it was chosen from: blockr.docs
+   design-system/pinned-controls.md. */
+.blockr-slot {
+  color: var(--blockr-color-primary, #2563eb);
+  font-weight: 500;
+  border-bottom: 1px dashed var(--blockr-color-primary, #2563eb);
+  padding-bottom: 1px;
+  cursor: pointer;
   transition: color 0.15s, border-color 0.15s;
 }
-.dm-cf-range-edit:hover {
-  color: var(--blockr-color-primary, #2563eb);
-  border-bottom-color: var(--blockr-grey-300, #d1d5db);
+.blockr-slot:hover,
+.blockr-slot:focus-visible,
+.blockr-slot--open {
+  color: var(--blockr-blue-700, #1d4ed8);
+  border-bottom: 1px solid var(--blockr-blue-700, #1d4ed8);
+  outline: none;
 }
 .dm-cf-range-input {
   /* Sized to its content (the `size` attribute on numeric cards, the
@@ -763,6 +833,9 @@
    pills -- and each keeps the controls that belong to it. */
 .jscf-filter-section {
   margin: 0 0 12px;
+  /* The positioning context for the no-edit band, which hangs off the bottom
+     of this section (`.jscf-popover--overlay`). */
+  position: relative;
 }
 .jscf-shelf {
   display: flex;
@@ -889,5 +962,108 @@
 .jscf-chip-pinned {
   border-color: rgba(37, 99, 235, 0.35);
   background: rgba(37, 99, 235, 0.07);
+  color: var(--blockr-color-primary, #2563eb);
+}
+
+
+/* ============================================================
+   No-edit mode: simplified and locked boards
+   ============================================================ */
+/* blockr.dock puts `.blockr-no-edit` on <html> for `blockr.simplified` and
+   `blockr.locked`, and hides `.jscf-gear-btn` with it. That left this block's
+   gear band reachable anyway, from `more…` at the end of the pill row, with
+   everything in it: the x on each shortcut, Clear, a pin per search row and
+   the measure selects. Dropping a shortcut also takes the column out of the
+   Group by field, so a reader could quietly shrink the board for everyone.
+
+   The band is split in the widget instead (`this.noEdit`), and what is left
+   is the half a reader needs: search a column, open its card, close it again.
+   These rules are the backstop for that, not the mechanism -- CSS alone would
+   leave the chips draggable, and dropping a chip on another writes
+   `set_featured` just as the x does.
+
+   Not a lock. The observers behind all of this stay live, so a forged
+   `Shiny.setInputValue()` still reaches them; `blockr.locked` is the mode
+   that refuses. */
+.blockr-no-edit .jscf-featured,
+.blockr-no-edit .jscf-featured-clear,
+.blockr-no-edit .jscf-active-chip-x,
+.blockr-no-edit .jscf-feature-btn,
+.blockr-no-edit .jscf-measure-section {
+  display: none !important;
+}
+
+/* The way into the band, in the row it acts on. Tag geometry, so it lines up
+   with the pills it follows, but white with a dashed blue edge: the solid
+   blue-50 tag is `.jscf-pill--filtering` and means a column is cutting rows,
+   and an add control cannot wear the treatment that states a fact about the
+   data. */
+.jscf-shelf-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px 2px 6px;
+  font-size: var(--blockr-font-size-sm, 0.8125rem);
+  line-height: 1.4;
+  color: var(--blockr-blue-700, #1d4ed8);
+  background: #fff;
+  border: 1px dashed rgba(37, 99, 235, 0.55);
+  border-radius: 4px; /* --blockr-radius-sm */
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.jscf-shelf-add:hover {
+  background: rgba(37, 99, 235, 0.06);
+  border-color: var(--blockr-color-primary, #2563eb);
+}
+.jscf-shelf-add-plus {
+  font-size: 14px;
+  line-height: 1;
+}
+
+/* The band itself, opened from that pill. It floats: in flow it pushed every
+   card down the panel, which on a board with a few cards open takes the one
+   the reader was looking at off the screen. Bounded left and right by the
+   section, so it is never wider than the block -- that width was the other
+   reason the band is in flow, and it still holds. No `overflow` here: it
+   would clip the beak, and `.jscf-popover-results` already caps its own
+   height. */
+.jscf-popover--overlay {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin-top: 6px;
+  margin-bottom: 0;
+  z-index: 30;
+  box-shadow: 0 10px 28px rgba(17, 24, 39, 0.16);
+}
+/* Under the pill that opened it, wherever the row wrapped it to (measured in
+   `_positionBeak()`), rather than at the row's end where the gear sits. */
+.jscf-popover--overlay::before {
+  left: var(--jscf-beak, 16px);
+  right: auto;
+}
+
+/* With no gear above it, the band says what it is. */
+.jscf-popover-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 0 8px;
+  font-size: var(--blockr-font-size-xs, 0.75rem);
+  font-weight: var(--blockr-font-weight-semibold, 600);
+  color: var(--blockr-grey-700, #374151);
+}
+.jscf-popover-done {
+  padding: 0 2px;
+  border: none;
+  background: transparent;
+  font-size: var(--blockr-font-size-xs, 0.75rem);
+  color: var(--blockr-grey-500, #6b7280);
+  cursor: pointer;
+}
+.jscf-popover-done:hover {
   color: var(--blockr-color-primary, #2563eb);
 }
