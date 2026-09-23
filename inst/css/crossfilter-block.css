@@ -28,6 +28,9 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  /* The positioning context for the settings band, which hangs off this row
+     because the gear that opens it sits on it. */
+  position: relative;
   /* Same 12px the section leaves under the pill row: the header is a header,
      not the first line of the pills. */
   margin-bottom: 12px;
@@ -235,105 +238,11 @@
   font-style: italic;
   font-size: var(--blockr-font-size-sm, 0.8125rem);
 }
-/* Active dims in popover */
-.jscf-featured-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 4px;
-}
-.jscf-featured-label {
-  font-size: var(--blockr-font-size-xs, 0.75rem);
-  font-weight: var(--blockr-font-weight-medium, 500);
-  color: var(--blockr-grey-500, #6b7280);
-}
-.jscf-featured-clear {
-  font-size: var(--blockr-font-size-xs, 0.75rem);
-  color: var(--blockr-grey-400, #9ca3af);
-  background: none;
-  border: none;
-  cursor: pointer;
-  padding: 0;
-  transition: color 0.15s;
-}
-.jscf-featured-clear:hover {
-  color: #dc3545;
-}
-.jscf-featured-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-/* The chip IS the shelf pill (.jscf-pill carries the look): a column that is
-   bold and grey-filled in the gear and plain white on the pill row reads as
-   two different things. All this adds is room for the x, and the drag. */
-.jscf-active-chip {
-  position: relative;
-  padding-right: 4px;
-  cursor: grab;
-}
-.jscf-chip--dragging {
-  opacity: 0.4;
-}
-/* Where the drop would land: a 2px caret between chips, the same indicator
-   Blockr.Select's multi tags use. */
-.jscf-chip--drop-before {
-  margin-left: 8px;
-}
-.jscf-chip--drop-before::before {
-  content: "";
-  position: absolute;
-  left: -6px;
-  top: 2px;
-  bottom: 2px;
-  width: 2px;
-  border-radius: 1px;
-  background: var(--blockr-color-primary, #2563eb);
-}
-.jscf-chip--drop-after {
-  margin-right: 8px;
-}
-.jscf-chip--drop-after::after {
-  content: "";
-  position: absolute;
-  right: -6px;
-  top: 2px;
-  bottom: 2px;
-  width: 2px;
-  border-radius: 1px;
-  background: var(--blockr-color-primary, #2563eb);
-}
-.jscf-active-chip-x {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 14px;
-  height: 14px;
-  padding: 0;
-  border: none;
-  background: none;
-  color: var(--blockr-grey-400, #9ca3af);
-  cursor: pointer;
-  font-size: 13px;
-  line-height: 1;
-  border-radius: 2px;
-}
-.jscf-active-chip-x:hover {
-  color: #dc3545;
-  background: rgba(220, 53, 69, 0.08);
-}
-
 /* Measure / aggregation controls in popover */
 .jscf-measure-section {
   margin-top: 8px;
   padding-top: 8px;
   border-top: 1px solid var(--blockr-grey-200, #e5e7eb);
-}
-.jscf-popover-label {
-  font-size: var(--blockr-font-size-xs, 0.75rem);
-  font-weight: var(--blockr-font-weight-medium, 500);
-  color: var(--blockr-grey-500, #6b7280);
-  margin-bottom: 4px;
 }
 .jscf-popover-select {
   width: 100%;
@@ -900,97 +809,12 @@
 .jscf-pill-name:hover {
   color: var(--blockr-color-primary, #2563eb);
 }
-.jscf-shelf-more {
-  border: none;
-  background: transparent;
-  color: var(--blockr-grey-400, #9ca3af);
-  font-size: var(--blockr-font-size-xs, 0.75rem);
-  font-weight: 400;
-  padding: 2px 4px;
-  cursor: pointer;
-}
-.jscf-shelf-more:hover {
-  color: var(--blockr-color-primary, #2563eb);
-  background: transparent;
-}
-
 /* The group's card is an ordinary card in an ordinary place: no band, no
    indent, no hoist to the top. Only its label picks up the pill's colour, so
    the eye can pair the card with the pill that named it. Grouping by a column
    and filtering on it are separate facts, and the card may not exist at all. */
 .jscf-pinned-card .dm-cf-filter-card-label {
   color: var(--blockr-color-primary, #2563eb);
-}
-
-/* Featured vocabulary, edited in the gear ---------------------------------- */
-.jscf-featured {
-  margin: 8px 0;
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--blockr-grey-200, #e5e7eb);
-}
-.jscf-featured-hint {
-  font-size: var(--blockr-font-size-xs, 0.75rem);
-  color: var(--blockr-grey-400, #9ca3af);
-  font-style: italic;
-}
-/* The pin means one thing: this column is held up front. The group is chosen
-   in the field at the top of the block, not here. */
-.jscf-feature-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  padding: 0;
-  flex-shrink: 0;
-  border: none;
-  background: transparent;
-  border-radius: 3px;
-  color: var(--blockr-grey-200, #e5e7eb);
-  cursor: pointer;
-  transition: color 0.15s ease, background 0.15s ease;
-}
-.jscf-feature-btn:hover {
-  color: var(--blockr-grey-700, #374151);
-  background: var(--blockr-grey-100, #f3f4f6);
-}
-.jscf-feature-on,
-.jscf-feature-on:hover {
-  color: var(--blockr-color-primary, #2563eb);
-}
-
-.jscf-chip-pinned {
-  border-color: rgba(37, 99, 235, 0.35);
-  background: rgba(37, 99, 235, 0.07);
-  color: var(--blockr-color-primary, #2563eb);
-}
-
-
-/* ============================================================
-   No-edit mode: simplified and locked boards
-   ============================================================ */
-/* blockr.dock puts `.blockr-no-edit` on <html> for `blockr.simplified` and
-   `blockr.locked`, and hides `.jscf-gear-btn` with it. That left this block's
-   gear band reachable anyway, from `more…` at the end of the pill row, with
-   everything in it: the x on each shortcut, Clear, a pin per search row and
-   the measure selects. Dropping a shortcut also takes the column out of the
-   Group by field, so a reader could quietly shrink the board for everyone.
-
-   The band is split in the widget instead (`this.noEdit`), and what is left
-   is the half a reader needs: search a column, open its card, close it again.
-   These rules are the backstop for that, not the mechanism -- CSS alone would
-   leave the chips draggable, and dropping a chip on another writes
-   `set_featured` just as the x does.
-
-   Not a lock. The observers behind all of this stay live, so a forged
-   `Shiny.setInputValue()` still reaches them; `blockr.locked` is the mode
-   that refuses. */
-.blockr-no-edit .jscf-featured,
-.blockr-no-edit .jscf-featured-clear,
-.blockr-no-edit .jscf-active-chip-x,
-.blockr-no-edit .jscf-feature-btn,
-.blockr-no-edit .jscf-measure-section {
-  display: none !important;
 }
 
 /* The way into the band, in the row it acts on. Tag geometry, so it lines up
@@ -1020,6 +844,42 @@
 .jscf-shelf-add-plus {
   font-size: 14px;
   line-height: 1;
+}
+
+/* The gear's band: the board's settings, and nothing a reader needs. It
+   hangs off the header row rather than the pill row, and its beak keeps the
+   stylesheet's `right: 8px` because the gear ends that row. Everything in it
+   is authoring, which is what lets simplified mode be nothing but dock's
+   `display: none` on `.jscf-gear-btn` -- the block itself never asks which
+   mode it is in. */
+.jscf-popover--settings {
+  top: calc(100% + 8px);
+}
+/* Two classes, because the overlay rule below sets `left` from the measured
+   beak and comes later in the file. */
+.jscf-popover--overlay.jscf-popover--settings::before {
+  left: auto;
+  right: 8px;
+}
+.jscf-settings-field {
+  margin-bottom: 10px;
+}
+.jscf-settings-field:last-child {
+  margin-bottom: 2px;
+}
+/* What the field does to the block, in the field's own words. Settings a
+   board's author sees once a month are worth a line each. */
+.jscf-settings-hint {
+  margin: 4px 0 0;
+  font-size: var(--blockr-font-size-xs, 0.75rem);
+  line-height: 1.4;
+  color: var(--blockr-grey-400, #9ca3af);
+}
+
+/* The band is open while the pill is the thing that opened it. */
+.jscf-shelf-add--open {
+  background: rgba(37, 99, 235, 0.06);
+  border-color: var(--blockr-color-primary, #2563eb);
 }
 
 /* The band itself, opened from that pill. It floats: in flow it pushed every

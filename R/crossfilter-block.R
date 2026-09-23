@@ -18,12 +18,13 @@
 #' @param featured Columns worth showing up front: they get a pill each above
 #'   the cards, rank first in the search, and are the columns `pinned` may
 #'   name. A pill's one job is to open and close that column's filter card.
-#'   E.g. `c("SEX", "RACE", "AGE")`. Empty (the default) means no pill row,
-#'   as before -- except on a simplified or locked board, where the row is
-#'   drawn anyway to carry `+ More filters`, the only way into the column
-#'   search once blockr.dock has hidden the gear. The vocabulary itself is not
-#'   editable there: dropping a column from it would also take it out of
-#'   `Group by`, for every reader of the board.
+#'   E.g. `c("SEX", "RACE", "AGE")`. Empty (the default) means no pills, but
+#'   the row is still there: it carries `+ More filters`, which opens the
+#'   column search and is the only way in once blockr.dock has hidden the gear
+#'   on a simplified or locked board. The vocabulary itself is edited in the
+#'   gear, as a `Shown up front` field beside `Measure` and `Aggregation`:
+#'   dropping a column from it also takes it out of `Group by`, for every
+#'   reader of the board, which is a setting and not a filter.
 #' @param pinned The single column the block reports as the board's group,
 #'   chosen in the `Group by` select at the top of the block. Only `featured`
 #'   columns on the parent table qualify. Grouping is independent of filtering: a pinned

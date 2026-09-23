@@ -18,8 +18,6 @@
 
   const ICON_REMOVE_SM = '<svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708z"/></svg>';
 
-  const ICON_PIN = '<svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M4.146.146A.5.5 0 0 1 4.5 0h7a.5.5 0 0 1 .5.5c0 .68-.342 1.174-.646 1.479-.126.125-.25.224-.354.298v4.431l.078.048c.203.127.476.314.751.555C12.36 7.775 13 8.527 13 9.5a.5.5 0 0 1-.5.5h-4v4.5c0 .276-.224 1.5-.5 1.5s-.5-1.224-.5-1.5V10h-4a.5.5 0 0 1-.5-.5c0-.973.64-1.725 1.17-2.189A6 6 0 0 1 5 6.708V2.277a3 3 0 0 1-.354-.298C4.342 1.674 4 1.18 4 .5a.5.5 0 0 1 .146-.354"/></svg>';
-
   const ICON_CHECK_SM = '<svg width="11" height="11" viewBox="0 0 16 16" fill="currentColor"><path d="M12.736 3.97a.733.733 0 0 1 1.047 0c.286.289.29.756.01 1.05L7.88 12.01a.733.733 0 0 1-1.065.02L3.217 8.384a.757.757 0 0 1 0-1.06.733.733 0 0 1 1.047 0l3.052 3.093 5.4-6.425z"/></svg>';
 
   // Type icons for search results
@@ -198,17 +196,6 @@
       this.panels = {};
       this._searchRows = [];  // [{row, tbl, dim}] for the open search list
       this._submitTimer = null;
-      // No-edit boards (`blockr.simplified`, `blockr.locked`): blockr.dock
-      // marks <html> from a <head> script, so the class is there before this
-      // constructor runs. It splits this block's gear band in two. The search
-      // list is a reader control -- it opens and closes a filter card for this
-      // session -- while the featured vocabulary, the pins and the measure
-      // selects are board authoring: they change what every reader sees, and
-      // `featured` is also what the Group by field offers. Dock hides the gear
-      // in this mode, so what is left here is the reader half, reached from
-      // the pill row instead.
-      this.noEdit =
-        document.documentElement.classList.contains('blockr-no-edit');
       this._buildDOM();
     }
 
@@ -263,63 +250,55 @@
       const anchor = el('div', 'jscf-popover-anchor');
       this.gearBtn = el('button', 'jscf-gear-btn', ICON_GEAR);
       this.gearBtn.type = 'button';
-      this.gearBtn.title = 'Add / remove filters';
+      this.gearBtn.title = 'Block settings';
       this.gearBtn.addEventListener('click', (e) => {
         e.stopPropagation();
-        this._togglePopover();
+        this._toggleSettings();
       });
       anchor.appendChild(this.gearBtn);
 
-      // Popover with search + clear
-      this.popoverEl = el('div', 'jscf-popover');
-      if (this.noEdit) {
-        // It floats here rather than sitting in flow: opened from the pill row
-        // it would otherwise push every card down the panel, and the card the
-        // reader was looking at off it. It is still bounded by the block
-        // (left/right 0 on the section), which was the other reason the band
-        // is in flow in the first place.
-        this.popoverEl.classList.add('jscf-popover--overlay');
-        // Named, because with no gear above it nothing else says what this is.
-        const bandTitle = el('div', 'jscf-popover-title');
-        bandTitle.appendChild(el('span', null, 'Add custom filter'));
-        const done = el('button', 'jscf-popover-done', 'Done');
-        done.type = 'button';
-        done.addEventListener('click', () => this._closePopover());
-        bandTitle.appendChild(done);
-        this.popoverEl.appendChild(bandTitle);
-      }
-      this.searchInput = el('input', 'jscf-popover-search');
-      this.searchInput.type = 'text';
-      this.searchInput.placeholder = 'Search columns\u2026';
-      this.searchInput.autocomplete = 'off';
-      this.searchInput.addEventListener('input', () => this._onSearchInput());
-      this.popoverEl.appendChild(this.searchInput);
-      // The vocabulary itself is editable here, not only from board code: a
-      // board that was built without one still has to be able to grow one.
-      // Not in no-edit mode: dropping a chip there also takes the column out
-      // of Group by, which is a board-wide edit made from a reader's control.
-      if (!this.noEdit) {
-        this.featuredEl = el('div', 'jscf-featured');
-        this.popoverEl.appendChild(this.featuredEl);
-      }
+      // ---- Two bands, one job each ---------------------------------------
+      // The gear's band is the board's settings: which columns are held up
+      // front, what a bar is long by, and how that measure aggregates. None
+      // of it is needed to READ the block, which is what lets simplified mode
+      // be nothing but dock's `display: none` on the gear -- the same rule it
+      // uses on every other block, with no mode flag in here at all.
+      //
+      // The other band is the column search, and it opens from the pill row,
+      // where a reader can always reach it. Adding a filter card is a
+      // question about this session; naming the vocabulary is a decision for
+      // every reader of the board. Two questions, two surfaces.
+      this.settingsEl = el('div',
+        'jscf-popover jscf-popover--overlay jscf-popover--settings');
+      this.settingsEl.appendChild(
+        this._bandTitle('Block settings', () => this._closeSettings()));
 
-      this.searchResultsEl = el('div', 'jscf-popover-results');
-      this.popoverEl.appendChild(this.searchResultsEl);
+      // Shown up front, as an ordinary multi-select of columns rather than a
+      // chip shelf beside a search box: it has to be able to name a column
+      // that no list on screen happens to be showing. Blockr.Select is what
+      // every other block mounts for a set of columns, tag drag included, so
+      // the pill order is edited the way column order is edited everywhere.
+      const featuredField = el('div', 'jscf-settings-field');
+      featuredField.appendChild(el('label', 'blockr-label', 'Shown up front'));
+      this.featuredHostEl = el('div', 'jscf-featured-select');
+      featuredField.appendChild(this.featuredHostEl);
+      featuredField.appendChild(el('p', 'jscf-settings-hint',
+        'The pills above the cards, in this order. Drag a tag to reorder.'));
+      this.settingsEl.appendChild(featuredField);
 
       // Measure / aggregation controls
-      this._measureSection = el('div', 'jscf-measure-section');
+      this._measureSection = el('div', 'jscf-settings-field');
       this._measureSection.style.display = 'none'; // shown when measures available
-      const measureLabel = el('div', 'jscf-popover-label', 'Measure');
+      this._measureSection.appendChild(el('label', 'blockr-label', 'Measure'));
       this._measureSelect = el('select', 'jscf-popover-select');
       this._measureSelect.addEventListener('change', () => {
         this._setMeasure(this._measureSelect.value);
       });
-      this._measureSection.appendChild(measureLabel);
       this._measureSection.appendChild(this._measureSelect);
 
-      this._aggSection = el('div', 'jscf-measure-section');
+      this._aggSection = el('div', 'jscf-settings-field');
       this._aggSection.style.display = 'none';
-      const aggLabel = el('div', 'jscf-popover-label', 'Aggregation');
+      this._aggSection.appendChild(el('label', 'blockr-label', 'Aggregation'));
       this._aggSelect = el('select', 'jscf-popover-select');
       const aggOpts = [['sum', 'Sum'], ['mean', 'Mean']];
       for (const [val, text] of aggOpts) {
@@ -331,21 +310,43 @@
       this._aggSelect.addEventListener('change', () => {
         this._setAggFunc(this._aggSelect.value);
       });
-      this._aggSection.appendChild(aggLabel);
       this._aggSection.appendChild(this._aggSelect);
 
-      this.popoverEl.appendChild(this._measureSection);
-      this.popoverEl.appendChild(this._aggSection);
+      this.settingsEl.appendChild(this._measureSection);
+      this.settingsEl.appendChild(this._aggSection);
+      // A child of the header rather than a sibling: the band hangs off the
+      // row its gear sits in. It is out of flow, so the header's flex row is
+      // unaffected by it.
+      gearHeader.appendChild(this.settingsEl);
 
-      // "Clear all" is now in the active dims header row
       gearHeader.appendChild(anchor);
 
-      // Close popover on outside click
+      // The column search.
+      this.popoverEl = el('div', 'jscf-popover jscf-popover--overlay');
+      this.popoverEl.appendChild(
+        this._bandTitle('Add custom filter', () => this._closePopover()));
+      this.searchInput = el('input', 'jscf-popover-search');
+      this.searchInput.type = 'text';
+      this.searchInput.placeholder = 'Search columns\u2026';
+      this.searchInput.autocomplete = 'off';
+      this.searchInput.addEventListener('input', () => this._onSearchInput());
+      this.popoverEl.appendChild(this.searchInput);
+
+      this.searchResultsEl = el('div', 'jscf-popover-results');
+      this.popoverEl.appendChild(this.searchResultsEl);
+
+      // Close either band on an outside click. A band and the control that
+      // opens it are one thing for this purpose; the other band is outside.
       document.addEventListener('click', (e) => {
         if (this._popoverOpen && this.popoverEl &&
             !this.popoverEl.contains(e.target) &&
-            !this.gearBtn.contains(e.target)) {
+            !(this.addBtn && this.addBtn.contains(e.target))) {
           this._closePopover();
+        }
+        if (this._settingsOpen && this.settingsEl &&
+            !this.settingsEl.contains(e.target) &&
+            !this.gearBtn.contains(e.target)) {
+          this._closeSettings();
         }
       });
 
@@ -357,21 +358,12 @@
       // added: grouping by a column and filtering on it are separate facts.
       this.shelfSectionEl = el('div', 'jscf-filter-section');
       this.shelfSectionEl.appendChild(gearHeader);
-      // The popover is a sibling of the header, not a child of the gear: it
-      // takes the section's full width, and `top: auto` puts it exactly under
-      // the row it opens from, so its DOM position is load-bearing. In no-edit
-      // mode it opens from the pill row instead and goes below it, see there.
-      if (!this.noEdit) {
-        this.shelfSectionEl.appendChild(this.popoverEl);
-      }
       this.shelfEl = el('div', 'jscf-shelf');
-      this.shelfEl.style.display = 'none';
       this.shelfSectionEl.appendChild(this.shelfEl);
-      // The overlay band comes after the pill row instead, so `top: 100%` on
-      // the section drops it under the row that opens it.
-      if (this.noEdit) {
-        this.shelfSectionEl.appendChild(this.popoverEl);
-      }
+      // The search band comes after the pill row in the DOM, so `top: 100%`
+      // on the section drops it under the row that opens it, and over the
+      // cards rather than pushing them down the panel.
+      this.shelfSectionEl.appendChild(this.popoverEl);
       this.el.appendChild(this.shelfSectionEl);
 
       // Filter panels container
@@ -379,25 +371,54 @@
       this.el.appendChild(this.panelsEl);
     }
 
+    // Both bands are titled: each is opened from a different control and has
+    // to say which one it is once it is on the screen.
+    _bandTitle(text, onDone) {
+      const row = el('div', 'jscf-popover-title');
+      row.appendChild(el('span', null, text));
+      const done = el('button', 'jscf-popover-done', 'Done');
+      done.type = 'button';
+      done.addEventListener('click', onDone);
+      row.appendChild(done);
+      return row;
+    }
+
     _togglePopover() {
       this._popoverOpen ? this._closePopover() : this._openPopover();
     }
     _openPopover() {
+      // One band at a time: they overlap, and the two are alternatives.
+      this._closeSettings();
       this.popoverEl.style.display = 'block';
       this._popoverOpen = true;
-      this.gearBtn.classList.add('jscf-gear-active');
+      if (this.addBtn) this.addBtn.classList.add('jscf-shelf-add--open');
       this.searchInput.value = '';
       this._onSearchInput();
       this._positionBeak();
       this.searchInput.focus();
     }
 
-    // The beak points at the control that opened the band. In no-edit mode
-    // that is the add pill, which the row may have wrapped anywhere, so its
-    // position is measured rather than declared (the gear's is `right: 8px`
-    // in the stylesheet, because the gear ends its row).
+    _toggleSettings() {
+      this._settingsOpen ? this._closeSettings() : this._openSettings();
+    }
+    _openSettings() {
+      this._closePopover();
+      this.settingsEl.style.display = 'block';
+      this._settingsOpen = true;
+      this.gearBtn.classList.add('jscf-gear-active');
+    }
+    _closeSettings() {
+      if (!this.settingsEl) return;
+      this.settingsEl.style.display = 'none';
+      this._settingsOpen = false;
+      this.gearBtn.classList.remove('jscf-gear-active');
+    }
+
+    // The search band's beak points at the add pill, which the row may have
+    // wrapped anywhere, so its position is measured. The settings band's is
+    // `right: 8px` in the stylesheet, because the gear ends its row.
     _positionBeak() {
-      if (!this.noEdit || !this.addBtn) return;
+      if (!this.addBtn) return;
       const a = this.addBtn.getBoundingClientRect();
       const b = this.popoverEl.getBoundingClientRect();
       if (!b.width) return;
@@ -406,17 +427,16 @@
         '--jscf-beak', Math.max(10, Math.min(b.width - 20, x)) + 'px');
     }
     _closePopover() {
+      if (!this.popoverEl) return;
       this.popoverEl.style.display = 'none';
       this._popoverOpen = false;
-      this.gearBtn.classList.remove('jscf-gear-active');
+      if (this.addBtn) this.addBtn.classList.remove('jscf-shelf-add--open');
     }
 
     // -- Search bar ----------------------------------------------------------
 
     _onSearchInput() {
       const query = this.searchInput.value.trim().toLowerCase();
-
-      this._renderFeaturedInPopover();
 
       // Every column, active ones included. They used to be filtered out,
       // which meant searching for a column you already filter on found
@@ -496,23 +516,6 @@
               el('span', 'jscf-state-remove', `${ICON_REMOVE_SM} Remove`));
             row.appendChild(state);
 
-            // Pinning writes the board's vocabulary, so it is authoring and
-            // not part of the reader's half of this list.
-            if (!this.noEdit) {
-              const star = el('button', 'jscf-feature-btn', ICON_PIN);
-              star.type = 'button';
-              const isFeatured = this.featured.some(f => f.dim === item.dim);
-              if (isFeatured) star.classList.add('jscf-feature-on');
-              star.title = isFeatured
-                ? `Stop showing ${item.dim} up front`
-                : `Show ${item.dim} up front`;
-              star.addEventListener('click', (e) => {
-                e.stopPropagation();
-                this._toggleFeatured(item.dim);
-              });
-              row.appendChild(star);
-            }
-
             const entry = { row, tbl: item.tbl, dim: item.dim };
             this._searchRows.push(entry);
             this._setSearchRowState(entry, item.active);
@@ -536,60 +539,6 @@
       }
     }
 
-    // The featured vocabulary, editable: each entry can be dropped. The group
-    // is not chosen here -- it has its own field at the top of the block, and
-    // a second place to set it is a second thing to keep in sync.
-    _renderFeaturedInPopover() {
-      if (!this.featuredEl) return;
-      this.featuredEl.innerHTML = '';
-
-      const headerRow = el('div', 'jscf-featured-header');
-      headerRow.appendChild(
-        el('span', 'jscf-featured-label', 'Shown up front')
-      );
-      if (this.featured.length) {
-        const clear = el('button', 'jscf-featured-clear', 'Clear');
-        clear.addEventListener('click', (e) => {
-          e.stopPropagation();
-          this._setFeatured([]);
-        });
-        headerRow.appendChild(clear);
-      }
-      this.featuredEl.appendChild(headerRow);
-
-      if (!this.featured.length) {
-        this.featuredEl.appendChild(el('div', 'jscf-featured-hint',
-          'Pin a column below to keep it one click away.'));
-        return;
-      }
-
-      const chipWrap = el('div', 'jscf-featured-chips');
-      this._bindChipDrag(chipWrap);
-
-      for (const f of this.featured) {
-        // The same tag as the pill row: one column, one look, wherever it is
-        // shown. The chip only adds the x that drops it from the vocabulary,
-        // and the grip to drag it into another position.
-        const chip = el('span', 'jscf-pill jscf-active-chip');
-        chip.draggable = true;
-        chip.dataset.dim = f.dim;
-        chip.title = `Drag to reorder ${f.dim}`;
-        // The group's own entry is marked, because dropping it from the
-        // vocabulary is the one edit here that also empties the field above.
-        if (f.dim === this.pinned) chip.classList.add('jscf-chip-pinned');
-        chip.appendChild(document.createTextNode(f.dim));
-        const x = el('button', 'jscf-active-chip-x', '\u00d7');
-        x.title = `Stop showing ${f.dim} up front`;
-        x.addEventListener('click', (e) => {
-          e.stopPropagation();
-          this._toggleFeatured(f.dim);
-        });
-        chip.appendChild(x);
-        chipWrap.appendChild(chip);
-      }
-      this.featuredEl.appendChild(chipWrap);
-    }
-
     _setSearchRowState(entry, active) {
       entry.row.classList.toggle('jscf-search-item--active', active);
       entry.row.title = active
@@ -609,76 +558,58 @@
       }
     }
 
-    _toggleFeatured(dim) {
-      const cur = this.featured.map(f => f.dim);
-      this._setFeatured(
-        cur.includes(dim) ? cur.filter(d => d !== dim) : cur.concat(dim)
-      );
-    }
+    // Shown up front, the board's vocabulary, mounted as the design system's
+    // multi-select (blockr.dplyr::blockr_select_dep(), the same component the
+    // Group by field above uses). It was a chip shelf next to the column
+    // search, which put a board-wide edit one click from a reader's control
+    // and could only offer columns the search happened to be listing. The
+    // group is not chosen here: it has its own field at the top of the block,
+    // and a second place to set it is a second thing to keep in sync.
+    _renderFeaturedField() {
+      if (!this.featuredHostEl) return;
 
-    // Drag a chip to reorder the vocabulary. The chip row IS the pill row's
-    // order, so this is how a user arranges the pills; without it the order is
-    // whatever `featured =` was written as, and pinning appends to the end.
-    // Same drag as Blockr.Select's multi tags: a 2px caret on the side the
-    // drop would land, and the dragged chip goes translucent.
-    _bindChipDrag(wrap) {
-      let dragDim = null;
-      let overChip = null;
-      let side = null;
-
-      const clear = () => {
-        wrap.querySelectorAll('.jscf-chip--drop-before, .jscf-chip--drop-after')
-          .forEach(c => c.classList.remove(
-            'jscf-chip--drop-before', 'jscf-chip--drop-after'));
-      };
-      const end = () => {
-        clear();
-        wrap.querySelectorAll('.jscf-chip--dragging')
-          .forEach(c => c.classList.remove('jscf-chip--dragging'));
-        dragDim = null; overChip = null; side = null;
-      };
-
-      wrap.addEventListener('dragstart', (e) => {
-        const chip = e.target.closest('.jscf-active-chip');
-        if (!chip) return;
-        dragDim = chip.dataset.dim;
-        e.dataTransfer.effectAllowed = 'move';
-        e.dataTransfer.setData('text/plain', dragDim);
-        chip.classList.add('jscf-chip--dragging');
-      });
-
-      wrap.addEventListener('dragover', (e) => {
-        if (dragDim == null) return;
-        e.preventDefault();
-        e.dataTransfer.dropEffect = 'move';
-        const chip = e.target.closest('.jscf-active-chip');
-        if (!chip || chip.dataset.dim === dragDim) { clear(); return; }
-        const rect = chip.getBoundingClientRect();
-        const next = e.clientX < rect.left + rect.width / 2 ? 'before' : 'after';
-        if (chip !== overChip || next !== side) {
-          clear();
-          overChip = chip;
-          side = next;
-          chip.classList.add(`jscf-chip--drop-${side}`);
+      // Every column the block could hold up front, by name. Names are
+      // unique across tables here on purpose: `featured` is a vocabulary of
+      // column NAMES, resolved per table by crossfilter_featured_dims().
+      const seen = new Set();
+      const options = [];
+      for (const info of Object.values(this.allColumns)) {
+        const labels = info.labels || {};
+        const dims = [
+          ...asArray(info.dimensions),
+          ...asArray(info.range_dimensions),
+          ...asArray(info.date_dimensions)
+        ];
+        for (const dim of dims) {
+          if (seen.has(dim)) continue;
+          seen.add(dim);
+          options.push({ value: dim, label: labels[dim] || '' });
         }
-      });
+      }
+      options.sort((a, b) => a.value.localeCompare(b.value));
 
-      wrap.addEventListener('drop', (e) => {
-        e.preventDefault();
-        if (dragDim == null || !overChip) { end(); return; }
-        const target = overChip.dataset.dim;
-        const order = this.featured.map(f => f.dim);
-        const from = order.indexOf(dragDim);
-        let to = order.indexOf(target);
-        if (from < 0 || to < 0 || from === to) { end(); return; }
-        order.splice(from, 1);
-        to = order.indexOf(target);
-        order.splice(side === 'after' ? to + 1 : to, 0, dragDim);
-        end();
-        this._setFeatured(order);
-      });
+      // Selected order is the PILL order, which is what the tag drag edits,
+      // so it comes from `featured` and not from the sorted options.
+      const selected = this.featured.map(f => f.dim);
 
-      wrap.addEventListener('dragend', end);
+      if (this._featuredSelect) {
+        this._featuredSelect.setOptions(options, selected);
+        return;
+      }
+
+      const Select = window.Blockr && window.Blockr.Select;
+      if (!Select) {
+        throw new Error(
+          '[js-crossfilter] Blockr.Select is missing: the block UI has to ship ' +
+          'blockr.dplyr::blockr_select_dep()');
+      }
+      this._featuredSelect = Select.multi(this.featuredHostEl, {
+        options,
+        selected,
+        placeholder: 'Add a column\u2026',
+        onChange: (values) => this._setFeatured(values)
+      });
+      this._featuredSelect.el.classList.add('blockr-select--bordered');
     }
 
     _setFeatured(dims) {
@@ -723,12 +654,9 @@
       }
 
       this._measureSelect.value = this.measure;
-      // What the bars count is a board-wide choice, like the vocabulary above.
-      this._measureSection.style.display =
-        (!this.noEdit && measures.length > 0) ? '' : 'none';
+      this._measureSection.style.display = measures.length > 0 ? '' : 'none';
       this._aggSelect.value = this.aggFunc;
-      this._aggSection.style.display =
-        (!this.noEdit && this.measure !== '.count') ? '' : 'none';
+      this._aggSection.style.display = (this.measure !== '.count') ? '' : 'none';
     }
 
     _addDimension(tbl, dim) {
@@ -766,15 +694,10 @@
       this.shelfEl.innerHTML = '';
       this._pillEls = {};
 
-      // No vocabulary, nothing to draw -- except in no-edit mode, where this
-      // row also carries the only way into the band, the gear being hidden
-      // there. Without this a simplified board written without `featured =`
-      // has no way to filter on anything at all.
-      if (this.featured.length === 0 && !this.noEdit) {
-        this.shelfEl.style.display = 'none';
-        return;
-      }
-      this.shelfEl.style.display = '';
+      // The row is drawn even with no vocabulary: it carries the way into the
+      // column search, which is the only one there is once the gear is hidden.
+      // A board written without `featured =` could otherwise not filter on
+      // anything at all in simplified mode.
 
       for (const f of this.featured) {
         if (!f || !f.dim) continue;
@@ -796,30 +719,22 @@
         this.shelfEl.appendChild(pill);
       }
 
-      if (this.noEdit) {
-        // The way in, in the row it acts on. White with a dashed blue edge:
-        // the block's solid blue-50 tag is `.jscf-pill--filtering` and means
-        // a column is cutting rows, so an add control wearing it would be two
-        // different facts in one treatment. The dash says slot, not column.
-        this.addBtn = el('button', 'jscf-shelf-add',
-          '<span class="jscf-shelf-add-plus">+</span> More filters');
-        this.addBtn.type = 'button';
-        this.addBtn.title = 'Filter on any other column';
-        this.addBtn.addEventListener('click', (e) => {
-          e.stopPropagation();
-          this._togglePopover();
-        });
-        this.shelfEl.appendChild(this.addBtn);
-      } else {
-        const more = el('button', 'jscf-shelf-more', 'more\u2026');
-        more.type = 'button';
-        more.title = 'Search all columns';
-        more.addEventListener('click', (e) => {
-          e.stopPropagation();
-          this._openPopover();
-        });
-        this.shelfEl.appendChild(more);
-      }
+      // The way in, in the row it acts on, and the same in every mode. White
+      // with a dashed blue edge: the block's solid blue-50 tag is
+      // `.jscf-pill--filtering` and means a column is cutting rows, so an add
+      // control wearing it would be two different facts in one treatment. The
+      // dash says slot, not column. It replaced a grey `more...`, which reads
+      // as "the rest of the pills" beside a row of pills.
+      this.addBtn = el('button', 'jscf-shelf-add',
+        '<span class="jscf-shelf-add-plus">+</span> More filters');
+      this.addBtn.type = 'button';
+      this.addBtn.title = 'Filter on any other column';
+      this.addBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this._togglePopover();
+      });
+      if (this._popoverOpen) this.addBtn.classList.add('jscf-shelf-add--open');
+      this.shelfEl.appendChild(this.addBtn);
 
       this._syncShelfState();
       // The row may have wrapped the pill somewhere else this time.
@@ -1008,7 +923,7 @@
       this._buildPanels();
       this._renderShelf();
       this._renderGroupField();
-      this._renderFeaturedInPopover();
+      this._renderFeaturedField();
       this._syncSearchRows();
       this._applyInitialFilters(msg.cat_filters, msg.rng_filters);
       this._updateAllCounts();

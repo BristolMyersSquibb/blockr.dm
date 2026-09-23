@@ -34,12 +34,13 @@ when \code{measure} is set.}
 \item{featured}{Columns worth showing up front: they get a pill each above
 the cards, rank first in the search, and are the columns \code{pinned} may
 name. A pill's one job is to open and close that column's filter card.
-E.g. \code{c("SEX", "RACE", "AGE")}. Empty (the default) means no pill row,
-as before -- except on a simplified or locked board, where the row is
-drawn anyway to carry \verb{+ More filters}, the only way into the column
-search once blockr.dock has hidden the gear. The vocabulary itself is not
-editable there: dropping a column from it would also take it out of
-\verb{Group by}, for every reader of the board.}
+E.g. \code{c("SEX", "RACE", "AGE")}. Empty (the default) means no pills, but
+the row is still there: it carries \verb{+ More filters}, which opens the
+column search and is the only way in once blockr.dock has hidden the gear
+on a simplified or locked board. The vocabulary itself is edited in the
+gear, as a \verb{Shown up front} field beside \code{Measure} and \code{Aggregation}:
+dropping a column from it also takes it out of \verb{Group by}, for every
+reader of the board, which is a setting and not a filter.}
 
 \item{pinned}{The single column the block reports as the board's group,
 chosen in the \verb{Group by} select at the top of the block. Only \code{featured}
