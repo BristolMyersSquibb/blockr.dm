@@ -734,9 +734,41 @@
   border-bottom: 1px solid var(--blockr-grey-200, #e5e7eb);
 }
 
-/* The second split, under the groups (_renderSubgroupField). */
+/* The optional sections under Group by, Pools and Subgroup by: a label row
+   with its own remove, then the section. At rest neither is on the block and
+   the "+" links in .jscf-split-add stand in for them. */
 .jscf-subgroup-field {
   margin-top: 12px;
+}
+.jscf-section-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 26px;
+}
+.jscf-section-head .blockr-label {
+  margin: 0;
+}
+.jscf-section-head .blockr-row-remove {
+  opacity: 1;
+  margin-left: 0;
+}
+.jscf-section-edit {
+  border: 0;
+  background: none;
+  padding: 0 4px;
+  font: inherit;
+  font-size: var(--blockr-font-size-sm, 0.8125rem);
+  color: var(--blockr-color-primary, #2563eb);
+  cursor: pointer;
+}
+.jscf-section-edit:hover {
+  text-decoration: underline;
+}
+.jscf-split-add {
+  justify-content: flex-start;
+  gap: 16px;
+  margin-top: 6px;
 }
 
 /* The groups of the pinned column, folded under the select (_renderGroupsBand
@@ -745,14 +777,6 @@
    only lays them out. */
 .jscf-groups {
   margin-top: 8px;
-}
-.jscf-groups-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.jscf-groups-head .blockr-label {
-  margin: 0;
 }
 .jscf-groups-fold {
   display: inline-flex;
@@ -937,33 +961,18 @@
   color: var(--blockr-color-primary, #2563eb);
 }
 
-/* The way into the band, in the row it acts on. Tag geometry, so it lines up
-   with the pills it follows, but white with a dashed blue edge: the solid
-   blue-50 tag is `.jscf-pill--filtering` and means a column is cutting rows,
-   and an add control cannot wear the treatment that states a fact about the
-   data. */
+/* The way into the band, in the row it acts on: the design system's "+"
+   add link (.blockr-add-link, blockr-blocks.css), the same control as
+   "+ Pools" and "+ Subgroup". It sits after the pills, so it keeps its own
+   left edge instead of the link's pull-back. */
 .jscf-shelf-add {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 8px 2px 6px;
+  margin-left: 0;
+  border: 0;
+  background: none;
+  font: inherit;
   font-size: var(--blockr-font-size-sm, 0.8125rem);
-  line-height: 1.4;
-  color: var(--blockr-blue-700, #1d4ed8);
-  background: #fff;
-  border: 1px dashed rgba(37, 99, 235, 0.55);
-  border-radius: 4px; /* --blockr-radius-sm */
+  color: var(--blockr-color-text-muted, #6b7280);
   white-space: nowrap;
-  cursor: pointer;
-  transition: background 0.15s ease, border-color 0.15s ease;
-}
-.jscf-shelf-add:hover {
-  background: rgba(37, 99, 235, 0.06);
-  border-color: var(--blockr-color-primary, #2563eb);
-}
-.jscf-shelf-add-plus {
-  font-size: 14px;
-  line-height: 1;
 }
 
 /* The gear's band: the board's settings, and nothing a reader needs. It
@@ -998,8 +1007,8 @@
 
 /* The band is open while the pill is the thing that opened it. */
 .jscf-shelf-add--open {
-  background: rgba(37, 99, 235, 0.06);
-  border-color: var(--blockr-color-primary, #2563eb);
+  color: var(--blockr-color-text-default, #111827);
+  background: var(--blockr-color-bg-hover, rgba(17, 24, 39, 0.06));
 }
 
 /* The band itself, opened from that pill. It floats: in flow it pushed every

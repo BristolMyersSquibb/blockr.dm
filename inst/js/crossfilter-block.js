@@ -236,7 +236,8 @@
       this._gCol = null;      // the column the band was built for
       this._gEdit = null;     // working definition for _gCol
       this._gLocal = false;   // the user has edited _gEdit this session
-      this._gOpen = false;    // fold state, per session
+      this._gOpen = false;    // pools editor open, per session
+      this._subShown = false; // "+ Subgroup" clicked, nothing picked yet
       this._gSelects = [];    // Blockr.Select handles inside the band
       this._gPoolSeq = 0;
       this.measure = '.count';
@@ -279,6 +280,11 @@
       this.subgroupHostEl = el('div', 'jscf-subgroup-select');
       this.subgroupFieldEl.appendChild(this.subgroupHostEl);
       this.groupFieldEl.appendChild(this.subgroupFieldEl);
+      // Pools and Subgroup are rare, so at rest they are one line of "+"
+      // links under the group. A link goes away while its section is on the
+      // block, and comes back when the section is removed.
+      this.splitAddEl = el('div', 'blockr-add-row jscf-split-add');
+      this.groupFieldEl.appendChild(this.splitAddEl);
       this.el.appendChild(this.groupFieldEl);
 
       // The filter section's header row: its name on the left, then the row
@@ -791,14 +797,14 @@
         this.shelfEl.appendChild(pill);
       }
 
-      // The way in, in the row it acts on, and the same in every mode. White
-      // with a dashed blue edge: the block's solid blue-50 tag is
-      // `.jscf-pill--filtering` and means a column is cutting rows, so an add
-      // control wearing it would be two different facts in one treatment. The
-      // dash says slot, not column. It replaced a grey `more...`, which reads
-      // as "the rest of the pills" beside a row of pills.
-      this.addBtn = el('button', 'jscf-shelf-add',
-        '<span class="jscf-shelf-add-plus">+</span> More filters');
+      // The way in, in the row it acts on, and the same in every mode. It is
+      // the design system's "+" add link, like "+ Pools" and "+ Subgroup"
+      // above and "+ Add pool": an add control, so it must not look like a
+      // pill, whose solid tint (`.jscf-pill--filtering`) says a column is
+      // cutting rows.
+      const plus = ((window.Blockr && window.Blockr.icons) || {}).plus || '+';
+      this.addBtn = el('button', 'blockr-add-link jscf-shelf-add',
+        `<span class="blockr-add-icon">${plus}</span> More filters`);
       this.addBtn.type = 'button';
       this.addBtn.title = 'Filter on any other column';
       this.addBtn.addEventListener('click', (e) => {
@@ -838,41 +844,102 @@
     // is absent, not empty, where nothing may group the board: an empty select
     // is a promise the block cannot keep.
     // -- Subgroup by field ---------------------------------------------------
-    // Optional, so it leads with "(none)", the sentinel the picker block uses
-    // for an optional role. Its options are the group's minus the column the
-    // board is already grouped by.
+    // On the block only once someone asks for it ("+ Subgroup") or it is set.
+    // The x clears it and brings the link back; there is no "(none)" option,
+    // because not having a subgroup is the section not being there.
     _renderSubgroupField() {
       if (!this.subgroupFieldEl) return;
-      if (!this.pinned) {
-        this.subgroupFieldEl.style.display = 'none';
-        return;
+      if (this._subgroupSelect) {
+        try { this._subgroupSelect.destroy(); } catch (_) {}
+        this._subgroupSelect = null;
       }
-      this.subgroupFieldEl.style.display = '';
+      this.subgroupFieldEl.innerHTML = '';
+      const shown = !!this.pinned && (!!this.subgroup || this._subShown);
+      this.subgroupFieldEl.style.display = shown ? '' : 'none';
+      this._renderSplitAdd();
+      if (!shown) return;
 
-      const NONE = '(none)';
+      const icons = (window.Blockr && window.Blockr.icons) || {};
+      const head = el('div', 'jscf-section-head');
+      head.appendChild(el('label', 'blockr-label', 'Subgroup by'));
+      head.appendChild(el('span', 'jscf-topbar-spacer'));
+      const rm = el('button', 'blockr-row-remove jscf-section-remove', icons.remove || '×');
+      rm.type = 'button';
+      rm.title = 'No subgroup';
+      rm.setAttribute('aria-label', 'Remove the subgroup');
+      rm.addEventListener('click', () => {
+        this._subShown = false;
+        if (this.subgroup) {
+          this.subgroup = null;
+          this._setSubgroup('');
+        }
+        this._renderSubgroupField();
+      });
+      head.appendChild(rm);
+      this.subgroupFieldEl.appendChild(head);
+
+      const host = el('div', 'jscf-subgroup-select');
+      this.subgroupFieldEl.appendChild(host);
       const labels = {};
       for (const f of this.featured) labels[f.dim] = f.label || '';
-      const options = [{ value: NONE, label: '' }].concat(
-        this.pinnable.filter(dim => dim !== this.pinned)
-          .map(dim => ({ value: dim, label: labels[dim] || '' })));
-      const selected = this.subgroup || NONE;
-
-      if (this._subgroupSelect) {
-        this._subgroupSelect.setOptions(options, selected);
-        return;
-      }
-      this._subgroupSelect = this._select().single(this.subgroupHostEl, {
+      const options = this.pinnable.filter(dim => dim !== this.pinned)
+        .map(dim => ({ value: dim, label: labels[dim] || '' }));
+      this._subgroupSelect = this._select().single(host, {
         options,
-        selected,
+        selected: this.subgroup || '',
+        allowEmpty: true,
+        placeholder: 'Pick a column',
         onChange: (value) => {
-          const next = value === NONE ? '' : value;
-          if (next !== (this.subgroup || '')) {
-            this.subgroup = next || null;
-            this._setSubgroup(next);
+          if (value && value !== this.subgroup) {
+            this.subgroup = value;
+            this._setSubgroup(value);
           }
         }
       });
       this._subgroupSelect.el.classList.add('blockr-select--bordered');
+    }
+
+    // The "+" links for the sections that are not on the block.
+    _renderSplitAdd() {
+      if (!this.splitAddEl) return;
+      this.splitAddEl.innerHTML = '';
+      if (!this.pinned) {
+        this.splitAddEl.style.display = 'none';
+        return;
+      }
+      const icons = (window.Blockr && window.Blockr.icons) || {};
+      const link = (text, title, onClick) => {
+        const a = el('span', 'blockr-add-link',
+          `<span class="blockr-add-icon">${icons.plus || '+'}</span> ${text}`);
+        a.setAttribute('role', 'button');
+        a.tabIndex = 0;
+        a.title = title;
+        a.addEventListener('click', onClick);
+        a.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onClick();
+          }
+        });
+        return a;
+      };
+      const links = [];
+      if (!this._poolsShown() && this.pinnedLevels.length) {
+        links.push(link('Pools', 'Pool, drop or reorder the levels', () => {
+          this._gOpen = true;
+          this._renderGroupsBand();
+        }));
+      }
+      if (!this.subgroup && !this._subShown) {
+        links.push(link('Subgroup', 'Split each group by a second column', () => {
+          this._subShown = true;
+          this._renderSubgroupField();
+          const ctrl = this.subgroupFieldEl.querySelector('.blockr-select__control');
+          if (ctrl) setTimeout(() => ctrl.click(), 0);
+        }));
+      }
+      this.splitAddEl.style.display = links.length ? '' : 'none';
+      for (const a of links) this.splitAddEl.appendChild(a);
     }
 
     _renderGroupField() {
@@ -937,6 +1004,7 @@
       }));
       const col = this.pinned;
       if (col !== this._gCol || !this._gLocal) {
+        if (col !== this._gCol) this._gOpen = false;
         this.groupDefs = Object.assign({}, defs);
         this.pinnedLevels = levels;
         this._gCol = col;
@@ -993,6 +1061,13 @@
       return members.reduce((s, m) => s + (n[m] || 0), 0);
     }
 
+    // The section is on the block while it is being edited or holds a
+    // definition that changes anything.
+    _poolsShown() {
+      return !!this._gEdit && this.pinnedLevels.length > 0 &&
+        (this._gOpen || !this._isDefaultGroupDef(this._gEdit));
+    }
+
     _groupsEdited() {
       this._gLocal = true;
       const def = this._gEdit;
@@ -1033,29 +1108,60 @@
       this.groupsEl.innerHTML = '';
       if (!this._gCol || !this._gEdit || !this.pinnedLevels.length) {
         this.groupsEl.style.display = 'none';
+        this._renderSplitAdd();
         return;
       }
       this.groupsEl.style.display = '';
 
+      if (!this._poolsShown()) {
+        this.groupsEl.style.display = 'none';
+        this._renderSplitAdd();
+        return;
+      }
+
       const icons = (window.Blockr && window.Blockr.icons) || {};
 
-      const head = el('div', 'jscf-groups-head');
-      head.appendChild(el('label', 'blockr-label', 'Groups'));
+      // Open: the editor, and a fold that closes it. Closed but set: the
+      // columns as tags and an Edit link. Either way an x puts every level
+      // back and takes the section off the block.
+      const head = el('div', 'jscf-section-head');
+      head.appendChild(el('label', 'blockr-label', 'Pools'));
       head.appendChild(el('span', 'jscf-topbar-spacer'));
-      const fold = el('button', 'jscf-groups-fold', icons.chevron || '');
-      fold.type = 'button';
-      fold.title = this._gOpen ? 'Fold the groups' : 'Define the groups';
-      fold.setAttribute('aria-expanded', String(this._gOpen));
-      fold.classList.toggle('jscf-groups-fold--open', this._gOpen);
-      fold.addEventListener('click', () => {
-        this._gOpen = !this._gOpen;
+      if (this._gOpen) {
+        const fold = el('button', 'jscf-groups-fold jscf-groups-fold--open', icons.chevron || '');
+        fold.type = 'button';
+        fold.title = 'Done';
+        fold.setAttribute('aria-expanded', 'true');
+        fold.addEventListener('click', () => {
+          this._gOpen = false;
+          this._renderGroupsBand();
+        });
+        head.appendChild(fold);
+      } else {
+        const edit = el('button', 'jscf-section-edit', 'Edit');
+        edit.type = 'button';
+        edit.addEventListener('click', () => {
+          this._gOpen = true;
+          this._renderGroupsBand();
+        });
+        head.appendChild(edit);
+      }
+      const rm = el('button', 'blockr-row-remove jscf-section-remove', icons.remove || '×');
+      rm.type = 'button';
+      rm.title = 'Every level on its own, no pools';
+      rm.setAttribute('aria-label', 'Remove the pools');
+      rm.addEventListener('click', () => {
+        const wasSet = !this._isDefaultGroupDef(this._gEdit);
+        this._gEdit = { show: this.pinnedLevels.map(l => l.value), pools: [] };
+        this._gOpen = false;
+        if (wasSet) this._groupsEdited();
         this._renderGroupsBand();
       });
-      head.appendChild(fold);
+      head.appendChild(rm);
       this.groupsEl.appendChild(head);
+      this._renderSplitAdd();
 
       if (!this._gOpen) {
-        if (this._isDefaultGroupDef(this._gEdit)) return;
         const summary = el('div', 'jscf-groups-summary');
         for (const c of this._groupColumns()) {
           const tag = el('span', 'blockr-select__tag jscf-groups-tag');
