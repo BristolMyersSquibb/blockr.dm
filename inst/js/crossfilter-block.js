@@ -845,8 +845,8 @@
     // is a promise the block cannot keep.
     // -- Subgroup by field ---------------------------------------------------
     // On the block only once someone asks for it ("+ Subgroup") or it is set.
-    // The x clears it and brings the link back; there is no "(none)" option,
-    // because not having a subgroup is the section not being there.
+    // The x and the "(none)" option both clear it and bring the link back.
+    // "(none)" is the sentinel the picker block uses for an optional role.
     _renderSubgroupField() {
       if (!this.subgroupFieldEl) return;
       if (this._subgroupSelect) {
@@ -867,14 +867,15 @@
       rm.type = 'button';
       rm.title = 'No subgroup';
       rm.setAttribute('aria-label', 'Remove the subgroup');
-      rm.addEventListener('click', () => {
+      const clear = () => {
         this._subShown = false;
         if (this.subgroup) {
           this.subgroup = null;
           this._setSubgroup('');
         }
         this._renderSubgroupField();
-      });
+      };
+      rm.addEventListener('click', clear);
       head.appendChild(rm);
       this.subgroupFieldEl.appendChild(head);
 
@@ -882,15 +883,21 @@
       this.subgroupFieldEl.appendChild(host);
       const labels = {};
       for (const f of this.featured) labels[f.dim] = f.label || '';
-      const options = this.pinnable.filter(dim => dim !== this.pinned)
-        .map(dim => ({ value: dim, label: labels[dim] || '' }));
+      const NONE = '(none)';
+      const options = [{ value: NONE, label: '' }].concat(
+        this.pinnable.filter(dim => dim !== this.pinned)
+          .map(dim => ({ value: dim, label: labels[dim] || '' })));
       this._subgroupSelect = this._select().single(host, {
         options,
         selected: this.subgroup || '',
         allowEmpty: true,
         placeholder: 'Pick a column',
         onChange: (value) => {
-          if (value && value !== this.subgroup) {
+          if (value === NONE) {
+            // After the select has finished its own pick handling: clear()
+            // destroys it.
+            setTimeout(clear, 0);
+          } else if (value && value !== this.subgroup) {
             this.subgroup = value;
             this._setSubgroup(value);
           }
