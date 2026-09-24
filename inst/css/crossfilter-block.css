@@ -767,8 +767,15 @@
 }
 .jscf-split-add {
   justify-content: flex-start;
-  gap: 16px;
+  gap: 8px;
   margin-top: 6px;
+}
+/* The design-system link pulls itself 8px left so its text lines up with a
+   row's content. Here nothing is inset, so that pull-back put the hover box
+   outside the field's left edge. Flush, like "+ More filters" in the pill row. */
+.jscf-split-add .blockr-add-link,
+.jscf-groups .blockr-add-link {
+  margin-left: 0;
 }
 
 /* The groups of the pinned column, folded under the select (_renderGroupsBand
