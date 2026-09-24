@@ -39,6 +39,11 @@
 #'   in [crossfilter_level_order()] and has no pools. The block only records
 #'   the definition; a package building on it (blockr.pharma's population
 #'   filter) applies it.
+#' @param subgroup A second column the board is split by, under `pinned`,
+#'   chosen in the `Subgroup by` select below the groups. Same eligible
+#'   columns as `pinned`, minus the pinned one. `NULL` (the default) means no
+#'   subgroup. Like `pinned`, the block only records it; blockr.pharma's
+#'   population filter stamps it as `Subgroup`.
 #' @param ... Forwarded to [blockr.core::new_transform_block()]. A package
 #'   building on this block passes its own `class` here: the subclass has to be
 #'   set at construction, which is where block metadata is resolved from the
@@ -57,6 +62,7 @@ new_crossfilter_block <- function(
   featured = character(),
   pinned = NULL,
   groups = list(),
+  subgroup = NULL,
   ...
 ) {
   args <- list(...)
@@ -69,12 +75,12 @@ new_crossfilter_block <- function(
       list(
         server = crossfilter_server(
           active_dims, filters, range_filters, measure, agg_func, featured,
-          pinned, groups
+          pinned, groups, subgroup
         ),
         ui = crossfilter_ui,
         allow_empty_state = c(
           "active_dims", "filters", "range_filters", "measure", "agg_func",
-          "featured", "pinned", "groups"
+          "featured", "pinned", "groups", "subgroup"
         ),
         external_ctrl = TRUE,
         class = cls
@@ -448,7 +454,8 @@ crossfilter_groups_payload <- function(groups) {
 
 crossfilter_server <- function(active_dims, filters, range_filters,
                                measure, agg_func, featured = character(),
-                               pinned = NULL, groups = list()) {
+                               pinned = NULL, groups = list(),
+                               subgroup = NULL) {
   function(id, data) {
     shiny::moduleServer(id, function(input, output, session) {
       ns <- session$ns
@@ -581,6 +588,7 @@ crossfilter_server <- function(active_dims, filters, range_filters,
       r_featured <- shiny::reactiveVal(as.character(featured %||% character()))
       r_pinned <- shiny::reactiveVal(as.character(pinned %||% character()))
       r_groups <- shiny::reactiveVal(crossfilter_clean_groups(groups))
+      r_subgroup <- shiny::reactiveVal(as.character(subgroup %||% character()))
 
       # Everything the client needs for the chip shelf and the pinned card. A
       # pin naming a column that is not (or no longer) pinnable is dropped
@@ -601,11 +609,15 @@ crossfilter_server <- function(active_dims, filters, range_filters,
             }
           }
         }
+        # The subgroup takes the same columns as the group, never the group's
+        # own: splitting the board twice by one column says nothing.
+        sub <- intersect(r_subgroup(), setdiff(pinnable, pin))
         list(
           featured = unname(feat),
           pinnable = as.list(pinnable),
           pinned = if (length(pin)) pin[[1L]] else NULL,
-          pinned_table = pin_tbl
+          pinned_table = pin_tbl,
+          subgroup = if (length(pin) && length(sub)) sub[[1L]] else NULL
         )
       })
 
@@ -706,6 +718,14 @@ crossfilter_server <- function(active_dims, filters, range_filters,
         }
         val <- as.character(val)
         r_pinned(if (length(val) && nzchar(val[[1L]])) val[[1L]] else character())
+      }, ignoreInit = TRUE)
+
+      # The subgroup, unlike the group, can be cleared from the UI: nothing on
+      # a board depends on it existing, a chart faceted by it draws one panel
+      # when it is gone. An empty string clears it.
+      shiny::observeEvent(input$set_subgroup, {
+        val <- as.character(unlist(input$set_subgroup))
+        r_subgroup(if (length(val) && nzchar(val[[1L]])) val[[1L]] else character())
       }, ignoreInit = TRUE)
 
       # The vocabulary is edited in the gear, not only in board code: a board
@@ -906,6 +926,7 @@ crossfilter_server <- function(active_dims, filters, range_filters,
             pinnable = pin$pinnable,
             pinned = pin$pinned,
             pinned_levels = pinned_levels(),
+            subgroup = pin$subgroup,
             # Isolated: a groups edit comes from the client, which already
             # has it, so it must not re-ship the data.
             groups = crossfilter_groups_payload(shiny::isolate(r_groups())),
@@ -931,6 +952,7 @@ crossfilter_server <- function(active_dims, filters, range_filters,
             pinnable = pin$pinnable,
             pinned = pin$pinned,
             pinned_levels = pinned_levels(),
+            subgroup = pin$subgroup,
             # Isolated: a groups edit comes from the client, which already
             # has it, so it must not re-ship the data.
             groups = crossfilter_groups_payload(shiny::isolate(r_groups())),
@@ -1187,7 +1209,8 @@ crossfilter_server <- function(active_dims, filters, range_filters,
           # only in the constructor call would not survive a save.
           featured = r_featured,
           pinned = r_pinned,
-          groups = r_groups
+          groups = r_groups,
+          subgroup = r_subgroup
         )
       )
     })

@@ -13,6 +13,7 @@ new_crossfilter_block(
   featured = character(),
   pinned = NULL,
   groups = list(),
+  subgroup = NULL,
   ...
 )
 }
@@ -57,6 +58,12 @@ pool's name follows its members. A column with no entry shows every level
 in \code{\link[=crossfilter_level_order]{crossfilter_level_order()}} and has no pools. The block only records
 the definition; a package building on it (blockr.pharma's population
 filter) applies it.}
+
+\item{subgroup}{A second column the board is split by, under \code{pinned},
+chosen in the \verb{Subgroup by} select below the groups. Same eligible
+columns as \code{pinned}, minus the pinned one. \code{NULL} (the default) means no
+subgroup. Like \code{pinned}, the block only records it; blockr.pharma's
+population filter stamps it as \code{Subgroup}.}
 
 \item{...}{Forwarded to \code{\link[blockr.core:new_transform_block]{blockr.core::new_transform_block()}}. A package
 building on this block passes its own \code{class} here: the subclass has to be

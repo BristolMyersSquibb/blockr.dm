@@ -378,6 +378,14 @@ crossfilter_arguments <- function() {
       example = list(adsl = list(SEX = list("F")))
     ),
     # arbitrary-key map (column -> {show, pools}); type omitted.
+    subgroup = new_arg_spec(
+      paste0(
+        "A second column the board is split by, under `pinned`: tables nest ",
+        "it under the group, charts facet by it. Same eligible columns as ",
+        "`pinned`, minus the pinned one. Null for none."
+      ),
+      example = "SEX"
+    ),
     groups = new_arg_spec(
       paste0(
         "Group definitions for the pinned column. Object: column name -> ",

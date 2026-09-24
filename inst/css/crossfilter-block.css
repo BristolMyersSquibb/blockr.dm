@@ -734,6 +734,11 @@
   border-bottom: 1px solid var(--blockr-grey-200, #e5e7eb);
 }
 
+/* The second split, under the groups (_renderSubgroupField). */
+.jscf-subgroup-field {
+  margin-top: 12px;
+}
+
 /* The groups of the pinned column, folded under the select (_renderGroupsBand
    in the JS). The controls are Blockr.Select and the shared row pieces
    (.blockr-add-link, .blockr-row-remove, .blockr-select__tag); what is here

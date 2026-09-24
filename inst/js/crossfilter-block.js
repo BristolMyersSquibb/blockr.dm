@@ -228,6 +228,7 @@
       this.featured = [];     // [{table, dim, type, label}, ...] shelf chips
       this.pinnable = [];     // featured dims the pinned picker may offer
       this.pinned = null;     // dim held in the always-open card, or null
+      this.subgroup = null;   // second split under the group, or null
       // Group definitions under the Group by field. `this.groups` is taken:
       // it holds the crossfilter groups the cards count with.
       this.groupDefs = {};    // col -> {show, pools} as R last sent them
@@ -271,6 +272,13 @@
       this.groupsEl = el('div', 'jscf-groups');
       this.groupsEl.style.display = 'none';
       this.groupFieldEl.appendChild(this.groupsEl);
+      // The second split, under the group's own settings. Same field, so it
+      // hides with it: there is no subgroup without a group.
+      this.subgroupFieldEl = el('div', 'jscf-subgroup-field');
+      this.subgroupFieldEl.appendChild(el('label', 'blockr-label', 'Subgroup by'));
+      this.subgroupHostEl = el('div', 'jscf-subgroup-select');
+      this.subgroupFieldEl.appendChild(this.subgroupHostEl);
+      this.groupFieldEl.appendChild(this.subgroupFieldEl);
       this.el.appendChild(this.groupFieldEl);
 
       // The filter section's header row: its name on the left, then the row
@@ -733,6 +741,11 @@
         { priority: 'event' });
     }
 
+    _setSubgroup(dim) {
+      const nsBase = this.el.id.replace(/-crossfilter_input$/, '');
+      Shiny.setInputValue(nsBase + '-set_subgroup', dim, { priority: 'event' });
+    }
+
     _setPinned(dim) {
       const id = this.el.id;
       const nsBase = id.replace(/-crossfilter_input$/, '');
@@ -824,6 +837,44 @@
     // Mounted on the first pin payload, updated in place after that. The field
     // is absent, not empty, where nothing may group the board: an empty select
     // is a promise the block cannot keep.
+    // -- Subgroup by field ---------------------------------------------------
+    // Optional, so it leads with "(none)", the sentinel the picker block uses
+    // for an optional role. Its options are the group's minus the column the
+    // board is already grouped by.
+    _renderSubgroupField() {
+      if (!this.subgroupFieldEl) return;
+      if (!this.pinned) {
+        this.subgroupFieldEl.style.display = 'none';
+        return;
+      }
+      this.subgroupFieldEl.style.display = '';
+
+      const NONE = '(none)';
+      const labels = {};
+      for (const f of this.featured) labels[f.dim] = f.label || '';
+      const options = [{ value: NONE, label: '' }].concat(
+        this.pinnable.filter(dim => dim !== this.pinned)
+          .map(dim => ({ value: dim, label: labels[dim] || '' })));
+      const selected = this.subgroup || NONE;
+
+      if (this._subgroupSelect) {
+        this._subgroupSelect.setOptions(options, selected);
+        return;
+      }
+      this._subgroupSelect = this._select().single(this.subgroupHostEl, {
+        options,
+        selected,
+        onChange: (value) => {
+          const next = value === NONE ? '' : value;
+          if (next !== (this.subgroup || '')) {
+            this.subgroup = next || null;
+            this._setSubgroup(next);
+          }
+        }
+      });
+      this._subgroupSelect.el.classList.add('blockr-select--bordered');
+    }
+
     _renderGroupField() {
       if (!this.groupFieldEl) return;
 
@@ -1244,6 +1295,7 @@
       this.featured = asArray(msg.featured);
       this.pinnable = asArray(msg.pinnable);
       this.pinned = msg.pinned == null ? null : asArray(msg.pinned)[0];
+      this.subgroup = msg.subgroup == null ? null : asArray(msg.subgroup)[0];
       this.measure = msg.measure || '.count';
       this.aggFunc = msg.agg_func || 'sum';
 
@@ -1323,6 +1375,7 @@
       this._buildPanels();
       this._renderShelf();
       this._renderGroupField();
+      this._renderSubgroupField();
       this._ingestGroups(msg);
       this._renderFeaturedField();
       this._syncSearchRows();
