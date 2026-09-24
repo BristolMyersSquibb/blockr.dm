@@ -377,6 +377,23 @@ crossfilter_arguments <- function() {
       ),
       example = list(adsl = list(SEX = list("F")))
     ),
+    # arbitrary-key map (column -> {show, pools}); type omitted.
+    groups = new_arg_spec(
+      paste0(
+        "Group definitions for the pinned column. Object: column name -> ",
+        "{show: array of levels that get a column of their own, in order; ",
+        "pools: array of {name, members: array of levels, custom: boolean}}. ",
+        "A column with no entry shows every level."
+      ),
+      example = list(TRT01A = list(
+        show = list("Placebo", "Xanomeline High Dose"),
+        pools = list(list(
+          name = "All Xanomeline",
+          members = list("Xanomeline Low Dose", "Xanomeline High Dose"),
+          custom = FALSE
+        ))
+      ))
+    ),
     # arbitrary-key nested map (table -> {column -> [min, max]}); type omitted.
     range_filters = new_arg_spec(
       paste0(

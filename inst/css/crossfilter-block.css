@@ -734,6 +734,121 @@
   border-bottom: 1px solid var(--blockr-grey-200, #e5e7eb);
 }
 
+/* The groups of the pinned column, folded under the select (_renderGroupsBand
+   in the JS). The controls are Blockr.Select and the shared row pieces
+   (.blockr-add-link, .blockr-row-remove, .blockr-select__tag); what is here
+   only lays them out. */
+.jscf-groups {
+  margin-top: 8px;
+}
+.jscf-groups-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.jscf-groups-head .blockr-label {
+  margin: 0;
+}
+.jscf-groups-fold {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  padding: 0;
+  color: var(--blockr-grey-400, #9ca3af);
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+.jscf-groups-fold:hover {
+  color: var(--blockr-grey-700, #374151);
+  background: var(--blockr-grey-100, #f3f4f6);
+}
+.jscf-groups-fold svg {
+  transition: transform 0.15s ease;
+}
+.jscf-groups-fold--open svg {
+  transform: rotate(180deg);
+}
+/* Folded and changed: the resulting columns, read only. The tag without its
+   remove button, so the right padding matches the left. */
+.jscf-groups-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 2px;
+}
+.jscf-groups-summary .jscf-groups-tag {
+  padding-right: 8px;
+}
+.jscf-groups-body {
+  margin-top: 4px;
+}
+.jscf-groups-field {
+  margin-bottom: 8px;
+}
+.jscf-pool {
+  margin-bottom: 8px;
+}
+.jscf-pool-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+/* The pool's name reads as a label until it is clicked. */
+.jscf-pool-name {
+  flex: 1;
+  min-width: 0;
+  padding: 1px 4px;
+  margin-left: -4px;
+  font: inherit;
+  font-size: var(--blockr-font-size-sm, 0.8125rem);
+  color: var(--blockr-grey-700, #374151);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  outline: none;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.jscf-pool-name:hover {
+  border-color: var(--blockr-grey-200, #e5e7eb);
+}
+.jscf-pool-name:focus {
+  background: #fff;
+  border-color: var(--blockr-color-primary, #2563eb);
+}
+.jscf-pool-name.jscf-pool-name--invalid {
+  border-color: #dc3545;
+}
+.jscf-pool-n {
+  flex-shrink: 0;
+  font-size: var(--blockr-font-size-xs, 0.75rem);
+  color: var(--blockr-grey-400, #9ca3af);
+  font-variant-numeric: tabular-nums;
+}
+/* .blockr-row-remove shows on hover of a .blockr-row; a pool is not one. */
+.jscf-pool .jscf-pool-remove {
+  margin-left: 0;
+}
+.jscf-pool:hover .jscf-pool-remove,
+.jscf-pool:focus-within .jscf-pool-remove {
+  opacity: 1;
+}
+.jscf-pool-error {
+  margin: -2px 0 4px;
+  font-size: var(--blockr-font-size-xs, 0.75rem);
+  color: #dc3545;
+}
+.jscf-groups-add {
+  min-height: 26px;
+  padding: 0;
+}
+
 /* ============================================================
    Featured pill row + pinned card
    ============================================================ */

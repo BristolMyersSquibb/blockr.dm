@@ -30,6 +30,15 @@
 #'   columns on the parent table qualify. Grouping is independent of filtering: a pinned
 #'   column need not have a card, and a card does not make a column the group.
 #'   `NULL` (the default) means no group.
+#' @param groups Group definitions for the pinned column, edited under the
+#'   `Group by` field. A named list keyed by column, so switching the group
+#'   column and back keeps each definition. An entry is
+#'   `list(show = <levels with a column of their own, in order>, pools =
+#'   list(list(name = , members = , custom = )))`, `custom = FALSE` meaning the
+#'   pool's name follows its members. A column with no entry shows every level
+#'   in [crossfilter_level_order()] and has no pools. The block only records
+#'   the definition; a package building on it (blockr.pharma's population
+#'   filter) applies it.
 #' @param ... Forwarded to [blockr.core::new_transform_block()]. A package
 #'   building on this block passes its own `class` here: the subclass has to be
 #'   set at construction, which is where block metadata is resolved from the
@@ -47,6 +56,7 @@ new_crossfilter_block <- function(
   agg_func = NULL,
   featured = character(),
   pinned = NULL,
+  groups = list(),
   ...
 ) {
   args <- list(...)
@@ -59,12 +69,12 @@ new_crossfilter_block <- function(
       list(
         server = crossfilter_server(
           active_dims, filters, range_filters, measure, agg_func, featured,
-          pinned
+          pinned, groups
         ),
         ui = crossfilter_ui,
         allow_empty_state = c(
           "active_dims", "filters", "range_filters", "measure", "agg_func",
-          "featured", "pinned"
+          "featured", "pinned", "groups"
         ),
         external_ctrl = TRUE,
         class = cls
@@ -317,9 +327,128 @@ crossfilter_pinnable <- function(featured_dims, parent = NULL) {
   vapply(featured_dims[keep], `[[`, character(1), "dim")
 }
 
+#' Level order of a grouping column
+#'
+#' The order a column's levels take wherever they are listed: in the
+#' crossfilter's group definition, in the stamped `Group` column and in the
+#' tables built on it. A factor gives the levels that occur, in `levels()`
+#' order. Anything else gives its distinct non-missing values, sorted.
+#'
+#' @param x A vector.
+#' @return A character vector of levels.
+#' @export
+#' @examples
+#' crossfilter_level_order(factor(c("b", "a"), levels = c("c", "b", "a")))
+#' crossfilter_level_order(c("b", NA, "a", "b"))
+crossfilter_level_order <- function(x) {
+  if (is.factor(x)) {
+    return(levels(x)[levels(x) %in% as.character(x)])
+  }
+  sort(unique(stats::na.omit(as.character(x))))
+}
+
+# Levels of `col` in the table the pinned column lives on, with the number of
+# rows at each, in crossfilter_level_order(). Read from the block's INPUT, so
+# the counts are those of the unfiltered parent table.
+crossfilter_levels_with_n <- function(tbl, col) {
+  if (!is.data.frame(tbl) || is.null(col) || !col %in% names(tbl)) {
+    return(list())
+  }
+  x <- tbl[[col]]
+  lv <- crossfilter_level_order(x)
+  n <- as.vector(table(factor(as.character(x), levels = lv)))
+  unname(Map(function(v, k) list(value = v, n = k), lv, n))
+}
+
+# The name a pool gets until someone types one. Mirrors poolDefaultName() in
+# crossfilter-block.js, which is what the user sees; R only needs it when a
+# pool arrives without a name.
+crossfilter_pool_default_name <- function(members, levels) {
+  members <- as.character(members)
+  if (!length(members)) {
+    return("New pool")
+  }
+  if (length(levels) && setequal(members, levels)) {
+    return("All patients")
+  }
+  ordered <- c(intersect(levels, members), setdiff(members, levels))
+  if (length(ordered) >= 2L) {
+    words <- strsplit(trimws(ordered), "\\s+")
+    shared <- character()
+    for (i in seq_along(words[[1L]])) {
+      w <- words[[1L]][[i]]
+      if (!all(vapply(words, function(ws) length(ws) >= i && ws[[i]] == w,
+                      logical(1)))) {
+        break
+      }
+      shared <- c(shared, w)
+    }
+    if (length(shared)) {
+      return(paste("All", paste(shared, collapse = " ")))
+    }
+  }
+  paste(ordered, collapse = " + ")
+}
+
+# One column's group definition in its canonical R shape: `show` a character
+# vector, `pools` an unnamed list of list(name, members, custom). Accepts what
+# Shiny delivers from the client (JS arrays arrive as lists) and what a saved
+# board gives back (length-1 arrays arrive as scalars). A pool without members
+# is kept: it is a pool being built. A pool without a name gets the default.
+crossfilter_clean_group_def <- function(def, levels = character()) {
+  chr <- function(x) {
+    x <- as.character(unlist(x, use.names = FALSE))
+    x[!is.na(x)]
+  }
+  show <- unique(chr(def$show))
+  pools <- lapply(unname(def$pools %||% list()), function(p) {
+    members <- unique(chr(p$members))
+    name <- chr(p$name)
+    name <- if (length(name)) trimws(name[[1L]]) else ""
+    custom <- isTRUE(as.logical(unlist(p$custom))[1L])
+    if (!nzchar(name)) {
+      name <- crossfilter_pool_default_name(members, levels)
+      custom <- FALSE
+    }
+    list(name = name, members = members, custom = custom)
+  })
+  list(show = show, pools = pools)
+}
+
+# No entry for a column means untouched: every level shown, in level order,
+# and no pools. A definition that says exactly that is not stored.
+crossfilter_group_def_is_default <- function(def, levels) {
+  identical(as.character(def$show), as.character(levels)) &&
+    length(def$pools) == 0L
+}
+
+crossfilter_clean_groups <- function(groups) {
+  if (!length(groups) || is.null(names(groups))) {
+    return(list())
+  }
+  lapply(groups, crossfilter_clean_group_def)
+}
+
+# `groups` as the client reads it: {COL: {show: [...], pools: [{name,
+# members: [...], custom}]}}. as.list() keeps a one-level vector an array.
+crossfilter_groups_payload <- function(groups) {
+  lapply(groups, function(def) {
+    list(
+      show = as.list(as.character(def$show)),
+      pools = lapply(unname(def$pools), function(p) {
+        list(
+          name = as.character(p$name),
+          members = as.list(as.character(p$members)),
+          custom = isTRUE(p$custom)
+        )
+      })
+    )
+  })
+}
+
 crossfilter_server <- function(active_dims, filters, range_filters,
                                measure, agg_func, featured = character(),
-                               pinned = NULL) {
+                               pinned = NULL, groups = list()) {
   function(id, data) {
     shiny::moduleServer(id, function(input, output, session) {
       ns <- session$ns
@@ -451,6 +580,7 @@ crossfilter_server <- function(active_dims, filters, range_filters,
       r_agg_func <- shiny::reactiveVal(agg_func %||% "sum")
       r_featured <- shiny::reactiveVal(as.character(featured %||% character()))
       r_pinned <- shiny::reactiveVal(as.character(pinned %||% character()))
+      r_groups <- shiny::reactiveVal(crossfilter_clean_groups(groups))
 
       # Everything the client needs for the chip shelf and the pinned card. A
       # pin naming a column that is not (or no longer) pinnable is dropped
@@ -477,6 +607,31 @@ crossfilter_server <- function(active_dims, filters, range_filters,
           pinned = if (length(pin)) pin[[1L]] else NULL,
           pinned_table = pin_tbl
         )
+      })
+
+      # A column's levels and row counts, read from the unfiltered input. The
+      # pinned column lives on `pinned_table`; any other column is looked up
+      # on the parent table, then on the rest.
+      column_levels <- function(column, tbl_name = NULL) {
+        info <- dm_info()
+        search <- unique(c(
+          tbl_name, crossfilter_parent_table(info), info$table_names
+        ))
+        for (tbl in search) {
+          df <- info$tables[[tbl]]
+          if (is.data.frame(df) && column %in% names(df)) {
+            return(crossfilter_levels_with_n(df, column))
+          }
+        }
+        list()
+      }
+
+      pinned_levels <- shiny::reactive({
+        pin <- pin_info()
+        if (is.null(pin$pinned)) {
+          return(list())
+        }
+        column_levels(pin$pinned, pin$pinned_table)
       })
 
       # Self-write guard: when the JS UI submits state to R, the
@@ -557,6 +712,31 @@ crossfilter_server <- function(active_dims, filters, range_filters,
       # built before this existed, or by someone who never wrote `featured =`,
       # has to be able to grow one. `ignoreNULL = FALSE` so clearing it back to
       # nothing arrives as a value rather than as silence.
+      # The group definition for one column, sent whole by the client on every
+      # edit. Nothing is sent back: the client owns the definition while it
+      # is being edited, and an echo would redraw the band under the user.
+      shiny::observeEvent(input$set_groups, {
+        req <- input$set_groups
+        column <- as.character(unlist(req$column))
+        if (length(column) != 1L || is.na(column) || !nzchar(column)) {
+          return()
+        }
+        lv <- vapply(column_levels(column), `[[`, character(1), "value")
+        def <- crossfilter_clean_group_def(req, lv)
+        if (length(lv)) {
+          def$show <- def$show[def$show %in% lv]
+        }
+        cur <- r_groups()
+        nxt <- cur
+        if (crossfilter_group_def_is_default(def, lv)) {
+          nxt[[column]] <- NULL
+        } else {
+          nxt[[column]] <- def
+        }
+        if (!length(nxt)) nxt <- list()
+        if (!identical(nxt, cur)) r_groups(nxt)
+      }, ignoreInit = TRUE)
+
       shiny::observeEvent(input$set_featured, {
         vals <- as.character(unlist(input$set_featured))
         vals <- vals[nzchar(vals)]
@@ -725,6 +905,10 @@ crossfilter_server <- function(active_dims, filters, range_filters,
             featured = pin$featured,
             pinnable = pin$pinnable,
             pinned = pin$pinned,
+            pinned_levels = pinned_levels(),
+            # Isolated: a groups edit comes from the client, which already
+            # has it, so it must not re-ship the data.
+            groups = crossfilter_groups_payload(shiny::isolate(r_groups())),
             note = crossfilter_note(dm_data())
           )
           session$sendCustomMessage("js-crossfilter-data", payload)
@@ -746,6 +930,10 @@ crossfilter_server <- function(active_dims, filters, range_filters,
             featured = pin$featured,
             pinnable = pin$pinnable,
             pinned = pin$pinned,
+            pinned_levels = pinned_levels(),
+            # Isolated: a groups edit comes from the client, which already
+            # has it, so it must not re-ship the data.
+            groups = crossfilter_groups_payload(shiny::isolate(r_groups())),
             note = crossfilter_note(dm_data())
           )
           session$sendCustomMessage("js-crossfilter-data", payload)
@@ -782,6 +970,7 @@ crossfilter_server <- function(active_dims, filters, range_filters,
           # (and then re-submitting) the boot-time state. Lookups themselves
           # are filter-independent, so the cache stays valid.
           msg <- last_send$msg
+          msg$groups <- crossfilter_groups_payload(shiny::isolate(r_groups()))
           msg$cat_filters <- lapply(shiny::isolate(r_filters()), function(tbl) {
             lapply(tbl, function(vals) as.list(as.character(vals)))
           })
@@ -997,7 +1186,8 @@ crossfilter_server <- function(active_dims, filters, range_filters,
           # constructor plus its state, so a `featured` vocabulary that lived
           # only in the constructor call would not survive a save.
           featured = r_featured,
-          pinned = r_pinned
+          pinned = r_pinned,
+          groups = r_groups
         )
       )
     })

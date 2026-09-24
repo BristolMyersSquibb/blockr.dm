@@ -159,6 +159,43 @@
     return Number.isNaN(t) ? NaN : t / 86400000;
   }
 
+  // A pool's name until someone types one, recomputed whenever its members
+  // change. `levels` is [{value, n}] in level order; members are named in
+  // that order too, whatever order they were picked in. Mirrored in R by
+  // crossfilter_pool_default_name().
+  function poolDefaultName(members, levels) {
+    if (!members.length) return 'New pool';
+    const all = levels.map(l => l.value);
+    const picked = new Set(members);
+    if (all.length && all.length === picked.size &&
+        all.every(v => picked.has(v))) {
+      return 'All patients';
+    }
+    const ordered = all.filter(v => picked.has(v))
+      .concat(members.filter(v => !all.includes(v)));
+    if (ordered.length >= 2) {
+      const words = ordered.map(m => String(m).trim().split(/\s+/));
+      const shared = [];
+      for (let i = 0; i < words[0].length; i++) {
+        const w = words[0][i];
+        if (!words.every(ws => ws[i] === w)) break;
+        shared.push(w);
+      }
+      if (shared.length) return 'All ' + shared.join(' ');
+    }
+    return ordered.join(' + ');
+  }
+
+  // A default name must not take another column's name: the board splits on
+  // these names, and two columns called "Placebo" cannot both exist.
+  function uniqueName(base, taken) {
+    if (!taken.has(base)) return base;
+    for (let k = 2; ; k++) {
+      const next = base + ' ' + k;
+      if (!taken.has(next)) return next;
+    }
+  }
+
   function el(tag, cls, html) {
     const e = document.createElement(tag);
     if (cls) e.className = cls;
@@ -191,6 +228,16 @@
       this.featured = [];     // [{table, dim, type, label}, ...] shelf chips
       this.pinnable = [];     // featured dims the pinned picker may offer
       this.pinned = null;     // dim held in the always-open card, or null
+      // Group definitions under the Group by field. `this.groups` is taken:
+      // it holds the crossfilter groups the cards count with.
+      this.groupDefs = {};    // col -> {show, pools} as R last sent them
+      this.pinnedLevels = []; // [{value, n}] for the pinned column
+      this._gCol = null;      // the column the band was built for
+      this._gEdit = null;     // working definition for _gCol
+      this._gLocal = false;   // the user has edited _gEdit this session
+      this._gOpen = false;    // fold state, per session
+      this._gSelects = [];    // Blockr.Select handles inside the band
+      this._gPoolSeq = 0;
       this.measure = '.count';
       this.aggFunc = 'sum';
       this.panels = {};
@@ -219,6 +266,11 @@
       this.groupFieldEl.appendChild(groupLabel);
       this.groupHostEl = el('div', 'jscf-group-select');
       this.groupFieldEl.appendChild(this.groupHostEl);
+      // The groups the pinned column splits into, folded under the select.
+      // Inside the field, so it hides with it.
+      this.groupsEl = el('div', 'jscf-groups');
+      this.groupsEl.style.display = 'none';
+      this.groupFieldEl.appendChild(this.groupsEl);
       this.el.appendChild(this.groupFieldEl);
 
       // The filter section's header row: its name on the left, then the row
@@ -814,6 +866,343 @@
       this._groupSelect.el.classList.add('blockr-select--bordered');
     }
 
+    // -- Groups band --------------------------------------------------------
+    // The pinned column's levels, regrouped: which levels keep a column of
+    // their own, in what order, and which pools of levels get one besides.
+    // State in R is `groups` (see new_crossfilter_block()); this band edits
+    // the entry for the pinned column and sends it whole on every change.
+    //
+    // The client owns the definition while it is being edited. R never
+    // answers `set_groups`, and a data payload for the same column does not
+    // overwrite a local edit: R handing the client its own edit back redrew
+    // the band under the user and dropped the edit in progress.
+
+    _ingestGroups(msg) {
+      let defs = msg.groups;
+      if (!defs || Array.isArray(defs) || typeof defs !== 'object') defs = {};
+      const levels = asArray(msg.pinned_levels).map(l => ({
+        value: String(l.value),
+        n: Number(l.n) || 0
+      }));
+      const col = this.pinned;
+      if (col !== this._gCol || !this._gLocal) {
+        this.groupDefs = Object.assign({}, defs);
+        this.pinnedLevels = levels;
+        this._gCol = col;
+        this._gLocal = false;
+        this._gEdit = col ? this._groupDefFor(col) : null;
+        this._renderGroupsBand();
+        return;
+      }
+      for (const [k, v] of Object.entries(defs)) {
+        if (k !== col) this.groupDefs[k] = v;
+      }
+      this.pinnedLevels = levels;
+    }
+
+    // The working copy for one column: R's entry, or the untouched default
+    // (every level shown, level order, no pools).
+    _groupDefFor(col) {
+      const all = this.pinnedLevels.map(l => l.value);
+      const d = this.groupDefs[col];
+      if (!d) return { show: all, pools: [] };
+      return {
+        show: asArray(d.show).map(String),
+        pools: asArray(d.pools).map(p => ({
+          id: ++this._gPoolSeq,
+          name: p.name == null ? '' : String(p.name),
+          members: asArray(p.members).map(String),
+          custom: p.custom === true
+        }))
+      };
+    }
+
+    _isDefaultGroupDef(def) {
+      const all = this.pinnedLevels.map(l => l.value);
+      return def.pools.length === 0 && def.show.length === all.length &&
+        def.show.every((v, i) => v === all[i]);
+    }
+
+    // The columns the definition produces, in column order: the shown levels,
+    // then every pool that has a member.
+    _groupColumns() {
+      const def = this._gEdit;
+      const cols = def.show.map(v => ({ name: v, title: v }));
+      for (const p of def.pools) {
+        if (p.members.length) {
+          cols.push({ name: p.name, title: `${p.name}: ${p.members.join(', ')}` });
+        }
+      }
+      return cols;
+    }
+
+    _levelN(members) {
+      const n = {};
+      for (const l of this.pinnedLevels) n[l.value] = l.n;
+      return members.reduce((s, m) => s + (n[m] || 0), 0);
+    }
+
+    _groupsEdited() {
+      this._gLocal = true;
+      const def = this._gEdit;
+      const col = this._gCol;
+      const out = {
+        show: def.show.slice(),
+        pools: def.pools.map(p => ({
+          name: p.name,
+          members: p.members.slice(),
+          custom: !!p.custom
+        }))
+      };
+      if (this._isDefaultGroupDef(def)) delete this.groupDefs[col];
+      else this.groupDefs[col] = out;
+      const nsBase = this.el.id.replace(/-crossfilter_input$/, '');
+      Shiny.setInputValue(nsBase + '-set_groups',
+        Object.assign({ column: col }, out), { priority: 'event' });
+    }
+
+    _select() {
+      const Select = window.Blockr && window.Blockr.Select;
+      if (!Select) {
+        throw new Error(
+          '[js-crossfilter] Blockr.Select is missing: the block UI has to ship ' +
+          'blockr.dplyr::blockr_select_dep()');
+      }
+      return Select;
+    }
+
+    // Structural rebuild: fold, add or remove a pool, a new pinned column.
+    // Never called from a select's own onChange, whose dropdown is open.
+    _renderGroupsBand() {
+      if (!this.groupsEl) return;
+      for (const s of this._gSelects) {
+        try { s.destroy(); } catch (_) {}
+      }
+      this._gSelects = [];
+      this.groupsEl.innerHTML = '';
+      if (!this._gCol || !this._gEdit || !this.pinnedLevels.length) {
+        this.groupsEl.style.display = 'none';
+        return;
+      }
+      this.groupsEl.style.display = '';
+
+      const icons = (window.Blockr && window.Blockr.icons) || {};
+
+      const head = el('div', 'jscf-groups-head');
+      head.appendChild(el('label', 'blockr-label', 'Groups'));
+      head.appendChild(el('span', 'jscf-topbar-spacer'));
+      const fold = el('button', 'jscf-groups-fold', icons.chevron || '');
+      fold.type = 'button';
+      fold.title = this._gOpen ? 'Fold the groups' : 'Define the groups';
+      fold.setAttribute('aria-expanded', String(this._gOpen));
+      fold.classList.toggle('jscf-groups-fold--open', this._gOpen);
+      fold.addEventListener('click', () => {
+        this._gOpen = !this._gOpen;
+        this._renderGroupsBand();
+      });
+      head.appendChild(fold);
+      this.groupsEl.appendChild(head);
+
+      if (!this._gOpen) {
+        if (this._isDefaultGroupDef(this._gEdit)) return;
+        const summary = el('div', 'jscf-groups-summary');
+        for (const c of this._groupColumns()) {
+          const tag = el('span', 'blockr-select__tag jscf-groups-tag');
+          const label = el('span', 'blockr-select__tag-label');
+          label.textContent = c.name;
+          tag.title = c.title;
+          tag.appendChild(label);
+          summary.appendChild(tag);
+        }
+        this.groupsEl.appendChild(summary);
+        return;
+      }
+
+      const Select = this._select();
+      const options = this.pinnedLevels.map(
+        l => ({ value: l.value, label: String(l.n) }));
+
+      const body = el('div', 'jscf-groups-body');
+
+      const showField = el('div', 'jscf-groups-field');
+      showField.appendChild(el('label', 'blockr-label', 'Show'));
+      const showHost = el('div', 'jscf-groups-show');
+      showField.appendChild(showHost);
+      body.appendChild(showField);
+      const showSel = Select.multi(showHost, {
+        options,
+        selected: this._gEdit.show.slice(),
+        placeholder: 'No level on its own',
+        onChange: (values) => {
+          this._gEdit.show = values.slice();
+          this._groupsEdited();
+        }
+      });
+      showSel.el.classList.add('blockr-select--bordered');
+      this._gSelects.push(showSel);
+
+      for (const pool of this._gEdit.pools) {
+        body.appendChild(this._renderPool(pool, options, icons));
+      }
+
+      const addRow = el('div', 'blockr-add-row jscf-groups-add');
+      const addLink = el('span', 'blockr-add-link',
+        `<span class="blockr-add-icon">${icons.plus || '+'}</span> Add pool`);
+      addLink.setAttribute('role', 'button');
+      addLink.tabIndex = 0;
+      addLink.addEventListener('click', () => this._addPool());
+      addLink.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          this._addPool();
+        }
+      });
+      addRow.appendChild(addLink);
+      body.appendChild(addRow);
+
+      this.groupsEl.appendChild(body);
+    }
+
+    _renderPool(pool, options, icons) {
+      const box = el('div', 'jscf-pool');
+      box.dataset.pool = String(pool.id);
+
+      const head = el('div', 'jscf-pool-head');
+      const name = el('input', 'jscf-pool-name');
+      name.type = 'text';
+      name.value = pool.name;
+      name.spellcheck = false;
+      name.autocomplete = 'off';
+      name.setAttribute('aria-label', 'Pool name');
+      head.appendChild(name);
+
+      const nEl = el('span', 'jscf-pool-n');
+      const syncN = () => {
+        nEl.textContent = 'N ' + this._levelN(pool.members);
+      };
+      syncN();
+      head.appendChild(nEl);
+
+      const rm = el('button', 'blockr-row-remove jscf-pool-remove',
+        icons.x || '×');
+      rm.type = 'button';
+      rm.title = 'Remove this pool';
+      rm.addEventListener('click', () => this._removePool(pool.id));
+      head.appendChild(rm);
+      box.appendChild(head);
+
+      const err = el('div', 'jscf-pool-error');
+      err.style.display = 'none';
+      box.appendChild(err);
+      const showErr = (text) => {
+        err.textContent = text;
+        err.style.display = text ? '' : 'none';
+        name.classList.toggle('jscf-pool-name--invalid', !!text);
+      };
+
+      // A typed name is refused where it is typed: empty, or already the
+      // name of another column in the result.
+      const problem = (raw) => {
+        const t = raw.trim();
+        if (!t) return 'A pool needs a name.';
+        const taken = this._gEdit.show.concat(
+          this._gEdit.pools.filter(p => p.id !== pool.id).map(p => p.name));
+        if (taken.includes(t)) return `"${t}" is already a column.`;
+        return '';
+      };
+      const commit = () => {
+        const t = name.value.trim();
+        if (t === pool.name) {
+          name.value = t;
+          showErr('');
+          return true;
+        }
+        const why = problem(name.value);
+        if (why) {
+          showErr(why);
+          return false;
+        }
+        pool.name = t;
+        pool.custom = true;
+        name.value = t;
+        showErr('');
+        this._groupsEdited();
+        return true;
+      };
+      name.addEventListener('input', () => {
+        showErr(name.value.trim() === pool.name ? '' : problem(name.value));
+      });
+      name.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          if (commit()) name.blur();
+        } else if (e.key === 'Escape') {
+          e.preventDefault();
+          name.value = pool.name;
+          showErr('');
+          name.blur();
+        }
+      });
+      name.addEventListener('blur', () => {
+        if (!commit()) {
+          name.value = pool.name;
+          showErr('');
+        }
+      });
+
+      const host = el('div', 'jscf-pool-members');
+      box.appendChild(host);
+      const sel = this._select().multi(host, {
+        options,
+        selected: pool.members.slice(),
+        reorderable: false,
+        placeholder: 'Pick the levels to pool…',
+        onChange: (values) => {
+          pool.members = values.slice();
+          if (!pool.custom) {
+            pool.name = uniqueName(
+              poolDefaultName(pool.members, this.pinnedLevels),
+              this._takenNames(pool));
+            if (document.activeElement !== name) name.value = pool.name;
+          }
+          syncN();
+          this._groupsEdited();
+        }
+      });
+      sel.el.classList.add('blockr-select--bordered');
+      this._gSelects.push(sel);
+      return box;
+    }
+
+    // Every column name but `pool`'s own: the shown levels and the other pools.
+    _takenNames(pool) {
+      const taken = new Set(this._gEdit.show);
+      for (const p of this._gEdit.pools) if (p !== pool) taken.add(p.name);
+      return taken;
+    }
+
+    _addPool() {
+      const pool = {
+        id: ++this._gPoolSeq,
+        name: uniqueName('New pool', this._takenNames(null)),
+        members: [],
+        custom: false
+      };
+      this._gEdit.pools.push(pool);
+      this._groupsEdited();
+      this._renderGroupsBand();
+      // Open the new pool's member list: picking levels is the next step.
+      const ctrl = this.groupsEl.querySelector(
+        `.jscf-pool[data-pool="${pool.id}"] .blockr-select__control`);
+      if (ctrl) setTimeout(() => ctrl.click(), 0);
+    }
+
+    _removePool(id) {
+      this._gEdit.pools = this._gEdit.pools.filter(p => p.id !== id);
+      this._groupsEdited();
+      this._renderGroupsBand();
+    }
+
     // -- Receive data from R ------------------------------------------------
 
     setData(msg) {
@@ -934,6 +1323,7 @@
       this._buildPanels();
       this._renderShelf();
       this._renderGroupField();
+      this._ingestGroups(msg);
       this._renderFeaturedField();
       this._syncSearchRows();
       this._applyInitialFilters(msg.cat_filters, msg.rng_filters);

@@ -12,6 +12,7 @@ new_crossfilter_block(
   agg_func = NULL,
   featured = character(),
   pinned = NULL,
+  groups = list(),
   ...
 )
 }
@@ -47,6 +48,15 @@ chosen in the \verb{Group by} select at the top of the block. Only \code{feature
 columns on the parent table qualify. Grouping is independent of filtering: a pinned
 column need not have a card, and a card does not make a column the group.
 \code{NULL} (the default) means no group.}
+
+\item{groups}{Group definitions for the pinned column, edited under the
+\verb{Group by} field. A named list keyed by column, so switching the group
+column and back keeps each definition. An entry is
+\verb{list(show = <levels with a column of their own, in order>, pools = list(list(name = , members = , custom = )))}, \code{custom = FALSE} meaning the
+pool's name follows its members. A column with no entry shows every level
+in \code{\link[=crossfilter_level_order]{crossfilter_level_order()}} and has no pools. The block only records
+the definition; a package building on it (blockr.pharma's population
+filter) applies it.}
 
 \item{...}{Forwarded to \code{\link[blockr.core:new_transform_block]{blockr.core::new_transform_block()}}. A package
 building on this block passes its own \code{class} here: the subclass has to be
