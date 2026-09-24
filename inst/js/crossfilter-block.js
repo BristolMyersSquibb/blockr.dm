@@ -1655,16 +1655,22 @@
         }
       };
 
-      // Drag-end (mouse-up / key commit): push the resting value to R once.
-      const onChange = () => this._scheduleSubmit();
+      // Drag-end (mouse-up / key commit). The drag was applied silently, so
+      // the other range cards still show the gray curve and "of N rows" from
+      // before it: refresh them, then push the resting value to R once.
+      const onChange = () => {
+        this._updateAllCounts(dim);
+        this._scheduleSubmit();
+      };
 
       inputLo.addEventListener('input', () => onInput('lo'));
       inputHi.addEventListener('input', () => onInput('hi'));
       inputLo.addEventListener('change', onChange);
       inputHi.addEventListener('change', onChange);
 
-      this._makeRangeLabelEditable(card, labelMin, 'lo', onInput);
-      this._makeRangeLabelEditable(card, labelMax, 'hi', onInput);
+      const onTyped = () => { onInput(); onChange(); };
+      this._makeRangeLabelEditable(card, labelMin, 'lo', onTyped);
+      this._makeRangeLabelEditable(card, labelMax, 'hi', onTyped);
 
       // Apply initial bounds (sets attrs, values, KDE, labels, totalRows).
       this._applyRangeBounds(card, min0, max0);
@@ -1743,7 +1749,6 @@
           if (commit) {
             card._flashSlider();
             onCommit();
-            this._scheduleSubmit();
           }
         };
 
@@ -2074,7 +2079,7 @@
     // Pass null to refresh all bounds (e.g., after a global reset).
     // `silent` is a drag in progress (see _applyFilter). The other cards'
     // gray curves do move while a slider is dragged, but rebuilding them is a
-    // KDE per card per frame; they catch up on the drag-end pass.
+    // KDE per card per frame; they catch up in the slider's `change` handler.
     _updateAllCounts(changedDim, { silent = false } = {}) {
       // Iterate dimensions, not groups: range/date dims have no group (see
       // setData), only categorical dims do.
