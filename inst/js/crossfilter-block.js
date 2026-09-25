@@ -206,11 +206,11 @@
     return e;
   }
 
-  // A column's name and label on hover, as the design system's tooltip reads
-  // them: `AGE \u00b7 Age`. Native `title` until blockr.ui has its tooltip.
-  // No label, or one equal to the name, gives no title: the name is on screen.
+  // A column's label on hover; the name is already on screen. Native `title`
+  // until blockr.ui has its tooltip. No label, or one equal to the name,
+  // gives no title.
   function setDimTitle(node, dim, label) {
-    if (label && label !== dim) node.title = `${dim} \u00b7 ${label}`;
+    if (label && label !== dim) node.title = label;
   }
 
   // =========================================================================
