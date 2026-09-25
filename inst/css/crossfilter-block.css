@@ -785,7 +785,10 @@
 .jscf-groups {
   margin-top: 8px;
 }
-.jscf-groups-fold {
+/* The subgroup's swap button borrows the fold's look: both are icon buttons in
+   a section head. */
+.jscf-groups-fold,
+.jscf-section-swap {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -800,7 +803,8 @@
   cursor: pointer;
   transition: color 0.15s ease, background 0.15s ease;
 }
-.jscf-groups-fold:hover {
+.jscf-groups-fold:hover,
+.jscf-section-swap:hover {
   color: var(--blockr-grey-700, #374151);
   background: var(--blockr-grey-100, #f3f4f6);
 }

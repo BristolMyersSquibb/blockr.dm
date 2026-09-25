@@ -388,7 +388,8 @@ crossfilter_arguments <- function() {
     ),
     groups = new_arg_spec(
       paste0(
-        "Group definitions for the pinned column. Object: column name -> ",
+        "Group definitions for the pinned column and the subgroup. Object: ",
+        "column name -> ",
         "{show: array of levels that get a column of their own, in order; ",
         "pools: array of {name, members: array of levels, custom: boolean}}. ",
         "A column with no entry shows every level."

@@ -30,9 +30,10 @@
 #'   columns on the parent table qualify. Grouping is independent of filtering: a pinned
 #'   column need not have a card, and a card does not make a column the group.
 #'   `NULL` (the default) means no group.
-#' @param groups Group definitions for the pinned column, edited under the
-#'   `Group by` field. A named list keyed by column, so switching the group
-#'   column and back keeps each definition. An entry is
+#' @param groups Group definitions for the pinned column and the subgroup,
+#'   edited in the `Pools` section under each field. A named list keyed by
+#'   column, so switching the group column and back, or swapping group and
+#'   subgroup, keeps each definition. An entry is
 #'   `list(show = <levels with a column of their own, in order>, pools =
 #'   list(list(name = , members = , custom = )))`, `custom = FALSE` meaning the
 #'   pool's name follows its members. A column with no entry shows every level
@@ -42,8 +43,10 @@
 #' @param subgroup A second column the board is split by, under `pinned`,
 #'   chosen in the `Subgroup by` select below the groups. Same eligible
 #'   columns as `pinned`, minus the pinned one. `NULL` (the default) means no
-#'   subgroup. Like `pinned`, the block only records it; blockr.pharma's
-#'   population filter stamps it as `Subgroup`.
+#'   subgroup. Its levels are pooled like the group's, through its entry in
+#'   `groups`, and a button in its field swaps it with `pinned`. Like
+#'   `pinned`, the block only records it; blockr.pharma's population filter
+#'   stamps it as `Subgroup`.
 #' @param ... Forwarded to [blockr.core::new_transform_block()]. A package
 #'   building on this block passes its own `class` here: the subclass has to be
 #'   set at construction, which is where block metadata is resolved from the
@@ -646,6 +649,14 @@ crossfilter_server <- function(active_dims, filters, range_filters,
         column_levels(pin$pinned, pin$pinned_table)
       })
 
+      subgroup_levels <- shiny::reactive({
+        pin <- pin_info()
+        if (is.null(pin$subgroup)) {
+          return(list())
+        }
+        column_levels(pin$subgroup, pin$pinned_table)
+      })
+
       # Self-write guard: when the JS UI submits state to R, the
       # matching R->JS push observer below would echo it back and the
       # browser would paint the same state on top of itself (cheap but
@@ -726,6 +737,20 @@ crossfilter_server <- function(active_dims, filters, range_filters,
       shiny::observeEvent(input$set_subgroup, {
         val <- as.character(unlist(input$set_subgroup))
         r_subgroup(if (length(val) && nzchar(val[[1L]])) val[[1L]] else character())
+      }, ignoreInit = TRUE)
+
+      # The subgroup becomes the group and the group the subgroup. One input
+      # rather than a set_pinned and a set_subgroup from the client: between
+      # the two the pair would name one column twice, and pin_info() drops a
+      # subgroup equal to the group. Each column keeps its entry in `groups`,
+      # so its pools move with it.
+      shiny::observeEvent(input$swap_split, {
+        pin <- pin_info()
+        if (is.null(pin$pinned) || is.null(pin$subgroup)) {
+          return()
+        }
+        r_pinned(pin$subgroup)
+        r_subgroup(pin$pinned)
       }, ignoreInit = TRUE)
 
       # The vocabulary is edited in the gear, not only in board code: a board
@@ -927,6 +952,7 @@ crossfilter_server <- function(active_dims, filters, range_filters,
             pinned = pin$pinned,
             pinned_levels = pinned_levels(),
             subgroup = pin$subgroup,
+            subgroup_levels = subgroup_levels(),
             # Isolated: a groups edit comes from the client, which already
             # has it, so it must not re-ship the data.
             groups = crossfilter_groups_payload(shiny::isolate(r_groups())),
@@ -953,6 +979,7 @@ crossfilter_server <- function(active_dims, filters, range_filters,
             pinned = pin$pinned,
             pinned_levels = pinned_levels(),
             subgroup = pin$subgroup,
+            subgroup_levels = subgroup_levels(),
             # Isolated: a groups edit comes from the client, which already
             # has it, so it must not re-ship the data.
             groups = crossfilter_groups_payload(shiny::isolate(r_groups())),
