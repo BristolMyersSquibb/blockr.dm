@@ -227,12 +227,12 @@
 .jscf-search-item--highlighted {
   background: var(--blockr-color-bg-hover);
 }
-/* The pick's check, in a column of its own so every name starts on the same
-   edge; empty on a row without a card. */
+/* A multi pick: a 14px tick in the accent, in a slot every row keeps, so
+   every name starts on the same edge. Normal weight. */
 .jscf-search-item-check {
   flex-shrink: 0;
   display: inline-flex;
-  width: 12px;
+  width: 14px;
   color: var(--blockr-color-text-accent);
   visibility: hidden;
 }
@@ -247,10 +247,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
   color: var(--blockr-color-text-default);
-}
-/* The current pick: weight 600 on the name, as in every menu. */
-.jscf-search-item--active .jscf-search-item-name {
-  font-weight: var(--blockr-font-weight-semibold);
 }
 .jscf-search-item-label {
   margin-left: 8px;
@@ -352,7 +348,8 @@
 }
 /* Reset and remove: 26px tools, always shown (the crossfilter cards are the
    exception to "hidden until hover"). Icon muted, the hover wash; remove
-   turns danger. */
+   turns danger. Reset is disabled while the card cuts no rows, like Reset
+   all. */
 .dm-cf-reset-btn,
 .dm-cf-remove-btn {
   display: inline-flex;
@@ -377,6 +374,12 @@
   background: var(--blockr-color-bg-hover);
   color: var(--blockr-color-text-danger);
 }
+.dm-cf-reset-btn:disabled,
+.dm-cf-reset-btn:disabled:hover {
+  color: var(--blockr-color-text-disabled);
+  background: transparent;
+  cursor: default;
+}
 .dm-cf-reset-btn:focus-visible,
 .dm-cf-remove-btn:focus-visible {
   outline: var(--blockr-focus-outline);
@@ -386,62 +389,116 @@
 /* ============================================================
    Categorical card
    ============================================================ */
-/* The card search: a 30px field. */
+/* The search field (design system, "Search field"), shown above eight
+   values: 30px, radius 6, bg-field; a 14px magnifier 9px from the left; a
+   22px clear button while there is text; on focus bg-surface, the accent
+   edge and the ring. */
 .dm-cf-tw-search {
-  display: block;
-  width: 100%;
-  height: var(--blockr-control-h-sm);
-  margin-bottom: 4px;
-  padding: 0 10px;
+  position: relative;
+  display: flex;
+  align-items: center;
   box-sizing: border-box;
-  font: inherit;
-  font-size: var(--blockr-font-size-sm);
-  color: var(--blockr-color-text-default);
+  height: var(--blockr-control-h-sm);
+  margin-bottom: 6px;
+  padding: 0 4px 0 30px;
   background: var(--blockr-color-bg-field);
   border: 1px solid var(--blockr-color-border-default);
   border-radius: var(--blockr-radius-md);
-  outline: none;
+  cursor: text;
   transition: border-color var(--blockr-transition),
-    box-shadow var(--blockr-transition);
+    box-shadow var(--blockr-transition), background var(--blockr-transition);
 }
-.dm-cf-tw-search::placeholder {
-  color: var(--blockr-color-text-muted);
-}
-.dm-cf-tw-search:focus {
+.dm-cf-tw-search:focus-within {
+  background: var(--blockr-color-bg-surface);
   border-color: var(--blockr-color-border-accent);
   box-shadow: var(--blockr-focus-ring);
+}
+.dm-cf-tw-search-icon {
+  position: absolute;
+  left: 9px;
+  top: 50%;
+  display: inline-flex;
+  transform: translateY(-50%);
+  color: var(--blockr-color-text-muted);
+  pointer-events: none;
+}
+.dm-cf-tw-search-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  font: inherit;
+  font-size: var(--blockr-font-size-sm);
+  color: var(--blockr-color-text-default);
+}
+.dm-cf-tw-search-input::placeholder {
+  color: var(--blockr-color-text-muted);
+}
+.dm-cf-tw-search-clear {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--blockr-radius-sm);
+  background: transparent;
+  color: var(--blockr-color-text-muted);
+  cursor: pointer;
+}
+.dm-cf-tw-search--has .dm-cf-tw-search-clear {
+  display: inline-flex;
+}
+.dm-cf-tw-search-clear:hover {
+  background: var(--blockr-color-bg-hover);
+  color: var(--blockr-color-text-default);
+}
+.dm-cf-tw-search-clear:focus-visible {
+  outline: var(--blockr-focus-outline);
+  outline-offset: var(--blockr-focus-offset);
 }
 /* 200px: about six 30px rows under the header. */
 .dm-cf-tw-scroll {
   max-height: 200px;
   overflow-y: auto;
 }
+/* The card's list follows the design system's Tables: header names 13px
+   weight 600 in text-default with a 1px border-strong rule under each
+   column, 12px short of the next; rows 30px, 14px on a 20px line, 12px side
+   padding, no body rules, the hover wash. */
 .dm-cf-tw-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: var(--blockr-font-size-sm);
+  font-size: var(--blockr-font-size-base);
   table-layout: fixed;
 }
 .dm-cf-tw-th {
   position: sticky;
   top: 0;
   z-index: 1;
-  height: 24px;
-  padding: 0 8px;
+  padding: 2px 12px 5px;
   background: var(--blockr-color-bg-surface);
-  font-size: var(--blockr-font-size-xs);
+  font-size: var(--blockr-font-size-sm);
   font-weight: var(--blockr-font-weight-semibold);
+  line-height: 18px;
   text-align: left;
   white-space: nowrap;
   user-select: none;
   cursor: pointer;
-  color: var(--blockr-color-text-muted);
-}
-.dm-cf-tw-th:hover {
   color: var(--blockr-color-text-default);
 }
-.dm-cf-tw-th--sorted {
-  color: var(--blockr-color-text-default);
+.dm-cf-tw-th::after {
+  content: "";
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 0;
+  border-bottom: 1px solid var(--blockr-color-border-strong);
 }
 /* Count sits over the numbers, so its header does too. */
 .dm-cf-tw-th--num {
@@ -487,8 +544,8 @@
   color: var(--blockr-color-text-default);
 }
 .dm-cf-tw-row td {
-  padding: 3px 8px;
-  line-height: 1.3;
+  padding: 5px 12px;
+  line-height: 20px;
 }
 .dm-cf-tw-row td:first-child {
   border-radius: var(--blockr-radius-sm) 0 0 var(--blockr-radius-sm);
@@ -511,7 +568,9 @@
 .dm-cf-tw-row.dimmed .dm-cf-tw-bar-fill {
   opacity: 0.2;
 }
+/* Missing and empty values: NA and (empty), 12px muted. */
 .dm-cf-tw-missing {
+  font-size: var(--blockr-font-size-xs);
   color: var(--blockr-color-text-muted);
 }
 .dm-cf-tw-bar-cell {

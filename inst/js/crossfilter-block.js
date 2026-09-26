@@ -18,10 +18,23 @@
 
   const ICON_REMOVE_SM = '<svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708z"/></svg>';
 
+  // The multi-pick tick (design system, Menus: 14px, text-accent).
+  const ICON_TICK = '<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M13.854 3.646a.5.5 0 0 1 0 .708l-7 7a.5.5 0 0 1-.708 0l-3.5-3.5a.5.5 0 1 1 .708-.708L6.5 10.293l6.646-6.647a.5.5 0 0 1 .708 0"/></svg>';
+
+  // The search field's magnifier and its clear button.
+  const ICON_SEARCH = '<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001q.044.06.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1 1 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0"/></svg>';
+  const ICON_CLEAR = '<svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"><line x1="2.5" y1="2.5" x2="7.5" y2="7.5"/><line x1="7.5" y1="2.5" x2="2.5" y2="7.5"/></svg>';
+
+  // A card shows its search above this many values, as a menu shows its
+  // filter box.
+  const SEARCH_MIN_VALUES = 8;
+
+  // Missing and empty values, shown as NA and (empty), and sorted last.
+  const isMissingKey = (v) => v === '__NA__' || v === '__EMPTY__';
+
   // Bootstrap arrow-down-up: the subgroup's "switch with the group" button.
   const ICON_SWAP = '<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path fill-rule="evenodd" d="M11.5 15a.5.5 0 0 0 .5-.5V2.707l3.146 3.147a.5.5 0 0 0 .708-.708l-4-4a.5.5 0 0 0-.708 0l-4 4a.5.5 0 1 0 .708.708L11 2.707V14.5a.5.5 0 0 0 .5.5m-7-14a.5.5 0 0 1 .5.5v11.793l3.146-3.147a.5.5 0 0 1 .708.708l-4 4a.5.5 0 0 1-.708 0l-4-4a.5.5 0 0 1 .708-.708L4 13.293V1.5a.5.5 0 0 1 .5-.5"/></svg>';
 
-  const ICON_CHECK_SM = '<svg width="11" height="11" viewBox="0 0 16 16" fill="currentColor"><path d="M12.736 3.97a.733.733 0 0 1 1.047 0c.286.289.29.756.01 1.05L7.88 12.01a.733.733 0 0 1-1.065.02L3.217 8.384a.757.757 0 0 1 0-1.06.733.733 0 0 1 1.047 0l3.052 3.093 5.4-6.425z"/></svg>';
 
   // =========================================================================
   // Helpers
@@ -577,9 +590,9 @@
           for (const item of items) {
             const row = el('div', 'jscf-search-item');
             if (item.active) row.classList.add('jscf-search-item--active');
-            // A column with a card is the menu's current pick: a check in
-            // the accent and the name at weight 600. A click toggles it.
-            row.appendChild(el('span', 'jscf-search-item-check', ICON_CHECK_SM));
+            // A column with a card is a multi pick: a 14px tick in the accent,
+            // in a slot every row keeps. A click toggles it.
+            row.appendChild(el('span', 'jscf-search-item-check', ICON_TICK));
 
             // The name, then the label as muted meta, cut first.
             const nameEl = el('span', 'jscf-search-item-name', item.dim);
@@ -845,6 +858,10 @@
     // Two states, written as classes on pills that already exist. A filter
     // click must not rebuild the row: the pointer is on it.
     _syncShelfState() {
+      for (const [dim, card] of Object.entries(this.panels)) {
+        const btn = card.querySelector('.dm-cf-reset-btn');
+        if (btn) btn.disabled = !this._isFiltering(dim);
+      }
       if (!this._pillEls) return;
       for (const [dim, { pill, table }] of Object.entries(this._pillEls)) {
         pill.classList.toggle('jscf-pill--open',
@@ -1796,12 +1813,16 @@
     // exception to "hidden until hover", see the design system's crossfilter).
     _cardActions(dim, tbl) {
       const actions = el('div', 'dm-cf-filter-card-actions');
+      // Disabled while the card cuts no rows, like Reset all
+      // (_syncShelfState keeps it current).
       const resetBtn = el('button', 'dm-cf-reset-btn', ICON_RESET);
       resetBtn.type = 'button';
+      resetBtn.disabled = !this._isFiltering(dim);
       resetBtn.setAttribute('aria-label', `Reset the ${dim} filter`);
       tip(resetBtn, 'Reset filter');
       resetBtn.addEventListener('click', () => this._clearFilter(dim));
       actions.appendChild(resetBtn);
+      actions._resetBtn = resetBtn;
       const removeBtn = el('button', 'dm-cf-remove-btn', ICON_REMOVE_SM);
       removeBtn.type = 'button';
       removeBtn.setAttribute('aria-label', `Remove ${dim}`);
@@ -1838,20 +1859,48 @@
       header.appendChild(this._cardActions(dim, tbl));
       card.appendChild(header);
 
-      // In-panel search
-      const searchInput = el('input', 'dm-cf-tw-search');
+      // The card's search field (design system, "Search field"): a
+      // magnifier, the input, a clear button while there is text. Shown
+      // only above SEARCH_MIN_VALUES values (_renderCategoricalCounts).
+      const searchWrap = el('label', 'dm-cf-tw-search');
+      searchWrap.style.display = 'none';
+      searchWrap.appendChild(el('span', 'dm-cf-tw-search-icon', ICON_SEARCH));
+      const searchInput = el('input', 'dm-cf-tw-search-input');
       searchInput.type = 'text';
       searchInput.placeholder = 'Search\u2026';
+      searchInput.autocomplete = 'off';
+      searchInput.spellcheck = false;
       searchInput.setAttribute('aria-label', `Search ${dim}`);
-      searchInput.addEventListener('input', () => {
-        const q = searchInput.value.toLowerCase();
-        const rows = card.querySelectorAll('.dm-cf-tw-row');
-        rows.forEach(r => {
-          const val = r.dataset.value.toLowerCase();
-          r.style.display = (q === '' || val.includes(q)) ? '' : 'none';
-        });
+      const clearBtn = el('button', 'dm-cf-tw-search-clear', ICON_CLEAR);
+      clearBtn.type = 'button';
+      clearBtn.setAttribute('aria-label', 'Clear the search');
+      tip(clearBtn, 'Clear');
+      const applySearch = () => {
+        card._query = searchInput.value.trim().toLowerCase();
+        searchWrap.classList.toggle('dm-cf-tw-search--has', searchInput.value !== '');
+        this._applyCardSearch(card);
+      };
+      searchInput.addEventListener('input', applySearch);
+      searchInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && searchInput.value) {
+          e.preventDefault();
+          e.stopPropagation();
+          searchInput.value = '';
+          applySearch();
+        }
       });
-      card.appendChild(searchInput);
+      clearBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        searchInput.value = '';
+        applySearch();
+        searchInput.focus();
+      });
+      searchWrap.appendChild(searchInput);
+      searchWrap.appendChild(clearBtn);
+      card.appendChild(searchWrap);
+      card._searchWrap = searchWrap;
+      card._searchInput = searchInput;
+      card._query = '';
 
       // Default sort: count descending
       card._sortCol = 'count';
@@ -1871,7 +1920,7 @@
       // goes to the values, which is where long level names need it.
       countTh.style.width = '135px';
 
-      // The sort cue, as in the table preview: sort bars after the
+      // The sort cue, as in the table preview: sort bars beside the
       // header text, in the accent on the sorted column. The other column
       // shows, muted and on hover only, what a click on it would do.
       const firstDir = (col) => col === 'count' ? 'desc' : 'asc';
@@ -1884,9 +1933,13 @@
         const on = card._sortCol === col;
         const dir = on ? card._sortDir : firstDir(col);
         const h = el('span', 'jscf-th-head');
+        const cue = el('span',
+          `jscf-sort-cue jscf-sort-cue--${dir}${on ? ' jscf-sort-cue--on' : ''}`);
+        // Before the name on the right-aligned Count, so the name stays
+        // over its numbers; after it on the values.
+        if (col === 'count') h.appendChild(cue);
         h.appendChild(document.createTextNode(text));
-        h.appendChild(el('span',
-          `jscf-sort-cue jscf-sort-cue--${dir}${on ? ' jscf-sort-cue--on' : ''}`));
+        if (col !== 'count') h.appendChild(cue);
         th.appendChild(h);
         th.classList.toggle('dm-cf-tw-th--sorted', on);
         if (on) th.setAttribute('aria-sort', dir === 'asc' ? 'ascending' : 'descending');
@@ -1949,10 +2002,13 @@
         if (sortCol === 'value') {
           // Decode BEFORE comparing: group keys are int codes for encoded
           // dims, and comparing codes (or stringified codes: "10" < "2")
-          // would change the visible order. Decoded localeCompare keeps
-          // today's exact ordering.
-          cmp = this._decodeStr(dim, a.key)
-            .localeCompare(this._decodeStr(dim, b.key));
+          // would change the visible order. Missing and empty values go
+          // last in both directions, as in every table.
+          const av = this._decodeStr(dim, a.key);
+          const bv = this._decodeStr(dim, b.key);
+          const am = isMissingKey(av), bm = isMissingKey(bv);
+          if (am || bm) return am && bm ? 0 : am ? 1 : -1;
+          cmp = av.localeCompare(bv);
         } else {
           cmp = gv(a) - gv(b);
         }
@@ -1981,10 +2037,10 @@
 
         // Value cell
         const tdVal = el('td');
-        const displayKey = valLabel === '__NA__' ? '(NA)'
+        const displayKey = valLabel === '__NA__' ? 'NA'
           : valLabel === '__EMPTY__' ? '(empty)' : valLabel;
         if (valLabel === '__NA__' || valLabel === '__EMPTY__') {
-          tdVal.appendChild(el('em', 'dm-cf-tw-missing', displayKey));
+          tdVal.appendChild(el('span', 'dm-cf-tw-missing', displayKey));
         } else {
           tdVal.textContent = displayKey;
         }
@@ -2013,6 +2069,25 @@
       }
 
       this._sizeCountColumn(card, widestLabel);
+
+      const searchable = counts.length > SEARCH_MIN_VALUES;
+      card._searchWrap.style.display = searchable ? '' : 'none';
+      if (!searchable && card._query) {
+        card._searchInput.value = '';
+        card._query = '';
+        card._searchWrap.classList.remove('dm-cf-tw-search--has');
+      }
+      this._applyCardSearch(card);
+    }
+
+    // Hide the rows the card's search does not match. Run after every render,
+    // so a data update keeps the reader's query.
+    _applyCardSearch(card) {
+      const q = card._query || '';
+      for (const r of card._tbody.querySelectorAll('.dm-cf-tw-row')) {
+        const v = r.dataset.value.toLowerCase();
+        r.style.display = (q === '' || v.includes(q)) ? '' : 'none';
+      }
     }
 
     // The count column was a flat 160px, which is right for "1,234,567" and
@@ -2029,7 +2104,7 @@
       card.style.setProperty('--jscf-count-w', `calc(${chars}ch + 8px)`);
       if (card._countTh) {
         // What the bar needs to reach its full length: the 96px cap, the 5px
-        // gap to the number, the cell's own 12px of padding, and the number
+        // gap to the number, the cell's own 24px of padding, and the number
         // itself. Keep in step with .dm-cf-tw-bar-track's max-width, or the
         // bar never gets the width the column reserved for it.
         //
@@ -2041,11 +2116,11 @@
         // `min(..., 45%)`, which parses but is ignored for a column of a
         // `table-layout: fixed` table (measured: the column fell back to an
         // even split and wrapped every long level).
-        const needed = 121 + chars * 7.2;
+        const needed = 133 + chars * 7.2;
         const cardW = card.clientWidth || 0;
         card._countTh.style.width = cardW && needed > cardW * 0.45
           ? `${Math.round(cardW * 0.45)}px`
-          : `calc(121px + ${chars}ch)`;
+          : `calc(133px + ${chars}ch)`;
       }
     }
 
