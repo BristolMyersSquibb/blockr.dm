@@ -1010,7 +1010,9 @@
         row.style.display = links.length ? '' : 'none';
         for (const a of links) row.appendChild(a);
       };
-      const poolsLink = (s) => link('Pools',
+      // The subgroup's pools say whose they are: the group's "Pools" sits
+      // right above them.
+      const poolsLink = (s) => link(s.role === 'subgroup' ? 'Subgroup pools' : 'Pools',
         () => {
           s.open = true;
           this._renderPoolsBand(s);
@@ -1192,7 +1194,8 @@
       // columns as tags and an Edit link. Either way an x puts every level
       // back and takes the section off the block.
       const head = el('div', 'jscf-section-head');
-      head.appendChild(el('label', 'blockr-label', 'Pools'));
+      head.appendChild(el('label', 'blockr-label',
+        s.role === 'subgroup' ? 'Subgroup pools' : 'Pools'));
       head.appendChild(el('span', 'jscf-topbar-spacer'));
       if (s.open) {
         const fold = el('button', 'jscf-groups-fold jscf-groups-fold--open', icons.chevron || '');
@@ -1217,8 +1220,9 @@
       }
       const rm = el('button', 'blockr-row-remove jscf-section-remove', icons.remove || '×');
       rm.type = 'button';
-      rm.setAttribute('aria-label', 'Remove the pools');
-      tip(rm, 'Remove the pools');
+      const rmText = s.role === 'subgroup' ? 'Remove the subgroup pools' : 'Remove the pools';
+      rm.setAttribute('aria-label', rmText);
+      tip(rm, rmText);
       rm.addEventListener('click', () => {
         const wasSet = !this._isDefaultGroupDef(s, s.edit);
         s.edit = { show: s.levels.map(l => l.value), pools: [] };
