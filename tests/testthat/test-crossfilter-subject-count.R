@@ -1,5 +1,7 @@
-# The header counts subjects: R sends how many keys the parent table holds
-# (`parent_n`) and the word for one of them (`subject_unit`).
+# The header counts subjects only when the block names what they are
+# (`subject_unit`, set by blockr.pharma's population filter): R then sends how
+# many keys the parent table holds (`parent_n`) and the word. The generic
+# block counts rows.
 
 subject_dm <- function(key = "USUBJID") {
   adsl <- data.frame(id = c("a", "b", "c"), SEX = c("F", "M", "F"))
@@ -11,15 +13,7 @@ subject_dm <- function(key = "USUBJID") {
   dm::dm_add_fk(d, ae, !!rlang::sym(key), adsl)
 }
 
-test_that("a CDISC subject id counts patients, any other key counts rows", {
-  expect_identical(crossfilter_subject_unit("USUBJID"), "patients")
-  expect_identical(crossfilter_subject_unit("SUBJID"), "patients")
-  expect_identical(crossfilter_subject_unit("pid"), "rows")
-  expect_identical(crossfilter_subject_unit(NULL), "rows")
-  expect_identical(crossfilter_subject_unit(""), "rows")
-})
-
-test_that("the lookups carry the parent table's subject count and unit", {
+test_that("the lookups carry the parent table's subject count", {
   for (key in c("USUBJID", "pid")) {
     d <- subject_dm(key)
     info <- build_crossfilter_lookups(
@@ -30,15 +24,36 @@ test_that("the lookups carry the parent table's subject count and unit", {
     )
     # Three subjects, though ae only covers two of them.
     expect_identical(info$parent_n, 3L)
-    expect_identical(
-      info$subject_unit,
-      if (key == "USUBJID") "patients" else "rows"
-    )
+    expect_null(info$subject_unit)
   }
 })
 
-test_that("the setData message ships parent_n and subject_unit", {
+test_that("the generic block counts rows, whatever its key", {
   blk <- new_crossfilter_block(active_dims = list(adsl = "SEX", ae = "AESEV"))
+
+  testServer(
+    blockr.core:::get_s3_method("block_server", blk),
+    args = list(x = blk, data = list(data = function() subject_dm())),
+    {
+      sent <- list()
+      root <- session$rootScope()
+      root$sendCustomMessage <- function(type, message) {
+        sent[[length(sent) + 1L]] <<- list(type = type, message = message)
+        invisible()
+      }
+      session$flushReact()
+
+      msgs <- Filter(function(m) m$type == "js-crossfilter-data", sent)
+      msg <- msgs[[length(msgs)]]$message
+      expect_null(msg$parent_n)
+      expect_null(msg$subject_unit)
+    }
+  )
+})
+
+test_that("a block that names its subjects ships parent_n and the unit", {
+  blk <- new_crossfilter_block(active_dims = list(adsl = "SEX", ae = "AESEV"),
+                               subject_unit = "patients")
 
   testServer(
     blockr.core:::get_s3_method("block_server", blk),

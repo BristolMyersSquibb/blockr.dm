@@ -299,8 +299,8 @@ flatten_filters_for_lookup <- function(
 #' @param fks FK tibble from dm::dm_get_all_fks()
 #' @param measure_col Optional measure spec (".count" or "table.column")
 #' @return List with lookups, dim_source, parent_key, child_fk_cols,
-#'   parent_table, child_tables, parent_n, subject_unit; or NULL if topology
-#'   doesn't support lookup
+#'   parent_table, child_tables, parent_n; or NULL if topology doesn't
+#'   support lookup
 #' @keywords internal
 build_crossfilter_lookups <- function(
   tables, active_dims, pks, fks, measure_col = NULL
@@ -425,17 +425,10 @@ build_crossfilter_lookups <- function(
     child_fk_cols = as.list(child_fk_col_map),
     parent_table = parent_table,
     child_tables = child_fk_rows$child_table,
-    # The header counts subjects: how many keys the parent table holds, and
-    # the word for one of them.
-    parent_n = length(unique(parent_df[[parent_key]])),
-    subject_unit = crossfilter_subject_unit(parent_key)
+    # How many keys the parent table holds: what a block that counts its
+    # subjects (see `subject_unit` in new_crossfilter_block()) counts from.
+    parent_n = length(unique(parent_df[[parent_key]]))
   )
-}
-
-# The word the crossfilter header counts parent keys in. A CDISC subject id
-# makes every parent row a patient; any other key is counted as rows.
-crossfilter_subject_unit <- function(parent_key) {
-  if (isTRUE(parent_key %in% c("USUBJID", "SUBJID"))) "patients" else "rows"
 }
 
 #' Compute crossfilter-filtered data using precomputed lookups

@@ -51,7 +51,9 @@
 #'   building on this block passes its own `class` here: the subclass has to be
 #'   set at construction, which is where block metadata is resolved from the
 #'   registry. It is not a formal because every constructor formal has to come
-#'   back out as block state.
+#'   back out as block state. The same holds for `subject_unit`: the word the
+#'   header counts the subject table's keys in ("patients"), set by a package
+#'   that knows what its subjects are. Unset, the header counts rows.
 #'
 #' @return A blockr transform block with client-side crossfiltering
 #'
@@ -71,6 +73,12 @@ new_crossfilter_block <- function(
   args <- list(...)
   cls <- args[["class"]] %||% "crossfilter_block"
   args[["class"]] <- NULL
+  # What the header counts. Unset, it counts rows across the tables, which is
+  # all a generic dm offers. A block that knows what its subject table holds
+  # (blockr.pharma's population filter: patients) names the unit, and the
+  # header then counts the subject table's keys in it.
+  subject_unit <- args[["subject_unit"]]
+  args[["subject_unit"]] <- NULL
 
   do.call(
     blockr.core::new_transform_block,
@@ -78,7 +86,7 @@ new_crossfilter_block <- function(
       list(
         server = crossfilter_server(
           active_dims, filters, range_filters, measure, agg_func, featured,
-          pinned, groups, subgroup
+          pinned, groups, subgroup, subject_unit = subject_unit
         ),
         ui = crossfilter_ui,
         allow_empty_state = c(
@@ -458,7 +466,7 @@ crossfilter_groups_payload <- function(groups) {
 crossfilter_server <- function(active_dims, filters, range_filters,
                                measure, agg_func, featured = character(),
                                pinned = NULL, groups = list(),
-                               subgroup = NULL) {
+                               subgroup = NULL, subject_unit = NULL) {
   function(id, data) {
     shiny::moduleServer(id, function(input, output, session) {
       ns <- session$ns
@@ -940,10 +948,11 @@ crossfilter_server <- function(active_dims, filters, range_filters,
             parent_key = lookup_info$parent_key,
             parent_table = lookup_info$parent_table,
             child_fk_cols = lookup_info$child_fk_cols,
-            # NULL from the flat and independent builders: the header then
-            # counts rows, as it did before it counted subjects.
-            parent_n = lookup_info$parent_n,
-            subject_unit = lookup_info$subject_unit,
+            # Only when the block names what its subjects are: the header
+            # then counts them. Otherwise (and from the flat and independent
+            # builders, which have no parent) it counts rows.
+            parent_n = if (!is.null(subject_unit)) lookup_info$parent_n,
+            subject_unit = subject_unit,
             column_info = col_info,
             all_columns = col_info,
             active_dims = safe_active,
