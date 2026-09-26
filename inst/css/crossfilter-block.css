@@ -772,20 +772,23 @@
 /* ============================================================
    Slot (`.blockr-slot`)
    ============================================================ */
-/* A live word: accent text, weight 500, a 1px dashed underline 3px below the
-   text, solid on hover. Declared identically in blockr.viz chart.css until
-   it moves to blockr.ui with the rest of the sentence rules. */
+/* A live word: accent text, weight 500, a 1px dashed underline, solid on
+   hover. The underline is a BORDER, as blockr.ui and blockr.viz draw it: a
+   page loads all three copies, and a text-decoration here drew a second line
+   under every slot on the board. Goes once blockr.ui's own rule
+   (blockr-blocks.css) is on the branch this package pins. */
 .blockr-slot {
+  padding: 0 0 1px;
+  border: 0;
+  border-bottom: 1px dashed currentColor;
   color: var(--blockr-color-text-accent);
   font-weight: var(--blockr-font-weight-medium);
-  text-decoration: underline dashed 1px;
-  text-underline-offset: 3px;
   cursor: pointer;
   transition: color var(--blockr-transition);
 }
 .blockr-slot:hover,
 .blockr-slot--open {
-  text-decoration-style: solid;
+  border-bottom-style: solid;
 }
 .blockr-slot:focus-visible {
   outline: var(--blockr-focus-outline);
