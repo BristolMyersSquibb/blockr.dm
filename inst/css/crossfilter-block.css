@@ -996,6 +996,22 @@
   font-size: var(--blockr-font-size-xs);
   color: var(--blockr-color-text-danger);
 }
+/* The subgroup's pools while they overlap: the amber cue on its fields and
+   one line saying why (_syncOverlap). */
+.jscf-groups-warning:empty {
+  display: none;
+}
+.jscf-groups-warning {
+  margin: 2px 0 8px;
+  font-size: var(--blockr-font-size-xs);
+  line-height: 1.4;
+  color: var(--blockr-color-text-warning);
+}
+.jscf-groups--overlap .blockr-select--bordered .blockr-select__control,
+.jscf-groups--overlap .jscf-groups-summary .jscf-groups-tag {
+  border-color: var(--blockr-color-border-warning);
+  background-color: var(--blockr-color-bg-warning);
+}
 .jscf-groups-add {
   min-height: var(--blockr-control-h-xs);
   padding: 0;

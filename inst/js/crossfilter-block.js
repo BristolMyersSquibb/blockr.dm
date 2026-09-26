@@ -1157,9 +1157,51 @@
       };
       if (this._isDefaultGroupDef(s, def)) delete this.groupDefs[s.col];
       else this.groupDefs[s.col] = out;
+      this._syncOverlap(s);
       const nsBase = this.el.id.replace(/-crossfilter_input$/, '');
       Shiny.setInputValue(nsBase + '-set_groups',
         Object.assign({ column: s.col }, out), { priority: 'event' });
+    }
+
+    // Levels that sit in two columns of a split: shown on their own and in a
+    // pool, or in two pools. Mirrors group_definition() in blockr.pharma,
+    // which counts only levels present in the data and pools with members.
+    _overlapLevels(s) {
+      if (!s.edit) return [];
+      const present = new Set(s.levels.map(l => l.value));
+      const seen = new Set();
+      const twice = [];
+      const cols = [s.edit.show].concat(
+        s.edit.pools.filter(p => p.members.length).map(p => p.members));
+      for (const col of cols) {
+        for (const v of new Set(col)) {
+          if (!present.has(v)) continue;
+          if (seen.has(v) && !twice.includes(v)) twice.push(v);
+          seen.add(v);
+        }
+      }
+      return twice;
+    }
+
+    // A group's pools may overlap: composer pools the outer split. A
+    // subgroup's may not, and a table would fail far from here. So the
+    // subgroup's pools take the amber cue and say why, while they overlap,
+    // however they got there (an edit, the swap, a saved board).
+    _syncOverlap(s) {
+      if (s.role !== 'subgroup' || !s.el) return;
+      const twice = this._overlapLevels(s);
+      s.el.classList.toggle('jscf-groups--overlap', twice.length > 0);
+      if (!s.warnEl) return;
+      if (!twice.length) {
+        s.warnEl.textContent = '';
+        return;
+      }
+      const shown = twice.slice(0, 3).join(', ') +
+        (twice.length > 3 ? ` and ${twice.length - 3} more` : '');
+      const verb = twice.length === 1 ? 'is' : 'are each';
+      s.warnEl.textContent = `${shown} ${verb} in two columns. Tables can ` +
+        'pool the group but not the subgroup: use each level once, or ' +
+        'switch group and subgroup.';
     }
 
     _select() {
@@ -1232,6 +1274,10 @@
       });
       head.appendChild(rm);
       s.el.appendChild(head);
+      // The overlap warning, filled by _syncOverlap (subgroup only).
+      s.warnEl = el('div', 'jscf-groups-warning');
+      s.warnEl.setAttribute('role', 'status');
+      s.el.appendChild(s.warnEl);
       this._renderSplitAdd();
 
       if (!s.open) {
@@ -1245,6 +1291,7 @@
           summary.appendChild(tag);
         }
         s.el.appendChild(summary);
+        this._syncOverlap(s);
         return;
       }
 
@@ -1292,6 +1339,7 @@
       body.appendChild(addRow);
 
       s.el.appendChild(body);
+      this._syncOverlap(s);
     }
 
     _renderPool(s, pool, options, icons) {
