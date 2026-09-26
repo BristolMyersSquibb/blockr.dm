@@ -330,13 +330,13 @@
       this.statusEl = el('span', 'jscf-status-text');
       gearHeader.appendChild(this.statusEl);
 
-      // Reset all: the design system's 26px main button, with the number of
-      // active filters as a count while any is on, and disabled when none is.
-      // Its tooltip names the clause it would undo.
+      // Reset all: the design system's 26px main button, the icon and the
+      // number of active filters as a count while any is on, disabled when
+      // none is. No label: the tint and the count carry it, and the tooltip
+      // names the clause it would undo.
       this.resetBtn = el('button', 'jscf-reset-btn', ICON_RESET);
       this.resetBtn.type = 'button';
       this.resetBtn.setAttribute('aria-label', 'Reset all filters');
-      this.resetBtn.appendChild(el('span', 'jscf-reset-label', 'Reset all'));
       this.resetCountEl = el('span', 'jscf-reset-count');
       this.resetCountEl.style.display = 'none';
       this.resetBtn.appendChild(this.resetCountEl);

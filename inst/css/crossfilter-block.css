@@ -59,16 +59,19 @@
   white-space: nowrap;
 }
 
-/* Reset all: the xs main button (26px, 12px, 9px side padding, radius 4,
-   weight 500, the accent tint). Disabled rather than hidden when nothing is
-   filtered: a control that appears and disappears under the cursor is worse
-   than a dim one. */
+/* Reset all: the xs main button (26px, radius 4, weight 500, the accent
+   tint), the icon and the count, no label. Disabled rather than hidden when
+   nothing is filtered: a control that appears and disappears under the cursor
+   is worse than a dim one. */
 .jscf-reset-btn {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  justify-content: center;
+  gap: 4px;
+  box-sizing: border-box;
+  min-width: var(--blockr-control-h-xs);
   height: var(--blockr-control-h-xs);
-  padding: 0 9px;
+  padding: 0 6px;
   font: inherit;
   font-size: var(--blockr-font-size-xs);
   font-weight: var(--blockr-font-weight-medium);
@@ -77,7 +80,6 @@
   border: 1px solid var(--blockr-color-border-accent-subtle);
   border-radius: var(--blockr-radius-sm);
   cursor: pointer;
-  /* A two-line label makes the button taller than the gear beside it. */
   white-space: nowrap;
   flex-shrink: 0;
   transition: color var(--blockr-transition),
@@ -98,16 +100,6 @@
   background: transparent;
   border-color: var(--blockr-color-border-default);
   cursor: default;
-}
-/* Narrow block: the label goes, the glyph and the count stay. */
-@container (max-width: 420px) {
-  .jscf-reset-label {
-    display: none;
-  }
-  .jscf-reset-btn {
-    gap: 4px;
-    padding: 0 7px;
-  }
 }
 
 /* The count on an accent host: a 16px capsule, 11px weight 600, the accent
