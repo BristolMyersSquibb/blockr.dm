@@ -1,4 +1,12 @@
-/* JS Crossfilter Block — blockr design system */
+/* JS Crossfilter Block — blockr design system
+
+   Reads the design system's meaning tokens only (blockr.ui, pulled in by
+   blockr.ui::controls_dep()), without fallbacks. The controls it mounts
+   (Select, the gear tray, the segmented control, the tooltip, the add link,
+   the row remove) are the shared ones and are not restyled here; what is
+   here is the crossfilter's own layout and the pieces the shared layer does
+   not have yet (the main button with its count, badges, the column menu's
+   rows, the filter cards). */
 
 /* ============================================================
    Container
@@ -18,21 +26,14 @@
 }
 
 /* ============================================================
-   Gear button + popover (matches blockr.dplyr pattern)
+   Header row: "Filter by", the row count, Reset all, the gear
    ============================================================ */
-/* The filter section's header: "Filter by" on the left, then the row count,
-   the reset and the gear. No rule under it -- the group field above draws the
-   only divider the block needs, and a second one here would cut the label off
-   the pills it names. */
+/* No rule under it: the group field above draws the only divider the block
+   needs, and a second one here would cut the label off the tags it names. */
 .jscf-gear-header {
   display: flex;
   align-items: center;
   gap: 8px;
-  /* The positioning context for the settings band, which hangs off this row
-     because the gear that opens it sits on it. */
-  position: relative;
-  /* Same 12px the section leaves under the pill row: the header is a header,
-     not the first line of the pills. */
   margin-bottom: 12px;
 }
 .jscf-gear-header .blockr-label {
@@ -42,283 +43,63 @@
 .jscf-topbar-spacer {
   flex: 1;
 }
-/* The gear sits in this wrapper; without it the wrapper, not the button,
-   is the flex item that gives way when the block gets very narrow. */
-.jscf-popover-anchor {
+.jscf-gear-header .blockr-gear-btn {
   flex-shrink: 0;
 }
-.jscf-gear-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 26px;
-  height: 26px;
-  flex-shrink: 0;
-  color: var(--blockr-grey-400, #9ca3af);
-  background: transparent;
-  border: 1px solid var(--blockr-color-border, #e5e7eb);
-  border-radius: 4px;
-  cursor: pointer;
-  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
-}
-.jscf-gear-btn:hover {
-  color: var(--blockr-color-primary, #2563eb);
-  border-color: rgba(37, 99, 235, 0.3);
-  background: rgba(37, 99, 235, 0.04);
-}
-.jscf-gear-btn.jscf-gear-active {
-  color: var(--blockr-color-primary, #2563eb);
-  border-color: rgba(37, 99, 235, 0.3);
-  background: rgba(37, 99, 235, 0.08);
-}
 
-/* Gear options band. Not a floating popover: an in-flow, full-width band
-   under the header, so opening it pushes the block content down instead of
-   covering the pills and cards, and it shrinks to the block width instead of
-   overflowing a narrow sidebar. Same band the value filter block uses
-   (.bi-filter-settings), which mirrors blockr.viz's settings-band.css. */
-.jscf-popover {
-  display: none;
-  position: relative;
-  background: #fff;
-  border: 1px solid var(--blockr-color-border, #e5e7eb);
-  border-radius: 8px;
-  padding: 12px 14px 14px;
-  margin-bottom: 12px;
-  box-sizing: border-box;
-}
-/* Beak on the top-right edge pointing at the gear button, which is the last
-   thing on the header row above (shown only while open -- the band is
-   display:none when closed, so ::before never renders). */
-.jscf-popover::before {
-  content: "";
-  position: absolute;
-  top: -6px;
-  right: 8px;
-  width: 10px;
-  height: 10px;
-  background: #fff;
-  border-left: 1px solid var(--blockr-color-border, #e5e7eb);
-  border-top: 1px solid var(--blockr-color-border, #e5e7eb);
-  transform: rotate(45deg);
-}
-
-/* Search inside popover */
-.jscf-popover-search {
-  width: 100%;
-  padding: 8px 12px;
-  font-size: var(--blockr-font-size-base, 0.875rem);
-  border: 1px solid var(--blockr-color-border, #e5e7eb);
-  border-radius: 8px;
-  background: var(--blockr-color-bg-input, #f9fafb);
-  color: var(--blockr-color-text-primary, #111827);
-  outline: none;
-  box-sizing: border-box;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
-}
-.jscf-popover-search:focus {
-  background: #fff;
-  border-color: var(--blockr-color-primary, #2563eb);
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
-}
-
-/* Search results inside popover */
-/* The band is in flow, so this list's height is height the block takes from
-   the cards below it: 220px shows about seven columns and still scrolls. */
-.jscf-popover-results {
-  margin-top: 8px;
-  max-height: 220px;
-  overflow-y: auto;
-}
-.jscf-search-group-header {
-  padding: 6px 8px;
-  font-size: var(--blockr-font-size-xs, 0.75rem);
-  font-weight: var(--blockr-font-weight-medium, 500);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--blockr-grey-500, #6b7280);
-}
-.jscf-search-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 7px 8px;
-  font-size: var(--blockr-font-size-sm, 0.8125rem);
-  cursor: pointer;
-  border-radius: 4px;
-  transition: background-color 0.1s ease;
-}
-.jscf-search-item:hover {
-  background: var(--blockr-grey-100, #f3f4f6);
-}
-/* A column that already has a card. Same channel the pill row uses -- fill
-   means "this one is open" -- so the list can hold every column without the
-   active ones looking like new ones. Clicking such a row closes the card. */
-.jscf-search-item--active {
-  background: var(--blockr-grey-100, #f3f4f6);
-}
-.jscf-search-item--active:hover {
-  background: var(--blockr-grey-200, #e5e7eb);
-}
-.jscf-search-item-icon {
-  color: var(--blockr-grey-400, #9ca3af);
-  flex-shrink: 0;
-  width: 18px;
-  text-align: center;
-  font-size: 14px;
-}
-.jscf-search-item-name {
-  flex: 1;
-  font-weight: var(--blockr-font-weight-medium, 500);
-  color: var(--blockr-color-text-primary, #111827);
-}
-.jscf-search-item-label {
-  font-size: 0.85em;
-  font-weight: 400;
-  color: var(--blockr-grey-400, #9ca3af);
-  margin-left: 4px;
-}
-.jscf-search-item-badge {
-  font-size: 11px;
-  padding: 1px 8px;
-  border-radius: 9999px;
-  font-weight: 500;
-  flex-shrink: 0;
-}
-/* The row's answer to its own click: the type badge steps aside and a state
-   chip takes its slot, so the row says what it did without changing width.
-   Both are the badge's geometry. Hover an added row and it offers the undo,
-   which is what a second click on it is. */
-.jscf-search-item-state {
-  display: none;
-  align-items: center;
-  gap: 3px;
-  flex-shrink: 0;
-  padding: 1px 8px;
-  border-radius: 9999px;
-  font-size: 11px;
-  font-weight: 500;
-  white-space: nowrap;
-}
-.jscf-search-item--active .jscf-search-item-badge {
-  display: none;
-}
-.jscf-search-item--active .jscf-search-item-state {
-  display: inline-flex;
-  color: var(--blockr-blue-700, #1d4ed8);
-  background: var(--blockr-blue-50, #eff6ff);
-}
-.jscf-state-added,
-.jscf-state-remove {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-}
-.jscf-state-remove {
-  display: none;
-}
-.jscf-search-item--active:hover .jscf-search-item-state {
-  color: #dc3545;
-  background: rgba(220, 53, 69, 0.08);
-}
-.jscf-search-item--active:hover .jscf-state-added {
-  display: none;
-}
-.jscf-search-item--active:hover .jscf-state-remove {
-  display: inline-flex;
-}
-
-.jscf-badge-categorical { color: #7c3aed; background: #f3e8ff; }
-.jscf-badge-numeric     { color: #059669; background: #ecfdf5; }
-.jscf-badge-date        { color: #d97706; background: #fffbeb; }
-.jscf-search-empty {
-  padding: 12px 8px;
-  text-align: center;
-  color: var(--blockr-grey-400, #9ca3af);
-  font-style: italic;
-  font-size: var(--blockr-font-size-sm, 0.8125rem);
-}
-/* Measure / aggregation controls in popover */
-.jscf-measure-section {
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px solid var(--blockr-grey-200, #e5e7eb);
-}
-.jscf-popover-select {
-  width: 100%;
-  padding: 6px 28px 6px 10px;
-  font-size: var(--blockr-font-size-sm, 0.8125rem);
-  border: 1px solid var(--blockr-color-border, #e5e7eb);
-  border-radius: 6px;
-  background-color: var(--blockr-color-bg-input, #f9fafb);
-  color: var(--blockr-color-text-primary, #111827);
-  outline: none;
-  box-sizing: border-box;
-  /* Match the Blockr.Select chevron (grey-400, same SVG glyph) instead of
-     showing the browser's native dropdown arrow. */
-  appearance: none;
-  -webkit-appearance: none;
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none' stroke='%239ca3af' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'><polyline points='3 4.5 6 7.5 9 4.5'/></svg>");
-  background-repeat: no-repeat;
-  background-position: right 10px center;
-  cursor: pointer;
-}
-.jscf-popover-select:focus {
-  border-color: var(--blockr-color-primary, #2563eb);
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
-}
-
-
-/* ============================================================
-   Status text + reset button (top bar)
-   ============================================================ */
+/* The status line: 12px muted, tabular figures. Shrinks and ellipsises
+   before the buttons give up any width. */
 .jscf-status-text {
-  font-size: var(--blockr-font-size-xs, 0.75rem);
-  color: var(--blockr-grey-500, #6b7280);
+  font-size: var(--blockr-font-size-xs);
+  color: var(--blockr-color-text-muted);
   font-variant-numeric: tabular-nums;
-  /* Shrinks and ellipsises before the buttons give up any width. */
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* Reset all: tinted while filters are on, so the button is also the
-   "you are looking at a subset" signal. Disabled rather than hidden when
-   nothing is filtered -- a control that appears and disappears under the
-   cursor is worse than a dim one. */
+/* Reset all: the xs main button (26px, 12px, 9px side padding, radius 4,
+   weight 500, the accent tint). Disabled rather than hidden when nothing is
+   filtered: a control that appears and disappears under the cursor is worse
+   than a dim one. */
 .jscf-reset-btn {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  height: 26px;
+  height: var(--blockr-control-h-xs);
   padding: 0 9px;
-  font-size: var(--blockr-font-size-xs, 0.75rem);
-  font-weight: var(--blockr-font-weight-medium, 500);
-  color: var(--blockr-color-primary, #2563eb);
-  background: rgba(37, 99, 235, 0.07);
-  border: 1px solid rgba(37, 99, 235, 0.35);
-  border-radius: 4px;
+  font: inherit;
+  font-size: var(--blockr-font-size-xs);
+  font-weight: var(--blockr-font-weight-medium);
+  color: var(--blockr-color-text-accent);
+  background: var(--blockr-color-bg-accent-subtle);
+  border: 1px solid var(--blockr-color-border-accent-subtle);
+  border-radius: var(--blockr-radius-sm);
   cursor: pointer;
-  /* The label must never wrap: a two-line label makes the button taller than
-     the gear beside it and the row stops reading as one strip. */
+  /* A two-line label makes the button taller than the gear beside it. */
   white-space: nowrap;
   flex-shrink: 0;
-  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+  transition: color var(--blockr-transition),
+    border-color var(--blockr-transition),
+    background var(--blockr-transition);
 }
 .jscf-reset-btn:hover {
-  background: rgba(37, 99, 235, 0.13);
-  border-color: var(--blockr-color-primary, #2563eb);
+  background: var(--blockr-color-bg-accent-subtle-hover);
+  border-color: var(--blockr-color-border-accent);
 }
-.jscf-reset-btn:disabled {
-  color: var(--blockr-grey-500, #6b7280);
+.jscf-reset-btn:focus-visible {
+  outline: var(--blockr-focus-outline);
+  outline-offset: var(--blockr-focus-offset);
+}
+.jscf-reset-btn:disabled,
+.jscf-reset-btn:disabled:hover {
+  color: var(--blockr-color-text-disabled);
   background: transparent;
-  border-color: var(--blockr-color-border, #e5e7eb);
-  opacity: 0.4;
+  border-color: var(--blockr-color-border-default);
   cursor: default;
 }
-/* Narrow block: drop the label, keep the glyph and the count. The button
-   stays 26px square like the gear, and its title carries the wording. */
+/* Narrow block: the label goes, the glyph and the count stay. */
 @container (max-width: 420px) {
   .jscf-reset-label {
     display: none;
@@ -329,41 +110,242 @@
   }
 }
 
+/* The count on an accent host: a 16px capsule, 11px weight 600, the accent
+   at 14% with text-accent-strong. Shown only above zero (the JS hides it). */
 .jscf-reset-count {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 15px;
-  height: 15px;
+  box-sizing: border-box;
+  min-width: 16px;
+  height: 16px;
   padding: 0 4px;
-  border-radius: 9999px;
-  background: var(--blockr-color-primary, #2563eb);
-  color: #fff;
-  font-size: 10px;
-  font-weight: var(--blockr-font-weight-semibold, 600);
+  border-radius: var(--blockr-radius-pill);
+  background: color-mix(in srgb, var(--blockr-color-border-accent) 14%, transparent);
+  color: var(--blockr-color-text-accent-strong);
+  font-size: 11px;
+  font-weight: var(--blockr-font-weight-semibold);
+  font-variant-numeric: tabular-nums;
   line-height: 1;
 }
 
 /* ============================================================
-   Table sections (light headers)
+   Gear tray (Blockr.gearTray, blockr-settings-band.css)
+   ============================================================ */
+/* In flow under the header row, above the tags. Its look, beak and grid are
+   the shared tray's; only the hint under a field is the crossfilter's. */
+.jscf-settings-hint {
+  margin: 4px 0 0;
+  font-size: var(--blockr-font-size-xs);
+  line-height: 1.4;
+  color: var(--blockr-color-text-muted);
+}
+
+/* ============================================================
+   Column menu ("+ More filters")
+   ============================================================ */
+/* The design system's floating surface: bg-raised, border-default, radius 8,
+   shadow-md, 6px inner padding for a menu opened from a button. Portalled to
+   <body> while open and placed by Blockr.place, which sets its position and
+   width. The filter box stays at the top while the rows scroll under it. */
+.jscf-menu {
+  position: fixed;
+  z-index: 9999;
+  box-sizing: border-box;
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 0 6px 6px;
+  background: var(--blockr-color-bg-raised);
+  border: 1px solid var(--blockr-color-border-default);
+  border-radius: var(--blockr-radius-lg);
+  box-shadow: var(--blockr-shadow-md);
+  font-size: var(--blockr-font-size-base);
+  color: var(--blockr-color-text-default);
+}
+.jscf-menu *,
+.jscf-menu *::before,
+.jscf-menu *::after {
+  box-sizing: border-box;
+}
+
+/* The filter box: 30px, the same as Select's. */
+.jscf-popover-search {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: block;
+  width: 100%;
+  height: var(--blockr-control-h-sm);
+  margin: 0 0 5px;
+  padding: 0 9px;
+  font: inherit;
+  font-size: var(--blockr-font-size-sm);
+  color: var(--blockr-color-text-default);
+  background: var(--blockr-color-bg-field);
+  border: 1px solid var(--blockr-color-border-default);
+  border-radius: var(--blockr-radius-md);
+  outline: none;
+  /* Covers the 6px above it, so nothing shows between the box and the
+     border while the list scrolls under it. */
+  box-shadow: 0 -6px 0 6px var(--blockr-color-bg-raised);
+  transition: border-color var(--blockr-transition),
+    box-shadow var(--blockr-transition);
+}
+.jscf-menu .jscf-popover-search {
+  margin-top: 6px;
+}
+.jscf-popover-search::placeholder {
+  color: var(--blockr-color-text-muted);
+}
+.jscf-popover-search:focus {
+  border-color: var(--blockr-color-border-accent);
+  box-shadow: 0 -6px 0 6px var(--blockr-color-bg-raised), var(--blockr-focus-ring);
+}
+
+/* A group title (a table, where there are several): the section-title
+   style, 8px above and 4px below, inset to the row text, sticky under the
+   filter box. */
+.jscf-search-group-header {
+  position: sticky;
+  top: 35px;
+  z-index: 1;
+  padding: 8px 10px 4px;
+  font-size: var(--blockr-font-size-xs);
+  font-weight: var(--blockr-font-weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--blockr-color-text-muted);
+  background: var(--blockr-color-bg-raised);
+}
+
+/* Rows: 34px, 14px, radius 4, 10px side padding. */
+.jscf-search-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 0 10px;
+  border-radius: var(--blockr-radius-sm);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.jscf-search-item:hover,
+.jscf-search-item--highlighted {
+  background: var(--blockr-color-bg-hover);
+}
+.jscf-search-item-icon {
+  flex-shrink: 0;
+  width: 14px;
+  text-align: center;
+  font-size: var(--blockr-font-size-sm);
+  color: var(--blockr-color-text-muted);
+}
+/* The name, then its label as 13px muted meta 8px after it; the label is
+   cut first when the row runs out of room. */
+.jscf-search-item-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--blockr-color-text-default);
+}
+.jscf-search-item-label {
+  margin-left: 8px;
+  font-size: var(--blockr-font-size-sm);
+  color: var(--blockr-color-text-muted);
+}
+/* Muted text never sits on the hover wash. */
+.jscf-search-item:hover .jscf-search-item-label,
+.jscf-search-item:hover .jscf-search-item-icon,
+.jscf-search-item--highlighted .jscf-search-item-label,
+.jscf-search-item--highlighted .jscf-search-item-icon {
+  color: var(--blockr-color-text-default);
+}
+
+/* Badges: an 18px capsule, 11px weight 500, 7px side padding. The type is
+   neutral; "Added" is on, so it takes the accent tint; hovering an added row
+   offers the undo in the danger set. The state badge takes the type badge's
+   slot, so the row keeps its width. */
+.jscf-search-item-badge,
+.jscf-search-item-state {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  box-sizing: border-box;
+  height: 18px;
+  padding: 0 7px;
+  border: 1px solid var(--blockr-color-border-default);
+  border-radius: var(--blockr-radius-pill);
+  background: var(--blockr-color-bg-subtle);
+  color: var(--blockr-color-text-muted);
+  font-size: 11px;
+  font-weight: var(--blockr-font-weight-medium);
+  line-height: 1;
+  white-space: nowrap;
+}
+.jscf-search-item-state {
+  display: none;
+}
+.jscf-search-item--active .jscf-search-item-badge {
+  display: none;
+}
+.jscf-search-item--active .jscf-search-item-state {
+  display: inline-flex;
+  color: var(--blockr-color-text-accent);
+  background: var(--blockr-color-bg-accent-subtle);
+  border-color: var(--blockr-color-border-accent-subtle);
+}
+.jscf-state-added,
+.jscf-state-remove {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.jscf-state-remove {
+  display: none;
+}
+.jscf-search-item--active:hover .jscf-search-item-state,
+.jscf-search-item--active.jscf-search-item--highlighted .jscf-search-item-state {
+  color: var(--blockr-color-text-danger);
+  background: var(--blockr-color-bg-danger);
+  border-color: var(--blockr-color-border-danger-subtle);
+}
+.jscf-search-item--active:hover .jscf-state-added,
+.jscf-search-item--active.jscf-search-item--highlighted .jscf-state-added {
+  display: none;
+}
+.jscf-search-item--active:hover .jscf-state-remove,
+.jscf-search-item--active.jscf-search-item--highlighted .jscf-state-remove {
+  display: inline-flex;
+}
+
+.jscf-search-empty {
+  padding: 8px 10px;
+  text-align: center;
+  font-style: italic;
+  color: var(--blockr-color-text-muted);
+}
+
+/* ============================================================
+   Table sections
    ============================================================ */
 .dm-cf-table-section {
   margin-bottom: 16px;
 }
+/* The table a group of cards comes from: the section-title style. */
 .dm-cf-table-header {
-  padding: 4px 2px;
-  font-size: var(--blockr-font-size-xs, 0.75rem);
-  font-weight: var(--blockr-font-weight-medium, 500);
+  margin-bottom: 10px;
+  font-size: var(--blockr-font-size-xs);
+  font-weight: var(--blockr-font-weight-semibold);
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: var(--blockr-grey-500, #6b7280);
-  border-bottom: 1px solid var(--blockr-grey-200, #e5e7eb);
-  margin-bottom: 8px;
+  color: var(--blockr-color-text-muted);
 }
 .dm-cf-dims-wrap {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px 16px;
+  gap: 16px 16px;
 }
 
 /* ============================================================
@@ -379,70 +361,94 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 2px;
+  gap: 8px;
+  margin-bottom: 4px;
 }
+/* The column's name, then its label as 13px muted meta 8px after it, cut
+   first when the card runs out of room. */
 .dm-cf-filter-card-label {
-  font-weight: var(--blockr-font-weight-medium, 500);
-  font-size: var(--blockr-font-size-sm, 0.8125rem);
-  color: var(--blockr-color-text-primary, #111827);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--blockr-font-size-base);
+  font-weight: var(--blockr-font-weight-semibold);
+  color: var(--blockr-color-text-default);
 }
 .dm-cf-filter-card-sublabel {
-  font-size: 0.85em;
-  font-weight: 400;
-  color: var(--blockr-grey-400, #9ca3af);
-  margin-left: 6px;
+  margin-left: 8px;
+  font-size: var(--blockr-font-size-sm);
+  font-weight: var(--blockr-font-weight-normal);
+  color: var(--blockr-color-text-muted);
 }
 .dm-cf-filter-card-actions {
   display: flex;
+  flex-shrink: 0;
   gap: 2px;
   align-items: center;
 }
+/* Reset and remove: 26px tools, always shown (the crossfilter cards are the
+   exception to "hidden until hover"). Icon muted, the hover wash; remove
+   turns danger. */
 .dm-cf-reset-btn,
 .dm-cf-remove-btn {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 20px;
-  height: 20px;
+  width: var(--blockr-control-h-xs);
+  height: var(--blockr-control-h-xs);
   padding: 0;
   background: transparent;
   border: none;
-  border-radius: 4px;
-  color: var(--blockr-grey-400, #9ca3af);
+  border-radius: var(--blockr-radius-sm);
+  color: var(--blockr-color-text-muted);
   cursor: pointer;
-  transition: background-color 0.15s, color 0.15s;
+  transition: background-color var(--blockr-transition),
+    color var(--blockr-transition);
 }
 .dm-cf-reset-btn:hover {
-  background: var(--blockr-grey-100, #f3f4f6);
-  color: var(--blockr-grey-700, #374151);
+  background: var(--blockr-color-bg-hover);
+  color: var(--blockr-color-text-default);
 }
 .dm-cf-remove-btn:hover {
-  background: rgba(220, 53, 69, 0.08);
-  color: #dc3545;
+  background: var(--blockr-color-bg-hover);
+  color: var(--blockr-color-text-danger);
+}
+.dm-cf-reset-btn:focus-visible,
+.dm-cf-remove-btn:focus-visible {
+  outline: var(--blockr-focus-outline);
+  outline-offset: var(--blockr-focus-offset);
 }
 
 /* ============================================================
-   Categorical table widget
+   Categorical card
    ============================================================ */
-/* Density: this widget is a list you scan, and every row costs the block a
-   line it could have spent on another card. Rows, header, search and the bars
-   are all one notch tighter than the block defaults, and the bar is a
-   supporting mark, so it gives up width before the label does. */
+/* The card search: a 30px field. */
 .dm-cf-tw-search {
+  display: block;
   width: 100%;
-  padding: 2px 8px;
-  font-size: var(--blockr-font-size-xs, 0.75rem);
-  line-height: 1.4;
-  border: 1px solid var(--blockr-color-border, #e5e7eb);
-  border-radius: 4px;
-  margin-bottom: 3px;
+  height: var(--blockr-control-h-sm);
+  margin-bottom: 4px;
+  padding: 0 10px;
   box-sizing: border-box;
+  font: inherit;
+  font-size: var(--blockr-font-size-sm);
+  color: var(--blockr-color-text-default);
+  background: var(--blockr-color-bg-field);
+  border: 1px solid var(--blockr-color-border-default);
+  border-radius: var(--blockr-radius-md);
   outline: none;
+  transition: border-color var(--blockr-transition),
+    box-shadow var(--blockr-transition);
+}
+.dm-cf-tw-search::placeholder {
+  color: var(--blockr-color-text-muted);
 }
 .dm-cf-tw-search:focus {
-  border-color: var(--blockr-color-primary, #2563eb);
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+  border-color: var(--blockr-color-border-accent);
+  box-shadow: var(--blockr-focus-ring);
 }
+/* 200px: about six 30px rows under the header. */
 .dm-cf-tw-scroll {
   max-height: 200px;
   overflow-y: auto;
@@ -450,22 +456,26 @@
 .dm-cf-tw-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: var(--blockr-font-size-sm, 0.8125rem);
+  font-size: var(--blockr-font-size-sm);
   table-layout: fixed;
 }
 .dm-cf-tw-th {
   position: sticky;
   top: 0;
-  background: #fff;
-  font-size: var(--blockr-font-size-xs, 0.75rem);
-  font-weight: var(--blockr-font-weight-semibold, 600);
-  line-height: 1.3;
-  padding: 2px 6px;
-  text-align: left;
-  user-select: none;
-  white-space: nowrap;
-  color: var(--blockr-grey-500, #6b7280);
   z-index: 1;
+  height: 24px;
+  padding: 0 8px;
+  background: var(--blockr-color-bg-surface);
+  font-size: var(--blockr-font-size-xs);
+  font-weight: var(--blockr-font-weight-semibold);
+  text-align: left;
+  white-space: nowrap;
+  user-select: none;
+  cursor: pointer;
+  color: var(--blockr-color-text-muted);
+}
+.dm-cf-tw-th:hover {
+  color: var(--blockr-color-text-default);
 }
 .jscf-sort-icon {
   display: inline-block;
@@ -479,27 +489,46 @@
 }
 .jscf-sort-asc::after {
   content: '\2191';
-  color: var(--blockr-grey-700, #374151);
+  color: var(--blockr-color-text-default);
 }
 .jscf-sort-desc::after {
   content: '\2193';
-  color: var(--blockr-grey-700, #374151);
+  color: var(--blockr-color-text-default);
 }
+/* Rows: 30px. The hover wash; the value turns muted when another value of
+   the column is picked and this one is not. */
 .dm-cf-tw-row {
+  height: 30px;
   cursor: pointer;
-}
-.dm-cf-tw-row:hover {
-  background: var(--blockr-grey-100, #f3f4f6);
+  color: var(--blockr-color-text-default);
 }
 .dm-cf-tw-row td {
-  padding: 2px 6px;
-  line-height: 1.25;
+  padding: 3px 8px;
+  line-height: 1.3;
+}
+.dm-cf-tw-row td:first-child {
+  border-radius: var(--blockr-radius-sm) 0 0 var(--blockr-radius-sm);
+}
+.dm-cf-tw-row td:last-child {
+  border-radius: 0 var(--blockr-radius-sm) var(--blockr-radius-sm) 0;
+}
+.dm-cf-tw-row:hover td {
+  background: var(--blockr-color-bg-hover);
 }
 .dm-cf-tw-row.dimmed td {
-  color: var(--blockr-grey-400, #9ca3af);
+  color: var(--blockr-color-text-muted);
+}
+/* Muted text never sits on the hover wash. */
+.dm-cf-tw-row.dimmed:hover td,
+.dm-cf-tw-row:hover .dm-cf-tw-bar-label,
+.dm-cf-tw-row:hover .dm-cf-tw-missing {
+  color: var(--blockr-color-text-default);
 }
 .dm-cf-tw-row.dimmed .dm-cf-tw-bar-fill {
   opacity: 0.2;
+}
+.dm-cf-tw-missing {
+  color: var(--blockr-color-text-muted);
 }
 .dm-cf-tw-bar-cell {
   display: flex;
@@ -507,43 +536,44 @@
   justify-content: flex-end;
   gap: 5px;
 }
-/* Track and fill both round on the RIGHT only: the left end is zero, shared by
-   every row, and rounding it would lift the bar off its baseline. See
-   --blockr-mark-radius in blockr.dock's design-system CSS for the full rule. */
+/* Bars: the accent at --blockr-mark-weight-supporting, the value end rounded
+   by --blockr-mark-radius; the zero end is shared by every row and stays
+   square. The track is a light wash of the text colour, so it still shows on
+   a hovered row. */
 .dm-cf-tw-bar-track {
   flex: 1;
   max-width: 96px;
   height: 12px;
-  background: var(--blockr-grey-100, #f3f4f6);
-  border-radius: 0 var(--blockr-mark-radius, 2px) var(--blockr-mark-radius, 2px) 0;
+  background: color-mix(in srgb, var(--blockr-color-text-default) 6%, transparent);
+  border-radius: 0 var(--blockr-mark-radius) var(--blockr-mark-radius) 0;
   overflow: hidden;
   position: relative;
 }
 .dm-cf-tw-bar-fill {
   height: 100%;
-  border-radius: 0 var(--blockr-mark-radius, 2px) var(--blockr-mark-radius, 2px) 0;
-  background: var(--blockr-color-primary, #2563eb);
+  border-radius: 0 var(--blockr-mark-radius) var(--blockr-mark-radius) 0;
+  background: var(--blockr-color-bg-accent);
   /* These bars support a CHOICE (which level to filter to); they are not the
      answer, so they carry less weight than a summarize-table bar. NOTE: the
-     .dimmed rule below drives the SAME property to 0.2 to mean "this row is
+     .dimmed rule above drives the SAME property to 0.2 to mean "this row is
      excluded". Two unrelated meanings on one property -- it overrides rather
      than multiplies, and must stay that way. */
-  opacity: var(--blockr-mark-weight-supporting, 0.6);
+  opacity: var(--blockr-mark-weight-supporting);
 }
 .dm-cf-tw-bar-label {
-  font-size: var(--blockr-font-size-xs, 0.75rem);
-  /* Set per card by _sizeCountColumn() from the widest number rendered; the
-     fallback is the old fixed width. One width per card keeps the bars
-     aligned down the column. */
+  font-size: var(--blockr-font-size-xs);
+  font-variant-numeric: tabular-nums;
+  /* Set per card by _sizeCountColumn() from the widest number rendered. One
+     width per card keeps the bars aligned down the column. */
   width: var(--jscf-count-w, 60px);
   text-align: right;
   flex-shrink: 0;
   white-space: nowrap;
-  color: var(--blockr-grey-500, #6b7280);
+  color: var(--blockr-color-text-muted);
 }
 
 /* ============================================================
-   Range slider
+   Range card
    ============================================================ */
 .dm-cf-range-card {
   flex: 1;
@@ -551,15 +581,28 @@
   max-width: 350px;
 }
 .dm-cf-range-info {
-  font-size: var(--blockr-font-size-xs, 0.75rem);
-  color: var(--blockr-grey-500, #6b7280);
   margin-bottom: 2px;
+  font-size: var(--blockr-font-size-xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--blockr-color-text-muted);
 }
 .dm-cf-density-svg {
   width: 100%;
   height: 60px;
   display: block;
   margin-bottom: -4px;
+}
+/* Every row the other filters leave, in grey; the part inside the handles in
+   the accent. */
+.dm-cf-density-all {
+  fill: color-mix(in srgb, var(--blockr-color-text-muted) 18%, transparent);
+  stroke: color-mix(in srgb, var(--blockr-color-text-muted) 45%, transparent);
+  stroke-width: 1;
+}
+.dm-cf-density-cut {
+  fill: color-mix(in srgb, var(--blockr-color-border-accent) 35%, transparent);
+  stroke: color-mix(in srgb, var(--blockr-color-border-accent) 60%, transparent);
+  stroke-width: 1;
 }
 .dm-cf-dual-range {
   position: relative;
@@ -572,14 +615,14 @@
   left: 0;
   right: 0;
   height: 4px;
-  background: var(--blockr-grey-200, #e5e7eb);
+  background: var(--blockr-color-border-default);
   border-radius: 2px;
 }
 .dm-cf-dual-range-fill {
   position: absolute;
   top: 12px;
   height: 4px;
-  background: var(--blockr-color-primary, #2563eb);
+  background: var(--blockr-color-bg-accent);
   border-radius: 2px;
 }
 .dm-cf-dual-range input[type="range"] {
@@ -600,9 +643,9 @@
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  background: var(--blockr-color-primary, #2563eb);
-  border: 2px solid #fff;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  background: var(--blockr-color-bg-accent);
+  border: 2px solid var(--blockr-color-bg-surface);
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--blockr-color-text-default) 25%, transparent);
   cursor: pointer;
   pointer-events: auto;
   margin-top: -6px;
@@ -611,11 +654,22 @@
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  background: var(--blockr-color-primary, #2563eb);
-  border: 2px solid #fff;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  background: var(--blockr-color-bg-accent);
+  border: 2px solid var(--blockr-color-bg-surface);
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--blockr-color-text-default) 25%, transparent);
   cursor: pointer;
   pointer-events: auto;
+}
+.dm-cf-dual-range input[type="range"]:focus-visible {
+  outline: none;
+}
+.dm-cf-dual-range input[type="range"]:focus-visible::-webkit-slider-thumb {
+  outline: var(--blockr-focus-outline);
+  outline-offset: var(--blockr-focus-offset);
+}
+.dm-cf-dual-range input[type="range"]:focus-visible::-moz-range-thumb {
+  outline: var(--blockr-focus-outline);
+  outline-offset: var(--blockr-focus-offset);
 }
 .dm-cf-dual-range input[type="range"]::-webkit-slider-runnable-track {
   height: 4px;
@@ -625,20 +679,22 @@
   height: 4px;
   background: transparent;
 }
+/* The slider bubble stays inverse: it labels a thumb during a drag. */
 .dm-cf-bubble {
   position: absolute;
   top: -26px;
   transform: translateX(-50%);
-  background: var(--blockr-grey-700, #374151);
-  color: #fff;
+  background: var(--blockr-color-text-default);
+  color: var(--blockr-color-bg-surface);
   font-size: 11px;
-  font-weight: 500;
+  font-weight: var(--blockr-font-weight-medium);
+  font-variant-numeric: tabular-nums;
   padding: 2px 6px;
-  border-radius: 4px;
+  border-radius: var(--blockr-radius-sm);
   white-space: nowrap;
   pointer-events: none;
   opacity: 0;
-  transition: opacity 0.15s;
+  transition: opacity var(--blockr-transition);
   z-index: 10;
 }
 .dm-cf-bubble::after {
@@ -648,7 +704,7 @@
   left: 50%;
   transform: translateX(-50%);
   border: 4px solid transparent;
-  border-top-color: var(--blockr-grey-700, #374151);
+  border-top-color: var(--blockr-color-text-default);
 }
 .dm-cf-dual-range:hover .dm-cf-bubble,
 .dm-cf-dual-range.dm-cf-active .dm-cf-bubble {
@@ -657,94 +713,85 @@
 .dm-cf-range-minmax {
   display: flex;
   justify-content: space-between;
-  font-size: var(--blockr-font-size-xs, 0.75rem);
-  color: var(--blockr-grey-400, #9ca3af);
+  font-size: var(--blockr-font-size-xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--blockr-color-text-muted);
 }
 
-/* The two numbers are editable: click one and it becomes an input in place
-   (a date card gets the browser's date field, calendar included). At rest
-   they look exactly as they did -- a permanent pair of boxes would spend a
-   framed control on every range card for something used once, on the
-   narrowest card in the block. The dashed underline is the whole hint, and
-   it only appears under the cursor. */
-/* The bounds carry `.blockr-slot` as well (see the range card in the JS), so
-   all that is left here is the one thing a typed number does differently from
-   a word that opens a menu: the caret. */
+/* The two bounds are typed in place: click one and it becomes an input (a
+   date card gets the browser's date field). At rest each is a slot, the
+   design system's live word; the caret is the one thing a typed number does
+   differently from a word that opens a menu. */
 .dm-cf-range-edit {
   cursor: text;
 }
 
 /* ============================================================
-   Editable word (`.blockr-slot`)
+   Slot (`.blockr-slot`)
    ============================================================ */
-/* A word that is also a control: blue, dashed underline, solid on hover --
-   dashed says you can change this, solid says you are about to. The mark is
-   the colour plus the rule and nothing else, no padding and no tint, so it
-   can sit inside a line of text and a unit can touch it.
-
-   Copied from blockr.viz `inst/css/chart.css`, where the same mark hangs a
-   chart's sentence-style dropdowns off a word in the title. Both packages
-   declare it identically on purpose and the `blockr-` prefix is reserved for
-   it: it belongs in the shared layer (blockr.ui) and moves there with the
-   rest of it. Rules and the marks it was chosen from: blockr.docs
-   design-system/pinned-controls.md. */
+/* A live word: accent text, weight 500, a 1px dashed underline 3px below the
+   text, solid on hover. Declared identically in blockr.viz chart.css until
+   it moves to blockr.ui with the rest of the sentence rules. */
 .blockr-slot {
-  color: var(--blockr-color-primary, #2563eb);
-  font-weight: 500;
-  border-bottom: 1px dashed var(--blockr-color-primary, #2563eb);
-  padding-bottom: 1px;
+  color: var(--blockr-color-text-accent);
+  font-weight: var(--blockr-font-weight-medium);
+  text-decoration: underline dashed 1px;
+  text-underline-offset: 3px;
   cursor: pointer;
-  transition: color 0.15s, border-color 0.15s;
+  transition: color var(--blockr-transition);
 }
 .blockr-slot:hover,
-.blockr-slot:focus-visible,
 .blockr-slot--open {
-  color: var(--blockr-blue-700, #1d4ed8);
-  border-bottom: 1px solid var(--blockr-blue-700, #1d4ed8);
-  outline: none;
+  text-decoration-style: solid;
 }
+.blockr-slot:focus-visible {
+  outline: var(--blockr-focus-outline);
+  outline-offset: var(--blockr-focus-offset);
+  border-radius: 2px;
+}
+/* The bound while it is typed: a field at the word's own size. */
 .dm-cf-range-input {
   /* Sized to its content (the `size` attribute on numeric cards, the
      browser's intrinsic width on date ones), so swapping the label for the
      box does not push the other end of the row off the card. */
   font-family: inherit;
-  font-size: var(--blockr-font-size-xs, 0.75rem);
+  font-size: var(--blockr-font-size-xs);
   line-height: 1.4;
   padding: 0 4px;
   width: auto;
   max-width: 60%;
-  color: var(--blockr-color-text-primary, #111827);
-  background: #fff;
-  border: 1px solid var(--blockr-color-primary, #2563eb);
-  border-radius: 4px;
+  color: var(--blockr-color-text-default);
+  background: var(--blockr-color-bg-surface);
+  border: 1px solid var(--blockr-color-border-accent);
+  border-radius: var(--blockr-radius-sm);
   outline: none;
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+  box-shadow: var(--blockr-focus-ring);
 }
 
 /* ============================================================
    Group by field
    ============================================================ */
 /* The board's split, stated once, at the top of the block. The control is
-   Blockr.Select (blockr.dplyr::blockr_select_dep(), mounted in
-   _renderGroupField), so it looks and behaves like every other blockr field;
-   nothing here restyles it. */
+   Blockr.Select, so it looks and behaves like every other blockr field;
+   nothing here restyles it. The population filter joins two blocks in one,
+   so a rule separates the split from the filters. */
 .jscf-group-field {
-  margin: 0 0 12px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--blockr-grey-200, #e5e7eb);
+  margin: 0 0 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--blockr-color-border-default);
 }
 
 /* The optional sections under Group by, Pools and Subgroup by: a label row
    with its own remove, then the section. At rest neither is on the block and
    the "+" links in .jscf-split-add stand in for them. */
 .jscf-subgroup-field {
-  margin-top: 12px;
+  margin-top: 16px;
 }
 .jscf-section-head {
   display: flex;
   align-items: center;
   gap: 4px;
-  min-height: 26px;
+  min-height: var(--blockr-control-h-xs);
 }
 .jscf-section-head .blockr-label {
   margin: 0;
@@ -753,63 +800,80 @@
   opacity: 1;
   margin-left: 0;
 }
+/* "Edit": a quiet button, xs. */
 .jscf-section-edit {
+  height: var(--blockr-control-h-xs);
+  padding: 0 8px;
   border: 0;
+  border-radius: var(--blockr-radius-sm);
   background: none;
-  padding: 0 4px;
   font: inherit;
-  font-size: var(--blockr-font-size-sm, 0.8125rem);
-  color: var(--blockr-color-primary, #2563eb);
+  font-size: var(--blockr-font-size-xs);
+  font-weight: var(--blockr-font-weight-medium);
+  color: var(--blockr-color-text-muted);
   cursor: pointer;
+  transition: background-color var(--blockr-transition),
+    color var(--blockr-transition);
 }
 .jscf-section-edit:hover {
-  text-decoration: underline;
+  color: var(--blockr-color-text-default);
+  background: var(--blockr-color-bg-hover);
+}
+.jscf-section-edit:focus-visible {
+  outline: var(--blockr-focus-outline);
+  outline-offset: var(--blockr-focus-offset);
 }
 .jscf-split-add {
   justify-content: flex-start;
   gap: 8px;
   margin-top: 6px;
 }
-/* The design-system link pulls itself 8px left so its text lines up with a
-   row's content. Here nothing is inset, so that pull-back put the hover box
-   outside the field's left edge. Flush, like "+ More filters" in the pill row. */
+/* The add link pulls itself 8px left so its text lines up with a row's
+   content. Nothing here is inset, so the pull-back would put the hover box
+   outside the field's left edge. Flush, like "+ More filters". */
 .jscf-split-add .blockr-add-link,
 .jscf-groups .blockr-add-link {
   margin-left: 0;
 }
 
-/* The groups of the pinned column, folded under the select (_renderGroupsBand
-   in the JS). The controls are Blockr.Select and the shared row pieces
+/* The pools of a split column, folded under its select (_renderPoolsBand in
+   the JS). The controls are Blockr.Select and the shared row pieces
    (.blockr-add-link, .blockr-row-remove, .blockr-select__tag); what is here
    only lays them out. */
 .jscf-groups {
   margin-top: 8px;
 }
-/* The subgroup's swap button borrows the fold's look: both are icon buttons in
-   a section head. */
+/* The fold and the subgroup's swap are 26px tools: bare, icon muted, the
+   hover wash. */
 .jscf-groups-fold,
 .jscf-section-swap {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
+  width: var(--blockr-control-h-xs);
+  height: var(--blockr-control-h-xs);
   flex-shrink: 0;
   padding: 0;
-  color: var(--blockr-grey-400, #9ca3af);
+  color: var(--blockr-color-text-muted);
   background: transparent;
   border: none;
-  border-radius: 4px;
+  border-radius: var(--blockr-radius-sm);
   cursor: pointer;
-  transition: color 0.15s ease, background 0.15s ease;
+  transition: color var(--blockr-transition),
+    background var(--blockr-transition);
 }
 .jscf-groups-fold:hover,
 .jscf-section-swap:hover {
-  color: var(--blockr-grey-700, #374151);
-  background: var(--blockr-grey-100, #f3f4f6);
+  color: var(--blockr-color-text-default);
+  background: var(--blockr-color-bg-hover);
+}
+.jscf-groups-fold:focus-visible,
+.jscf-section-swap:focus-visible {
+  outline: var(--blockr-focus-outline);
+  outline-offset: var(--blockr-focus-offset);
 }
 .jscf-groups-fold svg {
-  transition: transform 0.15s ease;
+  transition: transform var(--blockr-transition);
 }
 .jscf-groups-fold--open svg {
   transform: rotate(180deg);
@@ -829,10 +893,10 @@
   margin-top: 4px;
 }
 .jscf-groups-field {
-  margin-bottom: 8px;
+  margin-bottom: 12px;
 }
 .jscf-pool {
-  margin-bottom: 8px;
+  margin-bottom: 12px;
 }
 .jscf-pool-head {
   display: flex;
@@ -840,35 +904,40 @@
   gap: 6px;
   margin-bottom: 4px;
 }
-/* The pool's name reads as a label until it is clicked. */
+/* The pool's name is renamed in place: plain text at rest, the hover wash
+   (radius 6, pulled back by its padding so the text does not move), and a
+   field at its own size while editing. */
 .jscf-pool-name {
   flex: 1;
   min-width: 0;
-  padding: 1px 4px;
-  margin-left: -4px;
+  padding: 2px 8px;
+  margin-left: -8px;
   font: inherit;
-  font-size: var(--blockr-font-size-sm, 0.8125rem);
-  color: var(--blockr-grey-700, #374151);
+  font-size: var(--blockr-font-size-sm);
+  color: var(--blockr-color-text-default);
   background: transparent;
   border: 1px solid transparent;
-  border-radius: 4px;
+  border-radius: var(--blockr-radius-md);
   outline: none;
-  transition: border-color 0.15s ease, background 0.15s ease;
+  transition: border-color var(--blockr-transition),
+    background var(--blockr-transition), box-shadow var(--blockr-transition);
 }
 .jscf-pool-name:hover {
-  border-color: var(--blockr-grey-200, #e5e7eb);
+  background: var(--blockr-color-bg-hover);
 }
 .jscf-pool-name:focus {
-  background: #fff;
-  border-color: var(--blockr-color-primary, #2563eb);
+  background: var(--blockr-color-bg-surface);
+  border-color: var(--blockr-color-border-accent);
+  box-shadow: var(--blockr-focus-ring);
 }
-.jscf-pool-name.jscf-pool-name--invalid {
-  border-color: #dc3545;
+.jscf-pool-name.jscf-pool-name--invalid,
+.jscf-pool-name.jscf-pool-name--invalid:focus {
+  border-color: var(--blockr-color-border-danger);
 }
 .jscf-pool-n {
   flex-shrink: 0;
-  font-size: var(--blockr-font-size-xs, 0.75rem);
-  color: var(--blockr-grey-400, #9ca3af);
+  font-size: var(--blockr-font-size-xs);
+  color: var(--blockr-color-text-muted);
   font-variant-numeric: tabular-nums;
 }
 /* .blockr-row-remove shows on hover of a .blockr-row; a pool is not one. */
@@ -881,79 +950,68 @@
 }
 .jscf-pool-error {
   margin: -2px 0 4px;
-  font-size: var(--blockr-font-size-xs, 0.75rem);
-  color: #dc3545;
+  font-size: var(--blockr-font-size-xs);
+  color: var(--blockr-color-text-danger);
 }
 .jscf-groups-add {
-  min-height: 26px;
+  min-height: var(--blockr-control-h-xs);
   padding: 0;
 }
 
 /* ============================================================
-   Featured pill row + pinned card
+   Filter by: the tag row
    ============================================================ */
-/* The filter section: its header row, then the pill row. Both sections of the
-   block name themselves -- "Group by" over the select, "Filter by" over the
-   pills -- and each keeps the controls that belong to it. */
 .jscf-filter-section {
-  margin: 0 0 12px;
-  /* The positioning context for the no-edit band, which hangs off the bottom
-     of this section (`.jscf-popover--overlay`). */
-  position: relative;
+  margin: 0 0 16px;
 }
 .jscf-shelf {
   display: flex;
   flex-wrap: wrap;
-  gap: 5px 6px;
+  gap: 6px;
   align-items: center;
   margin: 0;
 }
 
-/* The pill is the design system's tag (.blockr-select__tag): grey-100 on
-   grey-200 at 4px, not a dashed capsule. Its fill says "this column has a
-   card"; the group is not on it, it is the select above. */
+/* The tags are the design system's tags: 24px, radius 4, border-default,
+   bg-surface, 13px text-default, 8px side padding. A column whose card is
+   open takes the hover wash; a column cutting rows takes the accent tint.
+   No weight change on either, so picking a level never re-measures a tag and
+   a wrapped row cannot re-flow under the pointer. */
 .jscf-pill {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 2px 7px;
-  font-size: var(--blockr-font-size-sm, 0.8125rem);
-  /* No font-weight: .blockr-select__tag does not set one either, so a pill
-     weighs the same as the tags every other block shows a column with. */
-  line-height: 1.4;
-  color: var(--blockr-grey-700, #374151);
-  background: #fff;
-  border: 1px solid var(--blockr-grey-200, #e5e7eb);
-  border-radius: 4px; /* --blockr-radius-sm */
+  box-sizing: border-box;
+  height: 24px;
+  padding: 0 8px;
+  font-size: var(--blockr-font-size-sm);
+  color: var(--blockr-color-text-default);
+  background: var(--blockr-color-bg-surface);
+  border: 1px solid var(--blockr-color-border-default);
+  border-radius: var(--blockr-radius-sm);
   white-space: nowrap;
   user-select: none;
-  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  transition: background var(--blockr-transition),
+    border-color var(--blockr-transition), color var(--blockr-transition);
 }
-/* Two facts, two channels: a GREY SHIFT says this column has a card open, and
-   COLOUR says it is cutting rows. Grouping is not on the pill at all any more
-   -- it is a select above the row (.jscf-group-field), because the group is
-   exactly one and the filters are many of many, and one row of identical
-   pills cannot say which of those two questions it is asking. */
+.jscf-pill:hover {
+  border-color: var(--blockr-color-border-strong);
+}
 .jscf-pill--open {
-  background: var(--blockr-grey-100, #f3f4f6);
+  background: var(--blockr-color-bg-hover);
 }
-/* Cutting rows, as opposed to merely having a card. This is the fact worth
-   ink, so it gets the whole pill: blue-50 fill, tinted border, blue-700 text.
-   It was a 2px left edge, which at 13px type is a hairline at the outer edge
-   of a 7px-padded box -- and a filter whose card is closed (the two classes
-   are independent) then had no visible mark at all.
-
-   Declared after --open so the tint wins the background on a pill that is
-   both. No font-weight: 500 would re-measure the label and a wrapped row
-   could re-flow under the pointer on a pick, which is the property this
-   treatment was chosen for. */
-.jscf-pill--filtering {
-  background: var(--blockr-blue-50, #eff6ff);
-  border-color: rgba(37, 99, 235, 0.35);
-  color: var(--blockr-blue-700, #1d4ed8);
+/* Declared after --open so the tint wins on a tag that is both. */
+.jscf-pill--filtering,
+.jscf-pill--filtering:hover {
+  color: var(--blockr-color-text-accent);
+  background: var(--blockr-color-bg-accent-subtle);
+  border-color: var(--blockr-color-border-accent-subtle);
 }
-
+.jscf-pill--filtering:hover {
+  background: var(--blockr-color-bg-accent-subtle-hover);
+  border-color: var(--blockr-color-border-accent);
+}
 .jscf-pill-name {
+  height: 100%;
   padding: 0;
   border: none;
   background: transparent;
@@ -961,118 +1019,44 @@
   color: inherit;
   cursor: pointer;
 }
-.jscf-pill-name:hover {
-  color: var(--blockr-color-primary, #2563eb);
-}
-/* The group's card is an ordinary card in an ordinary place: no band, no
-   indent, no hoist to the top. Only its label picks up the pill's colour, so
-   the eye can pair the card with the pill that named it. Grouping by a column
-   and filtering on it are separate facts, and the card may not exist at all. */
-.jscf-pinned-card .dm-cf-filter-card-label {
-  color: var(--blockr-color-primary, #2563eb);
+.jscf-pill-name:focus-visible {
+  outline: var(--blockr-focus-outline);
+  outline-offset: 4px;
+  border-radius: 2px;
 }
 
-/* The way into the band, in the row it acts on: the design system's "+"
-   add link (.blockr-add-link, blockr-blocks.css), the same control as
-   "+ Pools" and "+ Subgroup". It sits after the pills, so it keeps its own
-   left edge instead of the link's pull-back. */
+/* The group's card is an ordinary card in an ordinary place. Only its name
+   takes the accent, so the eye can pair it with the Group by field. */
+.jscf-pinned-card .dm-cf-filter-card-label {
+  color: var(--blockr-color-text-accent);
+}
+
+/* "+ More filters": the design system's add link, in the row it acts on. It
+   sits after the tags, so it keeps its own left edge instead of the link's
+   pull-back. */
 .jscf-shelf-add {
   margin-left: 0;
   border: 0;
   background: none;
   font: inherit;
-  font-size: var(--blockr-font-size-sm, 0.8125rem);
-  color: var(--blockr-color-text-muted, #6b7280);
+  font-size: var(--blockr-font-size-xs);
+  font-weight: var(--blockr-font-weight-medium);
+  color: var(--blockr-color-text-muted);
   white-space: nowrap;
 }
-
-/* The gear's band: the board's settings, and nothing a reader needs. It
-   hangs off the header row rather than the pill row, and its beak keeps the
-   stylesheet's `right: 8px` because the gear ends that row. Everything in it
-   is authoring, which is what lets simplified mode be nothing but dock's
-   `display: none` on `.jscf-gear-btn` -- the block itself never asks which
-   mode it is in. */
-.jscf-popover--settings {
-  top: calc(100% + 8px);
-}
-/* Two classes, because the overlay rule below sets `left` from the measured
-   beak and comes later in the file. */
-.jscf-popover--overlay.jscf-popover--settings::before {
-  left: auto;
-  right: 8px;
-}
-.jscf-settings-field {
-  margin-bottom: 10px;
-}
-.jscf-settings-field:last-child {
-  margin-bottom: 2px;
-}
-/* What the field does to the block, in the field's own words. Settings a
-   board's author sees once a month are worth a line each. */
-.jscf-settings-hint {
-  margin: 4px 0 0;
-  font-size: var(--blockr-font-size-xs, 0.75rem);
-  line-height: 1.4;
-  color: var(--blockr-grey-400, #9ca3af);
-}
-
-/* The band is open while the pill is the thing that opened it. */
+/* Open while its menu is. */
 .jscf-shelf-add--open {
-  color: var(--blockr-color-text-default, #111827);
-  background: var(--blockr-color-bg-hover, rgba(17, 24, 39, 0.06));
+  color: var(--blockr-color-text-default);
+  background: var(--blockr-color-bg-hover);
 }
 
-/* The band itself, opened from that pill. It floats: in flow it pushed every
-   card down the panel, which on a board with a few cards open takes the one
-   the reader was looking at off the screen. Bounded left and right by the
-   section, so it is never wider than the block -- that width was the other
-   reason the band is in flow, and it still holds. No `overflow` here: it
-   would clip the beak, and `.jscf-popover-results` already caps its own
-   height. */
-.jscf-popover--overlay {
-  position: absolute;
-  top: 100%;
-  left: 0;
-  right: 0;
-  margin-top: 6px;
-  margin-bottom: 0;
-  z-index: 30;
-  box-shadow: 0 10px 28px rgba(17, 24, 39, 0.16);
-}
-/* Under the pill that opened it, wherever the row wrapped it to (measured in
-   `_positionBeak()`), rather than at the row's end where the gear sits. */
-.jscf-popover--overlay::before {
-  left: var(--jscf-beak, 16px);
-  right: auto;
-}
-
-/* With no gear above it, the band says what it is. */
-.jscf-popover-title {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin: 0 0 8px;
-  font-size: var(--blockr-font-size-xs, 0.75rem);
-  font-weight: var(--blockr-font-weight-semibold, 600);
-  color: var(--blockr-grey-700, #374151);
-}
-.jscf-popover-done {
-  padding: 0 2px;
-  border: none;
-  background: transparent;
-  font-size: var(--blockr-font-size-xs, 0.75rem);
-  color: var(--blockr-grey-500, #6b7280);
-  cursor: pointer;
-}
-.jscf-popover-done:hover {
-  color: var(--blockr-color-primary, #2563eb);
-}
-
+/* The data source's note (R: `blockr_note` on a table), a status line under
+   the cards. */
 .jscf-note {
   margin-top: 4px;
-  padding: 7px 2px 0;
-  border-top: 1px solid var(--blockr-grey-100, #f3f4f6);
-  font-size: 11px;
-  color: var(--blockr-grey-400, #9ca3af);
+  padding: 8px 2px 0;
+  border-top: 1px solid var(--blockr-color-border-default);
+  font-size: var(--blockr-font-size-xs);
+  color: var(--blockr-color-text-muted);
   font-variant-numeric: tabular-nums;
 }

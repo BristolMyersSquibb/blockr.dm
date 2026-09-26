@@ -206,11 +206,17 @@
     return e;
   }
 
-  // A column's label on hover; the name is already on screen. Native `title`
-  // until blockr.ui has its tooltip. No label, or one equal to the name,
-  // gives no title.
+  // The design system's light-card tooltip (Blockr.tooltip, blockr.ui's
+  // controls_dep()), for icon-only buttons and names that need one. No
+  // native `title` anywhere in the block.
+  function tip(node, content) {
+    window.Blockr.tooltip.set(node, content);
+  }
+
+  // A column's label on hover; the name is already on screen. No label, or
+  // one equal to the name, gives no tooltip.
   function setDimTitle(node, dim, label) {
-    if (label && label !== dim) node.title = label;
+    if (label && label !== dim) tip(node, label);
   }
 
   // =========================================================================
@@ -327,117 +333,107 @@
       this.statusEl = el('span', 'jscf-status-text');
       gearHeader.appendChild(this.statusEl);
 
+      // Reset all: the design system's 26px main button, with the number of
+      // active filters as a count while any is on, and disabled when none is.
+      // Its tooltip names the clause it would undo.
       this.resetBtn = el('button', 'jscf-reset-btn', ICON_RESET);
       this.resetBtn.type = 'button';
-      this.resetBtn.title = 'Clear all filter values';
+      this.resetBtn.setAttribute('aria-label', 'Reset all filters');
       this.resetBtn.appendChild(el('span', 'jscf-reset-label', 'Reset all'));
       this.resetCountEl = el('span', 'jscf-reset-count');
       this.resetCountEl.style.display = 'none';
       this.resetBtn.appendChild(this.resetCountEl);
       this.resetBtn.disabled = true;
       this.resetBtn.addEventListener('click', () => this._resetAllFilters());
+      tip(this.resetBtn, () => this._filterClause());
       gearHeader.appendChild(this.resetBtn);
 
-      const anchor = el('div', 'jscf-popover-anchor');
-      this.gearBtn = el('button', 'jscf-gear-btn', ICON_GEAR);
+      this.gearBtn = el('button', 'blockr-gear-btn', ICON_GEAR);
       this.gearBtn.type = 'button';
-      this.gearBtn.title = 'Block settings';
-      this.gearBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        this._toggleSettings();
-      });
-      anchor.appendChild(this.gearBtn);
+      gearHeader.appendChild(this.gearBtn);
 
-      // ---- Two bands, one job each ---------------------------------------
-      // The gear's band is the board's settings: which columns are held up
+      // ---- The gear tray and the column menu, one job each ----------------
+      // The gear's tray is the board's settings: which columns are held up
       // front, what a bar is long by, and how that measure aggregates. None
       // of it is needed to READ the block, which is what lets simplified mode
       // be nothing but dock's `display: none` on the gear -- the same rule it
       // uses on every other block, with no mode flag in here at all.
       //
-      // The other band is the column search, and it opens from the pill row,
-      // where a reader can always reach it. Adding a filter card is a
-      // question about this session; naming the vocabulary is a decision for
-      // every reader of the board. Two questions, two surfaces.
+      // The column menu opens from the pill row, where a reader can always
+      // reach it. Adding a filter card is a question about this session;
+      // naming the vocabulary is a decision for every reader of the board.
+      // Two questions, two surfaces.
+      //
+      // The tray is the design system's (Blockr.gearTray): in flow under the
+      // header row, closed by the gear and Escape only.
       this.settingsEl = el('div',
-        'jscf-popover jscf-popover--overlay jscf-popover--settings');
-      this.settingsEl.appendChild(
-        this._bandTitle('Block settings', () => this._closeSettings()));
+        'blockr-settings blockr-settings--beak jscf-settings');
+      const grid = el('div', 'blockr-settings__grid');
 
       // Shown up front, as an ordinary multi-select of columns rather than a
       // chip shelf beside a search box: it has to be able to name a column
       // that no list on screen happens to be showing. Blockr.Select is what
       // every other block mounts for a set of columns, tag drag included, so
       // the pill order is edited the way column order is edited everywhere.
-      const featuredField = el('div', 'jscf-settings-field');
+      const featuredField = el('div',
+        'blockr-settings__field blockr-settings__field--full');
       featuredField.appendChild(el('label', 'blockr-label', 'Shown up front'));
       this.featuredHostEl = el('div', 'jscf-featured-select');
       featuredField.appendChild(this.featuredHostEl);
       featuredField.appendChild(el('p', 'jscf-settings-hint',
-        'The pills above the cards, in this order. Drag a tag to reorder.'));
-      this.settingsEl.appendChild(featuredField);
+        'The tags above the cards, in this order. Drag a tag to reorder.'));
+      grid.appendChild(featuredField);
 
-      // Measure / aggregation controls
-      this._measureSection = el('div', 'jscf-settings-field');
-      this._measureSection.style.display = 'none'; // shown when measures available
+      // What a bar is long by. A Select, mounted once the measures are known
+      // (_updateMeasureUI); hidden when the data has none.
+      this._measureSection = el('div', 'blockr-settings__field');
+      this._measureSection.style.display = 'none';
       this._measureSection.appendChild(el('label', 'blockr-label', 'Measure'));
-      this._measureSelect = el('select', 'jscf-popover-select');
-      this._measureSelect.addEventListener('change', () => {
-        this._setMeasure(this._measureSelect.value);
-      });
-      this._measureSection.appendChild(this._measureSelect);
+      this._measureHostEl = el('div', 'jscf-measure-select');
+      this._measureSection.appendChild(this._measureHostEl);
+      grid.appendChild(this._measureSection);
 
-      this._aggSection = el('div', 'jscf-settings-field');
+      // Two fixed values: a segmented control.
+      this._aggSection = el('div', 'blockr-settings__field');
       this._aggSection.style.display = 'none';
       this._aggSection.appendChild(el('label', 'blockr-label', 'Aggregation'));
-      this._aggSelect = el('select', 'jscf-popover-select');
-      const aggOpts = [['sum', 'Sum'], ['mean', 'Mean']];
-      for (const [val, text] of aggOpts) {
-        const opt = el('option');
-        opt.value = val;
-        opt.textContent = text;
-        this._aggSelect.appendChild(opt);
-      }
-      this._aggSelect.addEventListener('change', () => {
-        this._setAggFunc(this._aggSelect.value);
-      });
-      this._aggSection.appendChild(this._aggSelect);
+      this._aggControl = window.Blockr.segmented(
+        [{ value: 'sum', label: 'Sum' }, { value: 'mean', label: 'Mean' }],
+        this.aggFunc,
+        (val) => this._setAggFunc(val),
+        { label: 'Aggregation' });
+      this._aggSection.appendChild(this._aggControl.el);
+      grid.appendChild(this._aggSection);
 
-      this.settingsEl.appendChild(this._measureSection);
-      this.settingsEl.appendChild(this._aggSection);
-      // A child of the header rather than a sibling: the band hangs off the
-      // row its gear sits in. It is out of flow, so the header's flex row is
-      // unaffected by it.
-      gearHeader.appendChild(this.settingsEl);
+      this.settingsEl.appendChild(grid);
+      window.Blockr.gearTray(this.settingsEl, this.gearBtn,
+        { label: 'Crossfilter settings' });
 
-      gearHeader.appendChild(anchor);
-
-      // The column search.
-      this.popoverEl = el('div', 'jscf-popover jscf-popover--overlay');
-      this.popoverEl.appendChild(
-        this._bandTitle('Add custom filter', () => this._closePopover()));
+      // The column menu: every column of every table, with its type, opened
+      // from "+ More filters". A menu on the design system's floating
+      // surface, portalled to <body> while open and placed by Blockr.place.
+      this.popoverEl = el('div', 'jscf-menu');
+      this.popoverEl.setAttribute('role', 'dialog');
+      this.popoverEl.setAttribute('aria-label', 'Filter on a column');
       this.searchInput = el('input', 'jscf-popover-search');
       this.searchInput.type = 'text';
       this.searchInput.placeholder = 'Search columns\u2026';
       this.searchInput.autocomplete = 'off';
+      this.searchInput.spellcheck = false;
       this.searchInput.addEventListener('input', () => this._onSearchInput());
+      this.searchInput.addEventListener('keydown', (e) => this._onMenuKey(e));
       this.popoverEl.appendChild(this.searchInput);
 
       this.searchResultsEl = el('div', 'jscf-popover-results');
       this.popoverEl.appendChild(this.searchResultsEl);
 
-      // Close either band on an outside click. A band and the control that
-      // opens it are one thing for this purpose; the other band is outside.
+      // An outside click closes the menu. The menu and the control that
+      // opens it are one thing for this purpose.
       document.addEventListener('click', (e) => {
-        if (this._popoverOpen && this.popoverEl &&
+        if (this._popoverOpen &&
             !this.popoverEl.contains(e.target) &&
             !(this.addBtn && this.addBtn.contains(e.target))) {
           this._closePopover();
-        }
-        if (this._settingsOpen && this.settingsEl &&
-            !this.settingsEl.contains(e.target) &&
-            !this.gearBtn.contains(e.target)) {
-          this._closeSettings();
         }
       });
 
@@ -449,12 +445,10 @@
       // added: grouping by a column and filtering on it are separate facts.
       this.shelfSectionEl = el('div', 'jscf-filter-section');
       this.shelfSectionEl.appendChild(gearHeader);
+      // The tray opens under the row its gear sits on, above the pills.
+      this.shelfSectionEl.appendChild(this.settingsEl);
       this.shelfEl = el('div', 'jscf-shelf');
       this.shelfSectionEl.appendChild(this.shelfEl);
-      // The search band comes after the pill row in the DOM, so `top: 100%`
-      // on the section drops it under the row that opens it, and over the
-      // cards rather than pushing them down the panel.
-      this.shelfSectionEl.appendChild(this.popoverEl);
       this.el.appendChild(this.shelfSectionEl);
 
       // Filter panels container
@@ -469,66 +463,69 @@
       this.el.appendChild(this.noteEl);
     }
 
-    // Both bands are titled: each is opened from a different control and has
-    // to say which one it is once it is on the screen.
-    _bandTitle(text, onDone) {
-      const row = el('div', 'jscf-popover-title');
-      row.appendChild(el('span', null, text));
-      const done = el('button', 'jscf-popover-done', 'Done');
-      done.type = 'button';
-      done.addEventListener('click', onDone);
-      row.appendChild(done);
-      return row;
-    }
-
     _togglePopover() {
       this._popoverOpen ? this._closePopover() : this._openPopover();
     }
     _openPopover() {
-      // One band at a time: they overlap, and the two are alternatives.
-      this._closeSettings();
-      this.popoverEl.style.display = 'block';
+      document.body.appendChild(this.popoverEl);
       this._popoverOpen = true;
-      if (this.addBtn) this.addBtn.classList.add('jscf-shelf-add--open');
+      if (this.addBtn) {
+        this.addBtn.classList.add('jscf-shelf-add--open');
+        this.addBtn.setAttribute('aria-expanded', 'true');
+      }
       this.searchInput.value = '';
       this._onSearchInput();
-      this._positionBeak();
+      this._placeMenu = window.Blockr.place(this.popoverEl, this.addBtn,
+        { width: { min: 260, max: 320 } });
       this.searchInput.focus();
     }
-
-    _toggleSettings() {
-      this._settingsOpen ? this._closeSettings() : this._openSettings();
-    }
-    _openSettings() {
-      this._closePopover();
-      this.settingsEl.style.display = 'block';
-      this._settingsOpen = true;
-      this.gearBtn.classList.add('jscf-gear-active');
-    }
-    _closeSettings() {
-      if (!this.settingsEl) return;
-      this.settingsEl.style.display = 'none';
-      this._settingsOpen = false;
-      this.gearBtn.classList.remove('jscf-gear-active');
-    }
-
-    // The search band's beak points at the add pill, which the row may have
-    // wrapped anywhere, so its position is measured. The settings band's is
-    // `right: 8px` in the stylesheet, because the gear ends its row.
-    _positionBeak() {
-      if (!this.addBtn) return;
-      const a = this.addBtn.getBoundingClientRect();
-      const b = this.popoverEl.getBoundingClientRect();
-      if (!b.width) return;
-      const x = a.left + a.width / 2 - b.left - 5;
-      this.popoverEl.style.setProperty(
-        '--jscf-beak', Math.max(10, Math.min(b.width - 20, x)) + 'px');
-    }
-    _closePopover() {
-      if (!this.popoverEl) return;
-      this.popoverEl.style.display = 'none';
+    _closePopover({ refocus = false } = {}) {
+      if (!this._popoverOpen) return;
       this._popoverOpen = false;
-      if (this.addBtn) this.addBtn.classList.remove('jscf-shelf-add--open');
+      if (this._placeMenu) {
+        this._placeMenu.stop();
+        this._placeMenu = null;
+      }
+      this.popoverEl.remove();
+      if (this.addBtn) {
+        this.addBtn.classList.remove('jscf-shelf-add--open');
+        this.addBtn.setAttribute('aria-expanded', 'false');
+        if (refocus) this.addBtn.focus();
+      }
+    }
+
+    // Arrows move the keyboard row, Enter toggles it, Escape closes. Focus
+    // stays in the filter box, as in every menu.
+    _onMenuKey(e) {
+      const rows = this._searchRows || [];
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        this._closePopover({ refocus: true });
+        return;
+      }
+      if (!rows.length) return;
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        const step = e.key === 'ArrowDown' ? 1 : -1;
+        const cur = this._menuIndex == null ? -1 : this._menuIndex;
+        this._setMenuIndex(
+          Math.max(0, Math.min(rows.length - 1, cur + step)));
+      } else if (e.key === 'Enter' && this._menuIndex != null) {
+        e.preventDefault();
+        rows[this._menuIndex].row.click();
+      }
+    }
+    _setMenuIndex(i) {
+      const rows = this._searchRows || [];
+      if (this._menuIndex != null && rows[this._menuIndex]) {
+        rows[this._menuIndex].row.classList.remove(
+          'jscf-search-item--highlighted');
+      }
+      this._menuIndex = i;
+      if (i == null || !rows[i]) return;
+      rows[i].row.classList.add('jscf-search-item--highlighted');
+      rows[i].row.scrollIntoView({ block: 'nearest' });
     }
 
     // -- Search bar ----------------------------------------------------------
@@ -564,6 +561,7 @@
 
       this.searchResultsEl.innerHTML = '';
       this._searchRows = [];
+      this._menuIndex = null;
       if (results.length === 0) {
         this.searchResultsEl.appendChild(el('div', 'jscf-search-empty',
           'No matching columns'));
@@ -585,20 +583,17 @@
             row.appendChild(el('span', 'jscf-search-item-icon',
               TYPE_ICONS[item.type] || '\u2026'));
 
+            // The name, then the label as muted meta, cut first.
             const nameEl = el('span', 'jscf-search-item-name', item.dim);
-            if (item.label) {
+            if (item.label && item.label !== item.dim) {
               nameEl.appendChild(el('span', 'jscf-search-item-label', item.label));
             }
             row.appendChild(nameEl);
 
-            const badgeCls = item.type === 'date' ? 'jscf-badge-date'
-              : item.type === 'range' ? 'jscf-badge-numeric'
-              : 'jscf-badge-categorical';
+            // The type as a neutral badge: a type is read, not acted on.
             const badgeText = item.type === 'date' ? 'Date'
               : item.type === 'range' ? 'Numeric' : 'Categorical';
-            row.appendChild(
-              el('span', `jscf-search-item-badge ${badgeCls}`, badgeText)
-            );
+            row.appendChild(el('span', 'jscf-search-item-badge', badgeText));
 
             // What the click did, said in the row that took it. The band
             // floats over the cards in no-edit mode, so "did that work" can no
@@ -639,9 +634,6 @@
 
     _setSearchRowState(entry, active) {
       entry.row.classList.toggle('jscf-search-item--active', active);
-      entry.row.title = active
-        ? `${entry.dim} has a filter card, click to remove it`
-        : `Filter on ${entry.dim}`;
     }
 
     // The authoritative pass, run when R answers: state comes from
@@ -729,31 +721,36 @@
     }
 
     _updateMeasureUI() {
-      // Populate measure dropdown from allColumns
-      const measures = [];
+      // Select shows an option's value, so the options are the names a reader
+      // knows ("Count", the column, `table.column` where there are several
+      // tables), mapped to the measure keys R takes.
+      const multiTable = Object.keys(this.allColumns).length > 1;
+      const keyOf = { Count: '.count' };
       for (const [tbl, info] of Object.entries(this.allColumns)) {
         for (const m of asArray(info.measures)) {
-          measures.push({ tbl, col: m });
+          keyOf[multiTable ? tbl + '.' + m : m] = tbl + '.' + m;
         }
       }
+      const names = Object.keys(keyOf);
+      const nameOf = (key) => names.find(n => keyOf[n] === key) || 'Count';
 
-      this._measureSelect.innerHTML = '';
-      const countOpt = el('option');
-      countOpt.value = '.count';
-      countOpt.textContent = 'Count';
-      this._measureSelect.appendChild(countOpt);
-
-      const multiTable = Object.keys(this.allColumns).length > 1;
-      for (const { tbl, col } of measures) {
-        const opt = el('option');
-        opt.value = tbl + '.' + col;
-        opt.textContent = multiTable ? tbl + '.' + col : col;
-        this._measureSelect.appendChild(opt);
+      this._measureSection.style.display = names.length > 1 ? '' : 'none';
+      if (names.length > 1) {
+        if (this._measureSelect) {
+          this._measureSelect.setOptions(names, nameOf(this.measure));
+        } else {
+          this._measureSelect = this._select().single(this._measureHostEl, {
+            options: names,
+            selected: nameOf(this.measure),
+            onChange: (name) => {
+              const key = keyOf[name];
+              if (key && key !== this.measure) this._setMeasure(key);
+            }
+          });
+          this._measureSelect.el.classList.add('blockr-select--bordered');
+        }
       }
-
-      this._measureSelect.value = this.measure;
-      this._measureSection.style.display = measures.length > 0 ? '' : 'none';
-      this._aggSelect.value = this.aggFunc;
+      this._aggControl.set(this.aggFunc);
       this._aggSection.style.display = (this.measure !== '.count') ? '' : 'none';
     }
 
@@ -832,7 +829,8 @@
       this.addBtn = el('button', 'blockr-add-link jscf-shelf-add',
         `<span class="blockr-add-icon">${plus}</span> More filters`);
       this.addBtn.type = 'button';
-      this.addBtn.title = 'Filter on any other column';
+      this.addBtn.setAttribute('aria-haspopup', 'dialog');
+      this.addBtn.setAttribute('aria-expanded', String(!!this._popoverOpen));
       this.addBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         this._togglePopover();
@@ -841,8 +839,13 @@
       this.shelfEl.appendChild(this.addBtn);
 
       this._syncShelfState();
-      // The row may have wrapped the pill somewhere else this time.
-      if (this._popoverOpen) this._positionBeak();
+      // An open menu hangs off the link it was opened from, which this
+      // rebuild just replaced.
+      if (this._popoverOpen) {
+        this._placeMenu.stop();
+        this._placeMenu = window.Blockr.place(this.popoverEl, this.addBtn,
+          { width: { min: 260, max: 320 } });
+      }
     }
 
     // Whether a column is cutting rows, as opposed to merely having a card:
@@ -932,15 +935,15 @@
       if (this.subgroup) {
         const swap = el('button', 'jscf-section-swap', ICON_SWAP);
         swap.type = 'button';
-        swap.title = 'Switch group and subgroup';
         swap.setAttribute('aria-label', 'Switch group and subgroup');
+        tip(swap, 'Switch group and subgroup');
         swap.addEventListener('click', () => this._swapSplit());
         head.appendChild(swap);
       }
       const rm = el('button', 'blockr-row-remove jscf-section-remove', icons.remove || '×');
       rm.type = 'button';
-      rm.title = 'No subgroup';
       rm.setAttribute('aria-label', 'Remove the subgroup');
+      tip(rm, 'Remove the subgroup');
       const clear = () => {
         this._subShown = false;
         if (this.subgroup) {
@@ -984,12 +987,12 @@
     // Subgroup under the group, Pools under the subgroup.
     _renderSplitAdd() {
       const icons = (window.Blockr && window.Blockr.icons) || {};
-      const link = (text, title, onClick) => {
+      // Each link says what it adds, so none has a tooltip.
+      const link = (text, onClick) => {
         const a = el('span', 'blockr-add-link',
           `<span class="blockr-add-icon">${icons.plus || '+'}</span> ${text}`);
         a.setAttribute('role', 'button');
         a.tabIndex = 0;
-        a.title = title;
         a.addEventListener('click', onClick);
         a.addEventListener('keydown', (e) => {
           if (e.key === 'Enter' || e.key === ' ') {
@@ -1005,7 +1008,7 @@
         row.style.display = links.length ? '' : 'none';
         for (const a of links) row.appendChild(a);
       };
-      const poolsLink = (s) => link('Pools', 'Pool, drop or reorder the levels',
+      const poolsLink = (s) => link('Pools',
         () => {
           s.open = true;
           this._renderPoolsBand(s);
@@ -1017,7 +1020,7 @@
       if (this.pinned) {
         if (!this._poolsShown(g) && g.levels.length) groupLinks.push(poolsLink(g));
         if (!this.subgroup && !this._subShown) {
-          groupLinks.push(link('Subgroup', 'Split each group by a second column', () => {
+          groupLinks.push(link('Subgroup', () => {
             this._subShown = true;
             this._renderSubgroupField();
             const ctrl = this.subgroupFieldEl.querySelector('.blockr-select__control');
@@ -1192,7 +1195,8 @@
       if (s.open) {
         const fold = el('button', 'jscf-groups-fold jscf-groups-fold--open', icons.chevron || '');
         fold.type = 'button';
-        fold.title = 'Done';
+        fold.setAttribute('aria-label', 'Fold the pools');
+        tip(fold, 'Done');
         fold.setAttribute('aria-expanded', 'true');
         fold.addEventListener('click', () => {
           s.open = false;
@@ -1201,6 +1205,7 @@
         head.appendChild(fold);
       } else {
         const edit = el('button', 'jscf-section-edit', 'Edit');
+        // A quiet button: text only, muted, the hover wash.
         edit.type = 'button';
         edit.addEventListener('click', () => {
           s.open = true;
@@ -1210,8 +1215,8 @@
       }
       const rm = el('button', 'blockr-row-remove jscf-section-remove', icons.remove || '×');
       rm.type = 'button';
-      rm.title = 'Every level on its own, no pools';
       rm.setAttribute('aria-label', 'Remove the pools');
+      tip(rm, 'Remove the pools');
       rm.addEventListener('click', () => {
         const wasSet = !this._isDefaultGroupDef(s, s.edit);
         s.edit = { show: s.levels.map(l => l.value), pools: [] };
@@ -1229,7 +1234,7 @@
           const tag = el('span', 'blockr-select__tag jscf-groups-tag');
           const label = el('span', 'blockr-select__tag-label');
           label.textContent = c.name;
-          tag.title = c.title;
+          if (c.title !== c.name) tip(tag, c.title);
           tag.appendChild(label);
           summary.appendChild(tag);
         }
@@ -1305,7 +1310,8 @@
       const rm = el('button', 'blockr-row-remove jscf-pool-remove',
         icons.x || '×');
       rm.type = 'button';
-      rm.title = 'Remove this pool';
+      rm.setAttribute('aria-label', 'Remove this pool');
+      tip(rm, 'Remove this pool');
       rm.addEventListener('click', () => this._removePool(s, pool.id));
       head.appendChild(rm);
       box.appendChild(head);
@@ -1801,6 +1807,25 @@
       }
     }
 
+    // A card's reset and remove: 26px icon buttons, always shown (the one
+    // exception to "hidden until hover", see the design system's crossfilter).
+    _cardActions(dim, tbl) {
+      const actions = el('div', 'dm-cf-filter-card-actions');
+      const resetBtn = el('button', 'dm-cf-reset-btn', ICON_RESET);
+      resetBtn.type = 'button';
+      resetBtn.setAttribute('aria-label', `Reset the ${dim} filter`);
+      tip(resetBtn, 'Reset filter');
+      resetBtn.addEventListener('click', () => this._clearFilter(dim));
+      actions.appendChild(resetBtn);
+      const removeBtn = el('button', 'dm-cf-remove-btn', ICON_REMOVE_SM);
+      removeBtn.type = 'button';
+      removeBtn.setAttribute('aria-label', `Remove ${dim}`);
+      tip(removeBtn, `Remove ${dim}`);
+      removeBtn.addEventListener('click', () => this._removeDimension(tbl, dim));
+      actions.appendChild(removeBtn);
+      return actions;
+    }
+
     // -- Categorical card ---------------------------------------------------
 
     _createCategoricalCard(dim, tbl, opts = {}) {
@@ -1822,26 +1847,17 @@
       setDimTitle(labelEl, dim, sublabel);
       header.appendChild(labelEl);
 
-      const actions = el('div', 'dm-cf-filter-card-actions');
-      const resetBtn = el('button', 'dm-cf-reset-btn', ICON_RESET);
-      resetBtn.title = 'Reset filter';
-      resetBtn.addEventListener('click', () => this._clearFilter(dim));
-      actions.appendChild(resetBtn);
-      // Removing a card is a one-click job on the card itself. The gear keeps
-      // its chips for the same thing; this is the same action where the user
-      // is already looking. The group's card is removable like any other --
-      // closing it drops a filter, not the grouping.
-      const removeBtn = el('button', 'dm-cf-remove-btn', ICON_REMOVE_SM);
-      removeBtn.title = `Remove ${dim}`;
-      removeBtn.addEventListener('click', () => this._removeDimension(tbl, dim));
-      actions.appendChild(removeBtn);
-      header.appendChild(actions);
+      // Removing a card is a one-click job on the card itself. The group's
+      // card is removable like any other -- closing it drops a filter, not
+      // the grouping.
+      header.appendChild(this._cardActions(dim, tbl));
       card.appendChild(header);
 
       // In-panel search
       const searchInput = el('input', 'dm-cf-tw-search');
       searchInput.type = 'text';
-      searchInput.placeholder = 'Search...';
+      searchInput.placeholder = 'Search\u2026';
+      searchInput.setAttribute('aria-label', `Search ${dim}`);
       searchInput.addEventListener('input', () => {
         const q = searchInput.value.toLowerCase();
         const rows = card.querySelectorAll('.dm-cf-tw-row');
@@ -1967,7 +1983,7 @@
         const displayKey = valLabel === '__NA__' ? '(NA)'
           : valLabel === '__EMPTY__' ? '(empty)' : valLabel;
         if (valLabel === '__NA__' || valLabel === '__EMPTY__') {
-          tdVal.innerHTML = `<em style="color:#9ca3af">${displayKey}</em>`;
+          tdVal.appendChild(el('em', 'dm-cf-tw-missing', displayKey));
         } else {
           tdVal.textContent = displayKey;
         }
@@ -2070,16 +2086,7 @@
       setDimTitle(labelEl, dim, sublabel);
       header.appendChild(labelEl);
 
-      const actions = el('div', 'dm-cf-filter-card-actions');
-      const resetBtn = el('button', 'dm-cf-reset-btn', ICON_RESET);
-      resetBtn.title = 'Reset filter';
-      resetBtn.addEventListener('click', () => this._clearFilter(dim));
-      actions.appendChild(resetBtn);
-      const removeBtn = el('button', 'dm-cf-remove-btn', ICON_REMOVE_SM);
-      removeBtn.title = `Remove ${dim}`;
-      removeBtn.addEventListener('click', () => this._removeDimension(tbl, dim));
-      actions.appendChild(removeBtn);
-      header.appendChild(actions);
+      header.appendChild(this._cardActions(dim, tbl));
       card.appendChild(header);
 
       // Initial bounds (excluding this dim's own filter)
@@ -2111,16 +2118,14 @@
         svg.setAttribute('preserveAspectRatio', 'none');
         svg.classList.add('dm-cf-density-svg');
 
+        // Colours from the tokens (crossfilter-block.css), so the curves
+        // follow the scheme.
         const pathAll = document.createElementNS(svgNs, 'path');
-        pathAll.setAttribute('fill', 'rgba(200, 200, 200, 0.5)');
-        pathAll.setAttribute('stroke', 'rgba(160, 160, 160, 0.6)');
-        pathAll.setAttribute('stroke-width', '1');
+        pathAll.setAttribute('class', 'dm-cf-density-all');
         svg.appendChild(pathAll);
 
         const pathFiltered = document.createElementNS(svgNs, 'path');
-        pathFiltered.setAttribute('fill', 'rgba(37, 99, 235, 0.35)');
-        pathFiltered.setAttribute('stroke', 'rgba(37, 99, 235, 0.6)');
-        pathFiltered.setAttribute('stroke-width', '1');
+        pathFiltered.setAttribute('class', 'dm-cf-density-cut');
         svg.appendChild(pathFiltered);
 
         card.appendChild(svg);
@@ -2163,8 +2168,12 @@
       const minMaxRow = el('div', 'dm-cf-range-minmax');
       const labelMin = el('span', 'blockr-slot dm-cf-range-edit');
       const labelMax = el('span', 'blockr-slot dm-cf-range-edit');
-      labelMin.title = 'Click to type a value';
-      labelMax.title = 'Click to type a value';
+      labelMin.tabIndex = 0;
+      labelMax.tabIndex = 0;
+      labelMin.setAttribute('role', 'button');
+      labelMax.setAttribute('role', 'button');
+      labelMin.setAttribute('aria-label', 'Type the lower bound');
+      labelMax.setAttribute('aria-label', 'Type the upper bound');
       minMaxRow.appendChild(labelMin);
       minMaxRow.appendChild(labelMax);
       card.appendChild(minMaxRow);
@@ -2300,6 +2309,12 @@
     // exists. Numeric cards get a plain text box; the label is formatted
     // ("1.2K"), so the input is seeded with the RAW number instead.
     _makeRangeLabelEditable(card, span, which, onCommit) {
+      span.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          span.click();
+        }
+      });
       span.addEventListener('click', () => {
         if (card._editing) return;
         card._editing = true;
@@ -2734,6 +2749,25 @@
           kdeToSvgPath(clipGrid(card._kdeGrid, lo, hi), card._min, card._max,
             card._kdeMaxY, 300, 80));
       }
+    }
+
+    // The clause Reset all would undo, for its tooltip, in column names as
+    // everything on the board is: "SEX = F; AGE 54 to 89". Nothing while no
+    // filter is on.
+    _filterClause() {
+      const parts = [];
+      for (const [dim, v] of Object.entries(this.filters)) {
+        if (Array.isArray(v)) {
+          if (!v.length) continue;
+          const shown = v.map(x => x === '__NA__' ? '(NA)'
+            : x === '__EMPTY__' ? '(empty)' : x);
+          parts.push(`${dim} = ${shown.join(', ')}`);
+        } else if (v && v.min !== undefined) {
+          const fmt = v.isDate ? fmtDate : fmtNum;
+          parts.push(`${dim} ${fmt(v.min)} to ${fmt(v.max)}`);
+        }
+      }
+      return parts.length ? parts.join('; ') : null;
     }
 
     // -- Status bar ---------------------------------------------------------

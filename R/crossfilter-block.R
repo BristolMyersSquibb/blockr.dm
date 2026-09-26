@@ -1455,12 +1455,10 @@ crossfilter_ui <- function(id) {
 
 crossfilter_deps <- memoise0(function() {
   htmltools::tagList(
-    # The Group by field is the shared select component, the same one the dm
-    # table pickers and every blockr.dplyr block mount, not a lookalike:
-    # a block's controls are the design system's or they drift from it.
-    blockr.dplyr::blockr_core_js_dep(),
-    blockr.dplyr::blockr_blocks_css_dep(),
-    blockr.dplyr::blockr_select_dep(),
+    # The design system's controls (Select, the gear tray, the segmented
+    # control, the tooltip) and the tokens, from blockr.ui: a block's
+    # controls are the design system's or they drift from it.
+    blockr.ui::controls_dep(),
     htmltools::htmlDependency(
       name = "crossfilter2",
       version = "1.5.4",
