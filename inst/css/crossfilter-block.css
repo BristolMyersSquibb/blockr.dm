@@ -26,7 +26,7 @@
 }
 
 /* ============================================================
-   Header row: "Filter by", the row count, Reset all, the gear
+   Header row: "Filter by", the count or Reset all, the gear
    ============================================================ */
 /* No rule under it: the group field above draws the only divider the block
    needs, and a second one here would cut the label off the tags it names. */
@@ -59,29 +59,29 @@
   white-space: nowrap;
 }
 
-/* Reset all: the xs main button (26px, radius 4, weight 500, the accent
-   tint), the icon and the count, no label. Disabled rather than hidden when
-   nothing is filtered: a control that appears and disappears under the cursor
-   is worse than a dim one. */
+/* Reset all: the xs main button (26px, radius 4, the accent tint), the icon
+   and "179 of 306 patients" at 12px weight 500 in tabular figures. It stands
+   where the status text stands and only while a filter is on; the JS swaps
+   the two, so the count never moves. */
 .jscf-reset-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 4px;
   box-sizing: border-box;
-  min-width: var(--blockr-control-h-xs);
+  min-width: 0;
   height: var(--blockr-control-h-xs);
-  padding: 0 6px;
+  padding: 0 8px 0 6px;
   font: inherit;
   font-size: var(--blockr-font-size-xs);
   font-weight: var(--blockr-font-weight-medium);
+  font-variant-numeric: tabular-nums;
   color: var(--blockr-color-text-accent);
   background: var(--blockr-color-bg-accent-subtle);
   border: 1px solid var(--blockr-color-border-accent-subtle);
   border-radius: var(--blockr-radius-sm);
   cursor: pointer;
   white-space: nowrap;
-  flex-shrink: 0;
   transition: color var(--blockr-transition),
     border-color var(--blockr-transition),
     background var(--blockr-transition);
@@ -94,31 +94,14 @@
   outline: var(--blockr-focus-outline);
   outline-offset: var(--blockr-focus-offset);
 }
-.jscf-reset-btn:disabled,
-.jscf-reset-btn:disabled:hover {
-  color: var(--blockr-color-text-disabled);
-  background: transparent;
-  border-color: var(--blockr-color-border-default);
-  cursor: default;
+.jscf-reset-btn svg {
+  flex-shrink: 0;
 }
-
-/* The count on an accent host: a 16px capsule, 11px weight 600, the accent
-   at 14% with text-accent-strong. Shown only above zero (the JS hides it). */
-.jscf-reset-count {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  box-sizing: border-box;
-  min-width: 16px;
-  height: 16px;
-  padding: 0 4px;
-  border-radius: var(--blockr-radius-pill);
-  background: color-mix(in srgb, var(--blockr-color-border-accent) 14%, transparent);
-  color: var(--blockr-color-text-accent-strong);
-  font-size: 11px;
-  font-weight: var(--blockr-font-weight-semibold);
-  font-variant-numeric: tabular-nums;
-  line-height: 1;
+/* The label gives up width before the icon does. */
+.jscf-reset-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* ============================================================

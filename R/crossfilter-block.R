@@ -940,6 +940,10 @@ crossfilter_server <- function(active_dims, filters, range_filters,
             parent_key = lookup_info$parent_key,
             parent_table = lookup_info$parent_table,
             child_fk_cols = lookup_info$child_fk_cols,
+            # NULL from the flat and independent builders: the header then
+            # counts rows, as it did before it counted subjects.
+            parent_n = lookup_info$parent_n,
+            subject_unit = lookup_info$subject_unit,
             column_info = col_info,
             all_columns = col_info,
             active_dims = safe_active,

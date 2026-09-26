@@ -61,12 +61,17 @@
 #'   turns a dm into a data frame. Entries scoped to a table outside this set
 #'   are dropped, and the rest lose their scope. `NULL` (the default) drops
 #'   nothing.
+#' @param count Also record how many subjects the filter kept: the rows of
+#'   the dm's subject table (its first primary-key table) in `input` and in
+#'   `out`. Only for a dm held in memory; skipped on remote tables. Read back
+#'   with `filter_trail_counts()`.
 #'
 #' @return `filter_trail()` returns a named character vector or `NULL`. An
 #'   entry recorded with `table` carries its scope in a `tables` attribute on
 #'   the vector, a named list keyed like the trail. `add_filter_trail()`
 #'   returns `out`, with a `blockr_filters` attribute when there is a trail to
-#'   carry.
+#'   carry. `filter_trail_counts()` returns a named list keyed like the trail,
+#'   `c(before = , after = )` for each entry recorded with `count = TRUE`.
 #'
 #' @examples
 #' d <- data.frame(x = 1:3)
@@ -85,10 +90,11 @@ filter_trail <- function(x) {
 #' @rdname filter_trail
 #' @export
 add_filter_trail <- function(out, input = NULL, key = NULL, clause = NULL,
-                             table = NULL, tables = NULL) {
+                             table = NULL, tables = NULL, count = FALSE) {
 
   trail <- filter_trail(input)
   scope <- trail_scope(trail)
+  counts <- trail_counts(trail)
 
   # Start from `character()`, not `NULL`: `NULL[["key"]] <- value` builds a
   # LIST, and consumers paste the trail into a caption expecting a character
@@ -104,6 +110,7 @@ add_filter_trail <- function(out, input = NULL, key = NULL, clause = NULL,
     # wants: a block re-evaluated without `table` after having had one must
     # not keep the old scope.
     scope[[key]] <- if (length(table)) as.character(table) else NULL
+    counts[[key]] <- if (isTRUE(count)) trail_subject_counts(input, out)
   }
 
   if (!is.null(tables) && length(trail)) {
@@ -114,6 +121,8 @@ add_filter_trail <- function(out, input = NULL, key = NULL, clause = NULL,
     )
     trail <- trail[keep]
     scope <- list()
+    # Counts are subjects, not tables: they survive leaving the dm.
+    counts <- counts[intersect(names(counts), names(trail))]
   }
 
   if (!length(trail)) {
@@ -123,8 +132,44 @@ add_filter_trail <- function(out, input = NULL, key = NULL, clause = NULL,
   # Rebuilt rather than inherited: `[[<-` keeps the input's attribute and
   # `[` drops it, so neither path can be trusted to reflect `scope`.
   attr(trail, "tables") <- if (length(scope)) scope else NULL
+  attr(trail, "counts") <- if (length(counts)) counts else NULL
   attr(out, "blockr_filters") <- trail
   out
+}
+
+#' @rdname filter_trail
+#' @export
+filter_trail_counts <- function(x) {
+  trail_counts(filter_trail(x))
+}
+
+# The per-entry subject counts, a named list keyed like the trail, each
+# `c(before = , after = )`; empty when no entry was counted.
+trail_counts <- function(trail) {
+  s <- attr(trail, "counts", exact = TRUE)
+  if (is.list(s)) s else list()
+}
+
+# How many subjects a filter kept: the rows of the dm's subject table (the
+# first table with a primary key, the one every other table keys to) in its
+# input and in its output. Only for tables held in memory: on a remote dm the
+# count is a query each time the filter runs, and nothing reads it yet.
+trail_subject_counts <- function(input, out) {
+  if (!inherits(input, "dm") || !inherits(out, "dm")) {
+    return(NULL)
+  }
+  pks <- dm::dm_get_all_pks(input)
+  if (!nrow(pks)) {
+    return(NULL)
+  }
+  tbl <- as.character(pks$table[[1L]])
+  before <- input[[tbl]]
+  after <- out[[tbl]]
+  if (!is.data.frame(before) || inherits(before, "tbl_lazy") ||
+        !is.data.frame(after) || inherits(after, "tbl_lazy")) {
+    return(NULL)
+  }
+  c(before = nrow(before), after = nrow(after))
 }
 
 # The per-entry table scope, a named list keyed like the trail; empty when
@@ -160,7 +205,8 @@ trail_key <- function(session = shiny::getDefaultReactiveDomain()) {
 #' @rdname filter_trail
 #' @export
 trail_expr <- function(inner, key = NULL, clause = NULL,
-                       data = quote(data), table = NULL, tables = NULL) {
+                       data = quote(data), table = NULL, tables = NULL,
+                       count = FALSE) {
 
   # Self-qualified: block expressions are deparsed into the exported script.
   # Named arguments only when given, so the common carry stays the two-line
@@ -171,6 +217,9 @@ trail_expr <- function(inner, key = NULL, clause = NULL,
     args <- c(args, list(key, clause[[1L]]))
     if (length(table)) {
       args <- c(args, list(table = as.character(table)))
+    }
+    if (isTRUE(count)) {
+      args <- c(args, list(count = TRUE))
     }
   }
 

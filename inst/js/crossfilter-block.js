@@ -243,6 +243,9 @@
       this.dimChild = {};
       this.parentKey = null;
       this.parentTable = null;
+      this.parentN = null;       // subjects in the parent table, from R
+      this.subjectUnit = 'rows'; // what the header calls one of them
+      this._keptKeys = null;     // subject keys every filter keeps, or null
       this.childFkCols = {};
       this.keyDims = {};
       this.filters = {};
@@ -328,11 +331,12 @@
       this.groupFieldEl.appendChild(this.subgroupFieldEl);
       this.el.appendChild(this.groupFieldEl);
 
-      // The filter section's header row: its name on the left, then the row
-      // count, the reset and the gear. Reset lives here rather than under the
-      // panels because it doubles as the "you are looking at a subset" signal
-      // -- below the panels it was off screen on any board with more than two
-      // active dimensions.
+      // The filter section's header row: its name on the left, then the
+      // subject count, which becomes Reset all while a filter is on, and the
+      // gear. Reset lives here rather than under the panels because it
+      // doubles as the "you are looking at a subset" signal -- below the
+      // panels it was off screen on any board with more than two active
+      // dimensions.
       const gearHeader = el('div', 'jscf-gear-header');
       // "Filter by" leads the row, the way "Group by" leads the field above.
       // The count, the reset and the gear all report or change filter state,
@@ -344,18 +348,21 @@
       gearHeader.appendChild(this.statusEl);
 
       // Reset all: the design system's 26px main button, the icon and the
-      // number of active filters as a count while any is on, disabled when
-      // none is. No label: the tint and the count carry it, and the tooltip
-      // names the clause it would undo.
+      // count it would lift, "179 of 306 patients". It takes the status
+      // text's place while a filter is on and is not there otherwise, so the
+      // count and the way back to all of it are one thing. The tooltip names
+      // the clause it would undo.
       this.resetBtn = el('button', 'jscf-reset-btn', ICON_RESET);
       this.resetBtn.type = 'button';
-      this.resetBtn.setAttribute('aria-label', 'Reset all filters');
-      this.resetCountEl = el('span', 'jscf-reset-count');
-      this.resetCountEl.style.display = 'none';
-      this.resetBtn.appendChild(this.resetCountEl);
-      this.resetBtn.disabled = true;
+      this.resetLabelEl = el('span', 'jscf-reset-label');
+      this.resetBtn.appendChild(this.resetLabelEl);
+      this.resetBtn.style.display = 'none';
       this.resetBtn.addEventListener('click', () => this._resetAllFilters());
-      tip(this.resetBtn, () => this._filterClause());
+      tip(this.resetBtn, () => {
+        const clause = this._filterClause();
+        const label = this.resetLabelEl.textContent;
+        return clause ? `${label}. Show all, clearing ${clause}` : null;
+      });
       gearHeader.appendChild(this.resetBtn);
 
       this.gearBtn = el('button', 'blockr-gear-btn', ICON_GEAR);
@@ -1517,6 +1524,12 @@
       this.dimSource = msg.dim_source || {};
       this.parentKey = msg.parent_key;
       this.parentTable = msg.parent_table;
+      // Only the star-schema builder sends these; without them the header
+      // counts lookup rows instead of subjects.
+      this.parentN = typeof msg.parent_n === 'number' ? msg.parent_n : null;
+      this.subjectUnit = typeof msg.subject_unit === 'string'
+        ? msg.subject_unit : 'rows';
+      this._keptKeys = null;
       this.childFkCols = msg.child_fk_cols || {};
       this.columnInfo = msg.column_info || {};
       this.allColumns = msg.all_columns || msg.column_info || {};
@@ -2791,7 +2804,6 @@
 
     _syncSiblingKeys() {
       const tables = Object.keys(this.instances);
-      if (tables.length <= 1) return;
 
       // Phase 1: clear all keyDim filters so reads reflect pre-sync state.
       for (const t of tables) {
@@ -2813,6 +2825,14 @@
         const filtered = this.instances[source].allFiltered();
         sourceKeys[source] = new Set(filtered.map(r => r[fkCol]));
       }
+
+      // The subjects the header counts as kept: those every filtered table
+      // keeps. null while no table filters, which reads as all of them.
+      let kept = null;
+      for (const keys of Object.values(sourceKeys)) {
+        kept = kept ? new Set([...kept].filter(k => keys.has(k))) : keys;
+      }
+      this._keptKeys = kept;
 
       // Phase 3: apply intersections.
       for (const target of tables) {
@@ -2908,28 +2928,43 @@
       // The pill row carries the same fact one level up, as an accent edge.
       this._syncShelfState();
 
-      // The filter count rides on the button rather than the status text:
-      // it is what makes the tinted state readable at a glance, and it keeps
-      // the status line one item long when six dimensions are active.
-      this.resetBtn.disabled = nFilters === 0;
-      this.resetCountEl.textContent = nFilters > 0 ? String(nFilters) : '';
-      this.resetCountEl.style.display = nFilters > 0 ? '' : 'none';
+      // Counted in subjects when R sent the parent's size, in lookup rows
+      // otherwise (no single parent table to count).
+      let kept, total, unit;
+      if (this.parentN != null) {
+        total = this.parentN;
+        kept = this._keptKeys ? this._keptKeys.size : total;
+        unit = this.subjectUnit;
+      } else {
+        total = 0;
+        kept = 0;
+        for (const ct of childTables) {
+          total += this.instances[ct].size();
+          kept += this.instances[ct].allFiltered().length;
+        }
+        unit = 'rows';
+      }
+
+      // One element in one place: the grey count while nothing is filtered,
+      // Reset all carrying "kept of total" while anything is.
+      if (nFilters > 0) {
+        const label = `${fmtCount(kept)} of ${fmtCount(total)} ${unit}`;
+        this.resetLabelEl.textContent = label;
+        this.resetBtn.setAttribute('aria-label', `${label}. Reset all filters`);
+        this.resetBtn.style.display = '';
+        this.statusEl.style.display = 'none';
+        return;
+      }
+      this.resetBtn.style.display = 'none';
+      this.statusEl.style.display = '';
 
       if (childTables.length === 0) {
         this.statusEl.textContent = '';
         return;
       }
-
-      let totalRows = 0;
-      let filteredRows = 0;
-      for (const ct of childTables) {
-        totalRows += this.instances[ct].size();
-        filteredRows += this.instances[ct].allFiltered().length;
-      }
-
-      this.statusEl.textContent = nFilters > 0
-        ? `${fmtCount(filteredRows)} / ${fmtCount(totalRows)} rows`
-        : `${fmtCount(totalRows)} rows` +
+      this.statusEl.textContent = this.parentN != null
+        ? `${fmtCount(total)} ${unit}`
+        : `${fmtCount(total)} rows` +
           (childTables.length > 1 ? ` in ${childTables.length} tables` : '');
     }
 
