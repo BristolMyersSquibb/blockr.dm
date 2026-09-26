@@ -1277,7 +1277,8 @@
 
       const addRow = el('div', 'blockr-add-row jscf-groups-add');
       const addLink = el('span', 'blockr-add-link',
-        `<span class="blockr-add-icon">${icons.plus || '+'}</span> Add pool`);
+        `<span class="blockr-add-icon">${icons.plus || '+'}</span> ` +
+        (s.role === 'subgroup' ? 'Add subgroup pool' : 'Add pool'));
       addLink.setAttribute('role', 'button');
       addLink.tabIndex = 0;
       addLink.addEventListener('click', () => this._addPool(s));
