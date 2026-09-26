@@ -23,9 +23,6 @@
 
   const ICON_CHECK_SM = '<svg width="11" height="11" viewBox="0 0 16 16" fill="currentColor"><path d="M12.736 3.97a.733.733 0 0 1 1.047 0c.286.289.29.756.01 1.05L7.88 12.01a.733.733 0 0 1-1.065.02L3.217 8.384a.757.757 0 0 1 0-1.06.733.733 0 0 1 1.047 0l3.052 3.093 5.4-6.425z"/></svg>';
 
-  // Type icons for search results
-  const TYPE_ICONS = { categorical: '\u2261', range: '#', date: '\u25f4' };
-
   // =========================================================================
   // Helpers
   // =========================================================================
@@ -580,8 +577,9 @@
           for (const item of items) {
             const row = el('div', 'jscf-search-item');
             if (item.active) row.classList.add('jscf-search-item--active');
-            row.appendChild(el('span', 'jscf-search-item-icon',
-              TYPE_ICONS[item.type] || '\u2026'));
+            // A column with a card is the menu's current pick: a check in
+            // the accent and the name at weight 600. A click toggles it.
+            row.appendChild(el('span', 'jscf-search-item-check', ICON_CHECK_SM));
 
             // The name, then the label as muted meta, cut first.
             const nameEl = el('span', 'jscf-search-item-name', item.dim);
@@ -594,20 +592,6 @@
             const badgeText = item.type === 'date' ? 'Date'
               : item.type === 'range' ? 'Numeric' : 'Categorical';
             row.appendChild(el('span', 'jscf-search-item-badge', badgeText));
-
-            // What the click did, said in the row that took it. The band
-            // floats over the cards in no-edit mode, so "did that work" can no
-            // longer be answered by looking below it. The chip takes the
-            // badge's slot rather than one of its own: the row keeps its
-            // width, and a column's type is what you read before you add it,
-            // not after. Hovering an added row turns it into Remove, which is
-            // what a second click does.
-            const state = el('span', 'jscf-search-item-state');
-            state.appendChild(
-              el('span', 'jscf-state-added', `${ICON_CHECK_SM} Added`));
-            state.appendChild(
-              el('span', 'jscf-state-remove', `${ICON_REMOVE_SM} Remove`));
-            row.appendChild(state);
 
             const entry = { row, tbl: item.tbl, dim: item.dim };
             this._searchRows.push(entry);
@@ -634,6 +618,7 @@
 
     _setSearchRowState(entry, active) {
       entry.row.classList.toggle('jscf-search-item--active', active);
+      entry.row.setAttribute('aria-selected', String(active));
     }
 
     // The authoritative pass, run when R answers: state comes from

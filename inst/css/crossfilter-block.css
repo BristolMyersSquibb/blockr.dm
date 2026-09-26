@@ -218,7 +218,8 @@
   background: var(--blockr-color-bg-raised);
 }
 
-/* Rows: 34px, 14px, radius 4, 10px side padding. */
+/* Rows: 34px, 14px, radius 4, 10px side padding. Not selectable: a row is
+   clicked, never dragged or copied. */
 .jscf-search-item {
   display: flex;
   align-items: center;
@@ -228,17 +229,23 @@
   border-radius: var(--blockr-radius-sm);
   cursor: pointer;
   white-space: nowrap;
+  user-select: none;
 }
 .jscf-search-item:hover,
 .jscf-search-item--highlighted {
   background: var(--blockr-color-bg-hover);
 }
-.jscf-search-item-icon {
+/* The pick's check, in a column of its own so every name starts on the same
+   edge; empty on a row without a card. */
+.jscf-search-item-check {
   flex-shrink: 0;
-  width: 14px;
-  text-align: center;
-  font-size: var(--blockr-font-size-sm);
-  color: var(--blockr-color-text-muted);
+  display: inline-flex;
+  width: 12px;
+  color: var(--blockr-color-text-accent);
+  visibility: hidden;
+}
+.jscf-search-item--active .jscf-search-item-check {
+  visibility: visible;
 }
 /* The name, then its label as 13px muted meta 8px after it; the label is
    cut first when the row runs out of room. */
@@ -249,29 +256,28 @@
   text-overflow: ellipsis;
   color: var(--blockr-color-text-default);
 }
+/* The current pick: weight 600 on the name, as in every menu. */
+.jscf-search-item--active .jscf-search-item-name {
+  font-weight: var(--blockr-font-weight-semibold);
+}
 .jscf-search-item-label {
   margin-left: 8px;
   font-size: var(--blockr-font-size-sm);
+  font-weight: var(--blockr-font-weight-normal);
   color: var(--blockr-color-text-muted);
 }
 /* Muted text never sits on the hover wash. */
 .jscf-search-item:hover .jscf-search-item-label,
-.jscf-search-item:hover .jscf-search-item-icon,
-.jscf-search-item--highlighted .jscf-search-item-label,
-.jscf-search-item--highlighted .jscf-search-item-icon {
+.jscf-search-item--highlighted .jscf-search-item-label {
   color: var(--blockr-color-text-default);
 }
 
-/* Badges: an 18px capsule, 11px weight 500, 7px side padding. The type is
-   neutral; "Added" is on, so it takes the accent tint; hovering an added row
-   offers the undo in the danger set. The state badge takes the type badge's
-   slot, so the row keeps its width. */
-.jscf-search-item-badge,
-.jscf-search-item-state {
+/* The column's type: a neutral badge, an 18px capsule, 11px weight 500, 7px
+   side padding. */
+.jscf-search-item-badge {
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
-  gap: 3px;
   box-sizing: border-box;
   height: 18px;
   padding: 0 7px;
@@ -283,41 +289,6 @@
   font-weight: var(--blockr-font-weight-medium);
   line-height: 1;
   white-space: nowrap;
-}
-.jscf-search-item-state {
-  display: none;
-}
-.jscf-search-item--active .jscf-search-item-badge {
-  display: none;
-}
-.jscf-search-item--active .jscf-search-item-state {
-  display: inline-flex;
-  color: var(--blockr-color-text-accent);
-  background: var(--blockr-color-bg-accent-subtle);
-  border-color: var(--blockr-color-border-accent-subtle);
-}
-.jscf-state-added,
-.jscf-state-remove {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-}
-.jscf-state-remove {
-  display: none;
-}
-.jscf-search-item--active:hover .jscf-search-item-state,
-.jscf-search-item--active.jscf-search-item--highlighted .jscf-search-item-state {
-  color: var(--blockr-color-text-danger);
-  background: var(--blockr-color-bg-danger);
-  border-color: var(--blockr-color-border-danger-subtle);
-}
-.jscf-search-item--active:hover .jscf-state-added,
-.jscf-search-item--active.jscf-search-item--highlighted .jscf-state-added {
-  display: none;
-}
-.jscf-search-item--active:hover .jscf-state-remove,
-.jscf-search-item--active.jscf-search-item--highlighted .jscf-state-remove {
-  display: inline-flex;
 }
 
 .jscf-search-empty {
