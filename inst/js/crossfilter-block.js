@@ -1871,20 +1871,36 @@
       // goes to the values, which is where long level names need it.
       countTh.style.width = '135px';
 
+      // The sort cue, as in the table preview: sort bars after the
+      // header text, in the accent on the sorted column. The other column
+      // shows, muted and on hover only, what a click on it would do.
+      const firstDir = (col) => col === 'count' ? 'desc' : 'asc';
+      const sortWords = {
+        value: { asc: 'A to Z', desc: 'Z to A' },
+        count: { asc: 'Smallest first', desc: 'Largest first' }
+      };
+      const head = (th, text, col) => {
+        th.innerHTML = '';
+        const on = card._sortCol === col;
+        const dir = on ? card._sortDir : firstDir(col);
+        const h = el('span', 'jscf-th-head');
+        h.appendChild(document.createTextNode(text));
+        h.appendChild(el('span',
+          `jscf-sort-cue jscf-sort-cue--${dir}${on ? ' jscf-sort-cue--on' : ''}`));
+        th.appendChild(h);
+        th.classList.toggle('dm-cf-tw-th--sorted', on);
+        if (on) th.setAttribute('aria-sort', dir === 'asc' ? 'ascending' : 'descending');
+        else th.removeAttribute('aria-sort');
+      };
       const updateThLabels = () => {
-        valueTh.innerHTML = '';
-        countTh.innerHTML = '';
-        valueTh.appendChild(document.createTextNode(dim));
-        countTh.appendChild(document.createTextNode('Count'));
-        const iconCls = card._sortDir === 'asc' ? 'jscf-sort-icon jscf-sort-asc'
-          : 'jscf-sort-icon jscf-sort-desc';
-        if (card._sortCol === 'value') {
-          valueTh.appendChild(el('span', iconCls));
-        } else {
-          countTh.appendChild(el('span', iconCls));
-        }
+        head(valueTh, dim, 'value');
+        head(countTh, 'Count', 'count');
       };
       updateThLabels();
+      countTh.classList.add('dm-cf-tw-th--num');
+      for (const [th, col] of [[valueTh, 'value'], [countTh, 'count']]) {
+        tip(th, () => card._sortCol === col ? sortWords[col][card._sortDir] : null);
+      }
 
       const toggleSort = (col) => {
         if (card._sortCol === col) {

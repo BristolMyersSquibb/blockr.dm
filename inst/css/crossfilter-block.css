@@ -440,23 +440,44 @@
 .dm-cf-tw-th:hover {
   color: var(--blockr-color-text-default);
 }
-.jscf-sort-icon {
-  display: inline-block;
-  width: 12px;
-  height: 12px;
-  font-size: 10px;
-  line-height: 12px;
-  text-align: center;
-  margin-left: 2px;
+.dm-cf-tw-th--sorted {
+  color: var(--blockr-color-text-default);
+}
+/* Count sits over the numbers, so its header does too. */
+.dm-cf-tw-th--num {
+  text-align: right;
+}
+.jscf-th-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
   vertical-align: middle;
 }
-.jscf-sort-asc::after {
-  content: '\2191';
-  color: var(--blockr-color-text-default);
+/* The sort cue, as in the table preview (blockr.ui): sort bars that draw the
+   values top to bottom, short to long for ascending, long to short for
+   descending; the accent on the sorted column, muted on hover elsewhere.
+   A mask, so the colour is currentColor. */
+.jscf-sort-cue {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  visibility: hidden;
+  color: var(--blockr-color-text-muted);
+  background-color: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='black' stroke-width='1.4' stroke-linecap='round'%3E%3Cpath d='M2 3h3M2 6h5.5M2 9h8'/%3E%3C/svg%3E") no-repeat center / 12px 12px;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='black' stroke-width='1.4' stroke-linecap='round'%3E%3Cpath d='M2 3h3M2 6h5.5M2 9h8'/%3E%3C/svg%3E") no-repeat center / 12px 12px;
 }
-.jscf-sort-desc::after {
-  content: '\2193';
-  color: var(--blockr-color-text-default);
+.jscf-sort-cue--desc {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='black' stroke-width='1.4' stroke-linecap='round'%3E%3Cpath d='M2 3h8M2 6h5.5M2 9h3'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='black' stroke-width='1.4' stroke-linecap='round'%3E%3Cpath d='M2 3h8M2 6h5.5M2 9h3'/%3E%3C/svg%3E");
+}
+.dm-cf-tw-th:hover .jscf-sort-cue,
+.jscf-sort-cue--on {
+  visibility: visible;
+}
+.jscf-sort-cue--on {
+  color: var(--blockr-color-text-accent);
 }
 /* Rows: 30px. The hover wash; the value turns muted when another value of
    the column is picked and this one is not. */
