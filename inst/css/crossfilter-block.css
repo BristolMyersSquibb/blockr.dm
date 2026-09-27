@@ -977,6 +977,11 @@
 .jscf-pool:focus-within .jscf-pool-remove {
   opacity: 1;
 }
+/* A split keeps at least one column (_syncLastColumn). */
+.jscf-last-column .blockr-select__tag-remove,
+.jscf-pool--only .jscf-pool-remove {
+  display: none;
+}
 .jscf-pool-error {
   margin: -2px 0 4px;
   font-size: var(--blockr-font-size-xs);

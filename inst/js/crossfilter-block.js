@@ -1017,9 +1017,9 @@
         row.style.display = links.length ? '' : 'none';
         for (const a of links) row.appendChild(a);
       };
-      // A verb like "Subgroup" beside it. The subgroup's link says whose
-      // levels it pools: the group's section sits right above it.
-      const poolsLink = (s) => link(s.role === 'subgroup' ? 'Pool subgroups' : 'Pool groups',
+      // Each link names the section it opens. The subgroup's says whose
+      // levels it shows: the group's section sits right above it.
+      const poolsLink = (s) => link(s.role === 'subgroup' ? 'Show subgroups' : 'Show groups',
         () => {
           s.open = true;
           this._renderPoolsBand(s);
@@ -1165,9 +1165,38 @@
       if (this._isDefaultGroupDef(s, def)) delete this.groupDefs[s.col];
       else this.groupDefs[s.col] = out;
       this._syncOverlap(s);
+      this._syncLastColumn(s);
       const nsBase = this.el.id.replace(/-crossfilter_input$/, '');
       Shiny.setInputValue(nsBase + '-set_groups',
         Object.assign({ column: s.col }, out), { priority: 'event' });
+    }
+
+    // A split keeps at least one column. An edit that would leave none is
+    // put back, and the control holding the last column loses its remove
+    // buttons: the tag of the one level shown separately, or the only pool
+    // with members and, if it has one member left, that member's tag.
+    _leavesNoColumn(s, show, pools) {
+      return !show.length && !pools.some(p => p.members.length);
+    }
+
+    _syncLastColumn(s) {
+      if (!s.el || !s.edit) return;
+      const filled = s.edit.pools.filter(p => p.members.length);
+      const onlyPool = !s.edit.show.length && filled.length === 1 ? filled[0] : null;
+      const show = s.el.querySelector('.jscf-groups-show');
+      if (show) {
+        show.classList.toggle('jscf-last-column',
+          s.edit.show.length === 1 && !filled.length);
+      }
+      for (const box of s.el.querySelectorAll('.jscf-pool')) {
+        const only = !!onlyPool && box.dataset.pool === String(onlyPool.id);
+        box.classList.toggle('jscf-pool--only', only);
+        const members = box.querySelector('.jscf-pool-members');
+        if (members) {
+          members.classList.toggle('jscf-last-column',
+            only && onlyPool.members.length === 1);
+        }
+      }
     }
 
     // Levels that sit in two columns of a split: shown on their own and in a
@@ -1318,6 +1347,10 @@
         selected: s.edit.show.slice(),
         placeholder: 'None',
         onChange: (values) => {
+          if (this._leavesNoColumn(s, values, s.edit.pools)) {
+            showSel.setValue(s.edit.show.slice());
+            return;
+          }
           s.edit.show = values.slice();
           this._groupsEdited(s);
         }
@@ -1347,6 +1380,7 @@
 
       s.el.appendChild(body);
       this._syncOverlap(s);
+      this._syncLastColumn(s);
     }
 
     _renderPool(s, pool, options, icons) {
@@ -1445,6 +1479,11 @@
         reorderable: false,
         placeholder: 'Pick the levels to pool…',
         onChange: (values) => {
+          if (this._leavesNoColumn(s, s.edit.show,
+            s.edit.pools.map(p => (p === pool ? { members: values } : p)))) {
+            sel.setValue(pool.members.slice());
+            return;
+          }
           pool.members = values.slice();
           if (!pool.custom) {
             pool.name = uniqueName(
@@ -1485,7 +1524,9 @@
     }
 
     _removePool(s, id) {
-      s.edit.pools = s.edit.pools.filter(p => p.id !== id);
+      const pools = s.edit.pools.filter(p => p.id !== id);
+      if (this._leavesNoColumn(s, s.edit.show, pools)) return;
+      s.edit.pools = pools;
       this._groupsEdited(s);
       this._renderPoolsBand(s);
     }
