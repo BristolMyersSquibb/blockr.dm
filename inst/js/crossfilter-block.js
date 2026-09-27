@@ -312,13 +312,13 @@
       };
       this._splits.group.el = bandEl();
       this.groupFieldEl.appendChild(this._splits.group.el);
-      // Pools and Subgroup are rare, so at rest they are one line of "+"
+      // Show groups and Subgroup are rare, so at rest they are one line of "+"
       // links under the group. A link goes away while its section is on the
       // block, and comes back when the section is removed.
       this.splitAddEl = el('div', 'blockr-add-row jscf-split-add');
       this.groupFieldEl.appendChild(this.splitAddEl);
       // The second split, under the group's own settings, with pools of its
-      // own and its own "+ Pools" link. Same field, so it hides with it:
+      // own and its own "+ Show subgroups" link. Same field, so it hides with it:
       // there is no subgroup without a group.
       this.subgroupFieldEl = el('div', 'jscf-subgroup-field');
       this.subgroupFieldEl.style.display = 'none';
@@ -992,8 +992,8 @@
       this._subgroupSelect.el.classList.add('blockr-select--bordered');
     }
 
-    // The "+" links for the sections that are not on the block: Pools and
-    // Subgroup under the group, Pools under the subgroup.
+    // The "+" links for the sections that are not on the block: Show groups
+    // and Subgroup under the group, Show subgroups under the subgroup.
     _renderSplitAdd() {
       const icons = (window.Blockr && window.Blockr.icons) || {};
       // Each link says what it adds, so none has a tooltip.
