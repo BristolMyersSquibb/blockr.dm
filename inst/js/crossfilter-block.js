@@ -826,8 +826,8 @@
       }
 
       // The way in, in the row it acts on, and the same in every mode. It is
-      // the design system's "+" add link, like "+ Pools" and "+ Subgroup"
-      // above and "+ Add pool": an add control, so it must not look like a
+      // the design system's "+" add link, like "+ Pool groups" and
+      // "+ Subgroup" above: an add control, so it must not look like a
       // pill, whose solid tint (`.jscf-pill--filtering`) says a column is
       // cutting rows.
       const plus = ((window.Blockr && window.Blockr.icons) || {}).plus || '+';
@@ -1017,9 +1017,9 @@
         row.style.display = links.length ? '' : 'none';
         for (const a of links) row.appendChild(a);
       };
-      // The subgroup's pools say whose they are: the group's "Pools" sits
-      // right above them.
-      const poolsLink = (s) => link(s.role === 'subgroup' ? 'Subgroup pools' : 'Pools',
+      // A verb like "Subgroup" beside it. The subgroup's link says whose
+      // levels it pools: the group's section sits right above it.
+      const poolsLink = (s) => link(s.role === 'subgroup' ? 'Pool subgroups' : 'Pool groups',
         () => {
           s.open = true;
           this._renderPoolsBand(s);
@@ -1244,7 +1244,7 @@
       // back and takes the section off the block.
       const head = el('div', 'jscf-section-head');
       head.appendChild(el('label', 'blockr-label',
-        s.role === 'subgroup' ? 'Subgroup pools' : 'Pools'));
+        s.role === 'subgroup' ? 'Show subgroups' : 'Show groups'));
       head.appendChild(el('span', 'jscf-topbar-spacer'));
       if (s.open) {
         const fold = el('button', 'jscf-groups-fold jscf-groups-fold--open', icons.chevron || '');
@@ -1269,7 +1269,7 @@
       }
       const rm = el('button', 'blockr-row-remove jscf-section-remove', icons.remove || '×');
       rm.type = 'button';
-      const rmText = s.role === 'subgroup' ? 'Remove the subgroup pools' : 'Remove the pools';
+      const rmText = s.role === 'subgroup' ? 'Show every subgroup separately' : 'Show every group separately';
       rm.setAttribute('aria-label', rmText);
       tip(rm, rmText);
       rm.addEventListener('click', () => {
@@ -1309,14 +1309,14 @@
       const body = el('div', 'jscf-groups-body');
 
       const showField = el('div', 'jscf-groups-field');
-      showField.appendChild(el('label', 'blockr-label', 'Show'));
+      showField.appendChild(el('label', 'blockr-label', 'Separately'));
       const showHost = el('div', 'jscf-groups-show');
       showField.appendChild(showHost);
       body.appendChild(showField);
       const showSel = Select.multi(showHost, {
         options,
         selected: s.edit.show.slice(),
-        placeholder: 'No level on its own',
+        placeholder: 'None',
         onChange: (values) => {
           s.edit.show = values.slice();
           this._groupsEdited(s);
@@ -1332,7 +1332,7 @@
       const addRow = el('div', 'blockr-add-row jscf-groups-add');
       const addLink = el('span', 'blockr-add-link',
         `<span class="blockr-add-icon">${icons.plus || '+'}</span> ` +
-        (s.role === 'subgroup' ? 'Add subgroup pool' : 'Add pool'));
+        (s.role === 'subgroup' ? 'Pool subgroups' : 'Pool groups'));
       addLink.setAttribute('role', 'button');
       addLink.tabIndex = 0;
       addLink.addEventListener('click', () => this._addPool(s));

@@ -51,7 +51,7 @@ column need not have a card, and a card does not make a column the group.
 \code{NULL} (the default) means no group.}
 
 \item{groups}{Group definitions for the pinned column and the subgroup,
-edited in the \code{Pools} section under each field. A named list keyed by
+edited in the \code{Show groups} section under each field. A named list keyed by
 column, so switching the group column and back, or swapping group and
 subgroup, keeps each definition. An entry is
 \verb{list(show = <levels with a column of their own, in order>, pools = list(list(name = , members = , custom = )))}, \code{custom = FALSE} meaning the
