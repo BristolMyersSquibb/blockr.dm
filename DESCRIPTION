@@ -25,7 +25,7 @@ Imports:
     blockr.core,
     blockr.dplyr,
     blockr.io (>= 0.1.0.9014),
-    blockr.ui (>= 0.0.1.9005),
+    blockr.ui,
     dm,
     dplyr,
     htmltools,
@@ -73,7 +73,7 @@ Remotes:
     BristolMyersSquibb/blockr.core,
     BristolMyersSquibb/blockr.dplyr,
     BristolMyersSquibb/blockr.io,
-    BristolMyersSquibb/blockr.ui@feat/shared-controls,
+    BristolMyersSquibb/blockr.ui,
     BristolMyersSquibb/blockr,
     BristolMyersSquibb/blockr.dag,
     BristolMyersSquibb/blockr.dock
