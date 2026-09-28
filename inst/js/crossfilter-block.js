@@ -1394,6 +1394,7 @@
       name.spellcheck = false;
       name.autocomplete = 'off';
       name.setAttribute('aria-label', 'Pool name');
+      name.setAttribute('data-blockr-editable', 'Click to rename');
       head.appendChild(name);
 
       const nEl = el('span', 'jscf-pool-n');
