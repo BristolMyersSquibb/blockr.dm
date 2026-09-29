@@ -1,6 +1,6 @@
 Package: blockr.dm
 Title: Relational Data Management Blocks for 'blockr'
-Version: 0.0.78
+Version: 0.0.92
 Authors@R:
     c(person(given = "Christoph",
              family = "Sax",

@@ -299,7 +299,8 @@ flatten_filters_for_lookup <- function(
 #' @param fks FK tibble from dm::dm_get_all_fks()
 #' @param measure_col Optional measure spec (".count" or "table.column")
 #' @return List with lookups, dim_source, parent_key, child_fk_cols,
-#'   parent_table, child_tables; or NULL if topology doesn't support lookup
+#'   parent_table, child_tables, parent_n; or NULL if topology doesn't
+#'   support lookup
 #' @keywords internal
 build_crossfilter_lookups <- function(
   tables, active_dims, pks, fks, measure_col = NULL
@@ -423,7 +424,10 @@ build_crossfilter_lookups <- function(
     # A named list yields the same keyed-object JSON, warning-free.
     child_fk_cols = as.list(child_fk_col_map),
     parent_table = parent_table,
-    child_tables = child_fk_rows$child_table
+    child_tables = child_fk_rows$child_table,
+    # How many keys the parent table holds: what a block that counts its
+    # subjects (see `subject_unit` in new_crossfilter_block()) counts from.
+    parent_n = length(unique(parent_df[[parent_key]]))
   )
 }
 

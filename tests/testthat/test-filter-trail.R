@@ -283,3 +283,33 @@ test_that("the devmaster shape: an AE-only flag leaves the lab branch alone", {
   )
   expect_identical(filter_trail(pop), c(global_filter = "SEX = F"))
 })
+
+test_that("a counted filter records the subjects it kept", {
+  adsl <- data.frame(USUBJID = c("a", "b", "c"), SEX = c("F", "F", "M"))
+  adae <- data.frame(USUBJID = c("a", "c"), AETERM = c("x", "y"))
+  d <- dm::dm(adsl = adsl, adae = adae) |>
+    dm::dm_add_pk(adsl, USUBJID) |>
+    dm::dm_add_fk(adae, USUBJID, adsl)
+  out <- dm::dm_filter(d, adsl = SEX == "F")
+  res <- add_filter_trail(out, d, "drill", "SEX = F", count = TRUE)
+  expect_identical(filter_trail_counts(res)$drill, c(before = 3L, after = 2L))
+  # the count rides along a later filter's entry, and stays with its key
+  res2 <- add_filter_trail(res, res, "other", "AETERM = x")
+  expect_identical(filter_trail_counts(res2)$drill, c(before = 3L, after = 2L))
+  expect_null(filter_trail_counts(res2)$other)
+  # and survives leaving the dm
+  flat <- add_filter_trail(as.data.frame(res2$adsl), res2, tables = "adsl")
+  expect_identical(filter_trail_counts(flat)$drill, c(before = 3L, after = 2L))
+})
+
+test_that("an uncounted filter records no count", {
+  d <- data.frame(x = 1:3)
+  res <- add_filter_trail(d, NULL, "f", "x > 1")
+  expect_identical(filter_trail_counts(res), list())
+  expect_null(attr(filter_trail(res), "counts"))
+})
+
+test_that("the counted expression asks for the count", {
+  e <- trail_expr(quote(f(data)), "k", "SEX = F", count = TRUE)
+  expect_true(isTRUE(as.list(e)$count))
+})

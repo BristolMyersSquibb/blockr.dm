@@ -20,7 +20,8 @@ of active dim columns}
 }
 \value{
 List with lookups, dim_source, parent_key, child_fk_cols,
-parent_table, child_tables; or NULL if topology doesn't support lookup
+parent_table, child_tables, parent_n; or NULL if topology doesn't
+support lookup
 }
 \description{
 For a star-schema dm (one parent table with PK, N child tables with FKs),

@@ -3,6 +3,7 @@
 \name{filter_trail}
 \alias{filter_trail}
 \alias{add_filter_trail}
+\alias{filter_trail_counts}
 \alias{trail_key}
 \alias{trail_expr}
 \title{Filter trail}
@@ -15,8 +16,11 @@ add_filter_trail(
   key = NULL,
   clause = NULL,
   table = NULL,
-  tables = NULL
+  tables = NULL,
+  count = FALSE
 )
+
+filter_trail_counts(x)
 
 trail_key(session = shiny::getDefaultReactiveDomain())
 
@@ -26,7 +30,8 @@ trail_expr(
   clause = NULL,
   data = quote(data),
   table = NULL,
-  tables = NULL
+  tables = NULL,
+  count = FALSE
 )
 }
 \arguments{
@@ -55,6 +60,11 @@ turns a dm into a data frame. Entries scoped to a table outside this set
 are dropped, and the rest lose their scope. \code{NULL} (the default) drops
 nothing.}
 
+\item{count}{Also record how many subjects the filter kept: the rows of
+the dm's subject table (its first primary-key table) in \code{input} and in
+\code{out}. Only for a dm held in memory; skipped on remote tables. Read back
+with \code{filter_trail_counts()}.}
+
 \item{session}{The block server's Shiny session, used to derive the key.}
 
 \item{inner}{The expression the block would otherwise return.}
@@ -69,7 +79,8 @@ generated code carries a bare \code{data} that resolves to \code{\link[utils:dat
 entry recorded with \code{table} carries its scope in a \code{tables} attribute on
 the vector, a named list keyed like the trail. \code{add_filter_trail()}
 returns \code{out}, with a \code{blockr_filters} attribute when there is a trail to
-carry.
+carry. \code{filter_trail_counts()} returns a named list keyed like the trail,
+\code{c(before = , after = )} for each entry recorded with \code{count = TRUE}.
 }
 \description{
 The record of which filters produced a table, carried on the data itself as
