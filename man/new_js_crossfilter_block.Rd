@@ -33,7 +33,9 @@ when \code{measure} is set.}
 building on this block passes its own \code{class} here: the subclass has to be
 set at construction, which is where block metadata is resolved from the
 registry. It is not a formal because every constructor formal has to come
-back out as block state.}
+back out as block state. The same holds for \code{subject_unit}: the word the
+header counts the subject table's keys in ("patients"), set by a package
+that knows what its subjects are. Unset, the header counts rows.}
 }
 \value{
 A crossfilter block carrying a \code{js_crossfilter_block} subclass.
