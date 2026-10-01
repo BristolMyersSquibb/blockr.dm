@@ -99,9 +99,9 @@
 }
 
 /* Boolean column: one compact design-system checkbox row (no label-above,
-   no bordered row wrap). Markup + CSS vendored from blockr.dplyr's
-   settings-band checkbox (canonical boolean control) — distinct selectors
-   would drift, so the classes are kept verbatim; scoped additions only. */
+   no bordered row wrap). The markup is blockr.ui's Blockr.checkbox(); the
+   CSS is vendored from blockr.dplyr's settings-band checkbox (canonical
+   boolean control), with scoped additions only. */
 .blockr-checkbox {
   display: inline-flex;
   align-items: center;

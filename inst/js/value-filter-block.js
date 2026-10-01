@@ -395,44 +395,29 @@
         // unchecked = NO constraint from this column (empty values). FALSE
         // or NA targeting = flip the column to Multi in the gear, or use
         // the dplyr filter.
-        // Markup + CSS vendored from blockr.dplyr's settings-band checkbox
-        // (the design-system boolean control), same vendoring convention as
-        // that dep itself.
+        // The checkbox is the design system's boolean control,
+        // Blockr.checkbox() from blockr.ui. The sublabel goes inside its
+        // label, so a click on either toggles it.
         if (entryMode === 'single' && this.colTypes[entryKey] === 'logical') {
           const item = document.createElement('div');
           item.className = 'bi-filter-item bi-filter-item-bool';
-          const cb = document.createElement('label');
-          cb.className = 'blockr-checkbox bi-filter-bool-checkbox';
-          const cbInput = document.createElement('input');
-          cbInput.type = 'checkbox';
-          cbInput.checked = String((entry.values || [])[0]) === 'TRUE';
-          const box = document.createElement('span');
-          box.className = 'blockr-checkbox__box';
-          box.innerHTML =
-            '<svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor">' +
-            '<path d="M13.854 3.646a.5.5 0 0 1 0 .708l-7 7a.5.5 0 0 1-.708 ' +
-            '0l-3.5-3.5a.5.5 0 1 1 .708-.708L6.5 10.293l6.646-6.647a.5.5 0 ' +
-            '0 1 .708 0"/></svg>';
-          const txt = document.createElement('span');
-          txt.className = 'blockr-checkbox__label';
-          txt.textContent = this.isDm
-            ? entry.table + '.' + entry.name
-            : entry.name;
-          cb.appendChild(cbInput);
-          cb.appendChild(box);
-          cb.appendChild(txt);
+          const cb = Blockr.checkbox(
+            this.isDm ? entry.table + '.' + entry.name : entry.name,
+            String((entry.values || [])[0]) === 'TRUE',
+            (checked) => {
+              this.entries[idx].values = checked ? ['TRUE'] : [];
+              this._autoSubmit(0);
+            }
+          );
+          cb.el.classList.add('bi-filter-bool-checkbox');
           const subText = this.colLabels[entryKey];
           if (subText) {
             const subEl = document.createElement('span');
             subEl.className = 'bi-filter-label-sublabel';
             subEl.textContent = subText;
-            cb.appendChild(subEl);
+            cb.el.appendChild(subEl);
           }
-          cbInput.addEventListener('change', () => {
-            this.entries[idx].values = cbInput.checked ? ['TRUE'] : [];
-            this._autoSubmit(0);
-          });
-          item.appendChild(cb);
+          item.appendChild(cb.el);
           this.bodyEl.appendChild(item);
           return;
         }
