@@ -8,22 +8,14 @@
   // SVG icons (blockr design system)
   // =========================================================================
 
-  const ICON_GEAR = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16"><path d="M9.405 1.05c-.413-1.4-2.397-1.4-2.81 0l-.1.34a1.464 1.464 0 0 1-2.105.872l-.31-.17c-1.283-.698-2.686.705-1.987 1.987l.169.311c.446.82.023 1.841-.872 2.105l-.34.1c-1.4.413-1.4 2.397 0 2.81l.34.1a1.464 1.464 0 0 1 .872 2.105l-.17.31c-.698 1.283.705 2.686 1.987 1.987l.311-.169a1.464 1.464 0 0 1 2.105.872l.1.34c.413 1.4 2.397 1.4 2.81 0l.1-.34a1.464 1.464 0 0 1 2.105-.872l.31.17c1.283.698 2.686-.705 1.987-1.987l-.169-.311a1.464 1.464 0 0 1 .872-2.105l.34-.1c1.4-.413 1.4-2.397 0-2.81l-.34-.1a1.464 1.464 0 0 1-.872-2.105l.17-.31c.698-1.283-.705-2.686-1.987-1.987l-.311.169a1.464 1.464 0 0 1-2.105-.872zM8 10.93a2.929 2.929 0 1 1 0-5.86 2.929 2.929 0 0 1 0 5.858z"/></svg>';
+  // Only the icons blockr.ui has no counterpart for. The gear, the tick and
+  // both x's come from its list, Blockr.icons, which controls_dep() puts on
+  // the page, and are read where they are drawn.
 
   const ICON_RESET = '<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path fill-rule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 1 1 .908-.418A6 6 0 1 1 8 2v1z"/><path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466z"/></svg>';
 
-  const ICON_REMOVE = '<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708z"/></svg>';
-
-  const ICON_RESET_SM = '<svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path fill-rule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 1 1 .908-.418A6 6 0 1 1 8 2v1z"/><path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466z"/></svg>';
-
-  const ICON_REMOVE_SM = '<svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708z"/></svg>';
-
-  // The multi-pick tick (design system, Menus: 14px, text-accent).
-  const ICON_TICK = '<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M13.854 3.646a.5.5 0 0 1 0 .708l-7 7a.5.5 0 0 1-.708 0l-3.5-3.5a.5.5 0 1 1 .708-.708L6.5 10.293l6.646-6.647a.5.5 0 0 1 .708 0"/></svg>';
-
-  // The search field's magnifier and its clear button.
+  // The search field's magnifier.
   const ICON_SEARCH = '<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001q.044.06.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1 1 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0"/></svg>';
-  const ICON_CLEAR = '<svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"><line x1="2.5" y1="2.5" x2="7.5" y2="7.5"/><line x1="7.5" y1="2.5" x2="2.5" y2="7.5"/></svg>';
 
   // A card shows its search above this many values, as a menu shows its
   // filter box.
@@ -365,7 +357,7 @@
       });
       gearHeader.appendChild(this.resetBtn);
 
-      this.gearBtn = el('button', 'blockr-gear-btn', ICON_GEAR);
+      this.gearBtn = el('button', 'blockr-gear-btn', window.Blockr.icons.gear);
       this.gearBtn.type = 'button';
       gearHeader.appendChild(this.gearBtn);
 
@@ -599,7 +591,7 @@
             if (item.active) row.classList.add('jscf-search-item--active');
             // A column with a card is a multi pick: a 14px tick in the accent,
             // in a slot every row keeps. A click toggles it.
-            row.appendChild(el('span', 'jscf-search-item-check', ICON_TICK));
+            row.appendChild(el('span', 'jscf-search-item-check', window.Blockr.icons.confirm));
 
             // The name, then the label as muted meta, cut first.
             const nameEl = el('span', 'jscf-search-item-name', item.dim);
@@ -830,7 +822,7 @@
       // "+ Subgroup" above: an add control, so it must not look like a
       // pill, whose solid tint (`.jscf-pill--filtering`) says a column is
       // cutting rows.
-      const plus = ((window.Blockr && window.Blockr.icons) || {}).plus || '+';
+      const plus = window.Blockr.icons.plus;
       this.addBtn = el('button', 'blockr-add-link jscf-shelf-add',
         `<span class="blockr-add-icon">${plus}</span> More filters`);
       this.addBtn.type = 'button';
@@ -937,7 +929,7 @@
       this._renderSplitAdd();
       if (!shown) return;
 
-      const icons = (window.Blockr && window.Blockr.icons) || {};
+      const icons = window.Blockr.icons;
       const head = el('div', 'jscf-section-head');
       head.appendChild(el('label', 'blockr-label', 'Subgroup by'));
       head.appendChild(el('span', 'jscf-topbar-spacer'));
@@ -949,7 +941,7 @@
         swap.addEventListener('click', () => this._swapSplit());
         head.appendChild(swap);
       }
-      const rm = el('button', 'blockr-row-remove jscf-section-remove', icons.remove || '×');
+      const rm = el('button', 'blockr-row-remove jscf-section-remove', icons.remove);
       rm.type = 'button';
       rm.setAttribute('aria-label', 'Remove the subgroup');
       tip(rm, 'Remove the subgroup');
@@ -995,11 +987,11 @@
     // The "+" links for the sections that are not on the block: Show groups
     // and Subgroup under the group, Show subgroups under the subgroup.
     _renderSplitAdd() {
-      const icons = (window.Blockr && window.Blockr.icons) || {};
+      const icons = window.Blockr.icons;
       // Each link says what it adds, so none has a tooltip.
       const link = (text, onClick) => {
         const a = el('span', 'blockr-add-link',
-          `<span class="blockr-add-icon">${icons.plus || '+'}</span> ${text}`);
+          `<span class="blockr-add-icon">${icons.plus}</span> ${text}`);
         a.setAttribute('role', 'button');
         a.tabIndex = 0;
         a.addEventListener('click', onClick);
@@ -1266,7 +1258,7 @@
       }
       s.el.style.display = '';
 
-      const icons = (window.Blockr && window.Blockr.icons) || {};
+      const icons = window.Blockr.icons;
 
       // Open: the editor, and a fold that closes it. Closed but set: the
       // columns as tags and an Edit link. Either way an x puts every level
@@ -1276,7 +1268,7 @@
         s.role === 'subgroup' ? 'Show subgroups' : 'Show groups'));
       head.appendChild(el('span', 'jscf-topbar-spacer'));
       if (s.open) {
-        const fold = el('button', 'jscf-groups-fold jscf-groups-fold--open', icons.chevron || '');
+        const fold = el('button', 'jscf-groups-fold jscf-groups-fold--open', icons.chevron);
         fold.type = 'button';
         fold.setAttribute('aria-label', 'Fold the pools');
         tip(fold, 'Done');
@@ -1296,7 +1288,7 @@
         });
         head.appendChild(edit);
       }
-      const rm = el('button', 'blockr-row-remove jscf-section-remove', icons.remove || '×');
+      const rm = el('button', 'blockr-row-remove jscf-section-remove', icons.remove);
       rm.type = 'button';
       const rmText = s.role === 'subgroup' ? 'Show every subgroup separately' : 'Show every group separately';
       rm.setAttribute('aria-label', rmText);
@@ -1364,7 +1356,7 @@
 
       const addRow = el('div', 'blockr-add-row jscf-groups-add');
       const addLink = el('span', 'blockr-add-link',
-        `<span class="blockr-add-icon">${icons.plus || '+'}</span> ` +
+        `<span class="blockr-add-icon">${icons.plus}</span> ` +
         (s.role === 'subgroup' ? 'Pool subgroups' : 'Pool groups'));
       addLink.setAttribute('role', 'button');
       addLink.tabIndex = 0;
@@ -1405,7 +1397,7 @@
       head.appendChild(nEl);
 
       const rm = el('button', 'blockr-row-remove jscf-pool-remove',
-        icons.x || '×');
+        icons.x);
       rm.type = 'button';
       rm.setAttribute('aria-label', 'Remove this pool');
       tip(rm, 'Remove this pool');
@@ -1931,7 +1923,7 @@
       resetBtn.addEventListener('click', () => this._clearFilter(dim));
       actions.appendChild(resetBtn);
       actions._resetBtn = resetBtn;
-      const removeBtn = el('button', 'dm-cf-remove-btn', ICON_REMOVE_SM);
+      const removeBtn = el('button', 'dm-cf-remove-btn', window.Blockr.icons.x);
       removeBtn.type = 'button';
       removeBtn.setAttribute('aria-label', `Remove ${dim}`);
       tip(removeBtn, `Remove ${dim}`);
@@ -1979,7 +1971,7 @@
       searchInput.autocomplete = 'off';
       searchInput.spellcheck = false;
       searchInput.setAttribute('aria-label', `Search ${dim}`);
-      const clearBtn = el('button', 'dm-cf-tw-search-clear', ICON_CLEAR);
+      const clearBtn = el('button', 'dm-cf-tw-search-clear', window.Blockr.icons.remove);
       clearBtn.type = 'button';
       clearBtn.setAttribute('aria-label', 'Clear the search');
       tip(clearBtn, 'Clear');
