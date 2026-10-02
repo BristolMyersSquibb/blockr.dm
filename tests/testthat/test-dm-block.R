@@ -140,11 +140,7 @@ test_that("dm block keeps an unnamed (DAG-UI) input instead of dropping it", {
   block <- new_dm_block()
   df1 <- data.frame(id = 1:3, name = c("a", "b", "c"))
 
-  args_obj <- shiny::isolate({
-    ra <- blockr.core:::reactives()
-    blockr.core:::append_reactive(ra, function() df1)
-    ra
-  })
+  args_obj <- reactives::reactive_exprs(shiny::reactive(df1))
 
   testServer(
     blockr.core:::get_s3_method("block_server", block),
@@ -369,11 +365,7 @@ test_that("adding a DAG-UI slot at runtime re-derives the expression", {
   df1 <- dm_ref_adsl()
   df2 <- dm_ref_adae(shared_key = TRUE)
 
-  args_obj <- shiny::isolate({
-    ra <- blockr.core:::reactives()
-    blockr.core:::append_reactive(ra, function() df1)
-    ra
-  })
+  args_obj <- reactives::reactive_exprs(shiny::reactive(df1))
 
   testServer(
     blockr.core:::get_s3_method("block_server", block),
@@ -385,7 +377,7 @@ test_that("adding a DAG-UI slot at runtime re-derives the expression", {
       expect_false(grepl("table_2", paste(deparse(e1), collapse = " "),
                          fixed = TRUE))
 
-      shiny::isolate(blockr.core:::append_reactive(args_obj, function() df2))
+      reactives::append_reactive(args_obj, shiny::reactive(df2))
       session$flushReact()
       e2 <- session$returned$expr()
 
