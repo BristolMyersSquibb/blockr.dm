@@ -66,12 +66,21 @@
 #'   `out`. Only for a dm held in memory; skipped on remote tables. Read back
 #'   with `filter_trail_counts()`.
 #'
+#' @section Dataset name:
+#' The same carry takes a `blockr_dataset` attribute along: a short name for
+#' what the board read (a study code, a file name), set by the reader on a
+#' table of its dm, where dm verbs leave it alone. `add_filter_trail()` copies
+#' it onto a data frame `out` that has none, so it reaches every chart and
+#' table the trail reaches. Downloads use it in the file name.
+#'
 #' @return `filter_trail()` returns a named character vector or `NULL`. An
 #'   entry recorded with `table` carries its scope in a `tables` attribute on
 #'   the vector, a named list keyed like the trail. `add_filter_trail()`
 #'   returns `out`, with a `blockr_filters` attribute when there is a trail to
-#'   carry. `filter_trail_counts()` returns a named list keyed like the trail,
+#'   carry and a `blockr_dataset` attribute when `input` has one.
+#'   `filter_trail_counts()` returns a named list keyed like the trail,
 #'   `c(before = , after = )` for each entry recorded with `count = TRUE`.
+#'   `dataset_name()` returns a string or `NULL`.
 #'
 #' @examples
 #' d <- data.frame(x = 1:3)
@@ -91,6 +100,13 @@ filter_trail <- function(x) {
 #' @export
 add_filter_trail <- function(out, input = NULL, key = NULL, clause = NULL,
                              table = NULL, tables = NULL, count = FALSE) {
+
+  # A dm keeps it on its table; only a data frame needs it written.
+  ds <- dataset_name(input)
+  if (!is.null(ds) && !inherits(out, "dm") &&
+        is.null(attr(out, "blockr_dataset", exact = TRUE))) {
+    attr(out, "blockr_dataset") <- ds
+  }
 
   trail <- filter_trail(input)
   scope <- trail_scope(trail)
@@ -135,6 +151,22 @@ add_filter_trail <- function(out, input = NULL, key = NULL, clause = NULL,
   attr(trail, "counts") <- if (length(counts)) counts else NULL
   attr(out, "blockr_filters") <- trail
   out
+}
+
+#' @rdname filter_trail
+#' @export
+dataset_name <- function(x) {
+  cands <- if (inherits(x, "dm")) {
+    lapply(dm::dm_get_tables(x), attr, "blockr_dataset", exact = TRUE)
+  } else {
+    list(attr(x, "blockr_dataset", exact = TRUE))
+  }
+  for (ds in cands) {
+    if (is.character(ds) && length(ds) == 1L && !is.na(ds) && nzchar(ds)) {
+      return(ds)
+    }
+  }
+  NULL
 }
 
 #' @rdname filter_trail
