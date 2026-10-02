@@ -326,7 +326,8 @@ dm_keylines_html <- function(meta, root_id) {
         class = paste0("r2key", if (L$composite) " r2key--comp" else ""),
         type = "button", `data-key` = L$lid, `data-owner` = L$parent,
         style = sprintf("--line:%s;left:%spx;top:%spx", L$color, cx - 14L, cy - 11L),
-        title = L$name,
+        # The name shows in blockr.ui's tooltip only while it is cut off.
+        `data-blockr-tooltip` = L$name, `data-blockr-tooltip-overflow` = NA,
         shiny::tags$span(class = "r2key__sw"),
         shiny::tags$span(class = "r2key__name", L$name),
         shiny::tags$span(class = "r2key__n num", length(L$members))

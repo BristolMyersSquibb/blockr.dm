@@ -603,6 +603,9 @@ block_output.dm_block <- function(x, result, session) {
         dm_keylines_html(meta, root_id),
         shiny::uiOutput(ns("dm_table_preview"))
       ),
+      # The key buttons carry their tooltips as attributes, which the
+      # tooltip script in blockr.ui's controls reads.
+      blockr.ui::controls_dep(),
       dm_keylines_css(),
       dm_keylines_js(root_id, ns("dm_diagram_click"))
     )
