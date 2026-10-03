@@ -25,10 +25,11 @@ test_that("a pool's default name follows its members", {
 })
 
 test_that("groups round-trip through block state", {
-  groups <- list(TRT = list(
-    show = c("A", "B"),
-    pools = list(list(name = "All", members = c("A", "B"), custom = TRUE))
-  ))
+  groups <- list(TRT = list(columns = list(
+    list(name = "", members = "A", custom = FALSE),
+    list(name = "All", members = c("A", "B"), custom = TRUE),
+    list(name = "", members = "B", custom = FALSE)
+  )))
   state <- blockr.core:::initial_block_state(
     new_crossfilter_block(groups = groups)
   )
@@ -64,39 +65,64 @@ test_that("set_groups is normalized and a default definition is dropped", {
       expect_equal(session$returned$state$groups(), list())
 
       # What Shiny delivers from the client: JS arrays arrive as lists.
+      # Columns in table order: a level, a pool, a level again.
       session$setInputs(`expr-set_groups` = list(
         column = "TRT",
-        show = list("High", "Placebo"),
-        pools = list(
+        columns = list(
+          list(name = "", members = list("High"), custom = FALSE),
           list(name = "Active", members = list("Low", "High"), custom = TRUE),
-          list(name = "", members = list("Low"), custom = TRUE),
-          list(name = "New pool", members = list(), custom = FALSE)
+          list(name = "", members = list("Placebo"), custom = FALSE),
+          list(name = "", members = list("Low", "Placebo"), custom = TRUE),
+          list(name = "New pool", members = list(), custom = FALSE),
+          # A level the data does not have, on its own: dropped.
+          list(name = "", members = list("Gone"), custom = FALSE)
         )
       ))
       session$flushReact()
 
       expect_equal(
         session$returned$state$groups(),
-        list(TRT = list(
-          show = c("High", "Placebo"),
-          pools = list(
-            list(name = "Active", members = c("Low", "High"), custom = TRUE),
-            # No name: the default, and the name follows the members again.
-            list(name = "Low", members = "Low", custom = FALSE),
-            # No members: kept, it is a pool being built.
-            list(name = "New pool", members = character(), custom = FALSE)
-          )
-        ))
+        list(TRT = list(columns = list(
+          list(name = "", members = "High", custom = FALSE),
+          list(name = "Active", members = c("Low", "High"), custom = TRUE),
+          list(name = "", members = "Placebo", custom = FALSE),
+          # Several members and no name: the default, following the members.
+          list(name = "Placebo + Low", members = c("Low", "Placebo"),
+               custom = FALSE),
+          # No members: kept, it is a pool being built.
+          list(name = "New pool", members = character(), custom = FALSE)
+        )))
       )
 
-      # Every level shown, in level order, no pools: the entry goes.
+      # Every level on its own, in level order: the entry goes.
       session$setInputs(`expr-set_groups` = list(
         column = "TRT",
-        show = list("Placebo", "Low", "High"),
-        pools = list()
+        columns = list(
+          list(name = "", members = list("Placebo"), custom = FALSE),
+          list(name = "", members = list("Low"), custom = FALSE),
+          list(name = "", members = list("High"), custom = FALSE)
+        )
       ))
       session$flushReact()
       expect_equal(session$returned$state$groups(), list())
+
+      # The older show/pools shape: its levels, then its pools.
+      session$setInputs(`expr-set_groups` = list(
+        column = "TRT",
+        show = list("High", "Placebo"),
+        pools = list(
+          list(name = "", members = list("Low"), custom = TRUE)
+        )
+      ))
+      session$flushReact()
+      expect_equal(
+        session$returned$state$groups(),
+        list(TRT = list(columns = list(
+          list(name = "", members = "High", custom = FALSE),
+          list(name = "", members = "Placebo", custom = FALSE),
+          list(name = "Low", members = "Low", custom = FALSE)
+        )))
+      )
     }
   )
 })
@@ -136,20 +162,23 @@ test_that("the data payload carries pinned_levels and groups", {
           list(value = "High", n = 2L)
         )
       )
-      # A one-level show stays an array.
+      # The older shape arrives converted; a one-level column stays an array.
       expect_equal(
         msg$groups,
-        list(TRT = list(show = list("Placebo"), pools = list()))
+        list(TRT = list(columns = list(
+          list(name = "", members = list("Placebo"), custom = FALSE)
+        )))
       )
 
       # A groups edit does not re-ship the data: the client already has it.
       n_before <- length(sent)
       session$setInputs(`expr-set_groups` = list(
-        column = "TRT", show = list("High"), pools = list()
+        column = "TRT",
+        columns = list(list(name = "", members = list("High"), custom = FALSE))
       ))
       session$flushReact()
       expect_equal(
-        session$returned$state$groups()$TRT$show, "High"
+        session$returned$state$groups()$TRT$columns[[1]]$members, "High"
       )
       expect_equal(length(sent), n_before)
 
@@ -158,7 +187,8 @@ test_that("the data payload carries pinned_levels and groups", {
       session$flushReact()
       re_ship <- sent[[length(sent)]]
       expect_identical(re_ship$type, "js-crossfilter-data")
-      expect_equal(re_ship$message$groups$TRT$show, list("High"))
+      expect_equal(re_ship$message$groups$TRT$columns[[1]]$members,
+                   list("High"))
     }
   )
 })
@@ -211,7 +241,14 @@ test_that("groups survive board serialization", {
     args = list(x = blk2, data = list(data = function() cf_groups_df())),
     {
       session$flushReact()
-      expect_equal(session$returned$state$groups(), groups)
+      # Read back in the columns shape: the level, then the pool.
+      expect_equal(
+        session$returned$state$groups(),
+        list(TRT = list(columns = list(
+          list(name = "", members = "Placebo", custom = FALSE),
+          list(name = "Active", members = c("Low", "High"), custom = FALSE)
+        )))
+      )
     }
   )
 })

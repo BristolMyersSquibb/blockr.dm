@@ -377,7 +377,7 @@ crossfilter_arguments <- function() {
       ),
       example = list(adsl = list(SEX = list("F")))
     ),
-    # arbitrary-key map (column -> {show, pools}); type omitted.
+    # arbitrary-key map (column -> {columns}); type omitted.
     subgroup = new_arg_spec(
       paste0(
         "A second column the board is split by, under `pinned`: tables nest ",
@@ -389,19 +389,22 @@ crossfilter_arguments <- function() {
     groups = new_arg_spec(
       paste0(
         "Group definitions for the pinned column and the subgroup. Object: ",
-        "column name -> ",
-        "{show: array of levels that get a column of their own, in order; ",
-        "pools: array of {name, members: array of levels, custom: boolean}}. ",
-        "A column with no entry shows every level."
+        "column name -> {columns: array of {name, members: array of levels, ",
+        "custom: boolean}, in table order}. A column with an empty name is ",
+        "one level on its own; a named one pools its members. A level may ",
+        "be in two columns. A level in no column is not shown. A column with ",
+        "no entry shows every level on its own."
       ),
-      example = list(TRT01A = list(
-        show = list("Placebo", "Xanomeline High Dose"),
-        pools = list(list(
+      example = list(TRT01A = list(columns = list(
+        list(name = "", members = list("Placebo"), custom = FALSE),
+        list(
           name = "All Xanomeline",
           members = list("Xanomeline Low Dose", "Xanomeline High Dose"),
           custom = FALSE
-        ))
-      ))
+        ),
+        list(name = "", members = list("Xanomeline High Dose"),
+             custom = FALSE)
+      )))
     ),
     # arbitrary-key nested map (table -> {column -> [min, max]}); type omitted.
     range_filters = new_arg_spec(

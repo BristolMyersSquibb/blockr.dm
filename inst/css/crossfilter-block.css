@@ -918,21 +918,6 @@
 .jscf-groups-summary .jscf-groups-tag {
   padding-right: 8px;
 }
-.jscf-groups-body {
-  margin-top: 4px;
-}
-.jscf-groups-field {
-  margin-bottom: 12px;
-}
-.jscf-pool {
-  margin-bottom: 12px;
-}
-.jscf-pool-head {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 4px;
-}
 /* The pool's name is renamed in place: plain text at rest, the hover wash
    (radius 6, pulled back by its padding so the text does not move), and a
    field at its own size while editing. */
@@ -963,25 +948,6 @@
 .jscf-pool-name.jscf-pool-name--invalid:focus {
   border-color: var(--blockr-color-border-danger);
 }
-.jscf-pool-n {
-  flex-shrink: 0;
-  font-size: var(--blockr-font-size-xs);
-  color: var(--blockr-color-text-muted);
-  font-variant-numeric: tabular-nums;
-}
-/* .blockr-row-remove shows on hover of a .blockr-row; a pool is not one. */
-.jscf-pool .jscf-pool-remove {
-  margin-left: 0;
-}
-.jscf-pool:hover .jscf-pool-remove,
-.jscf-pool:focus-within .jscf-pool-remove {
-  opacity: 1;
-}
-/* A split keeps at least one column (_syncLastColumn). */
-.jscf-last-column .blockr-select__tag-remove,
-.jscf-pool--only .jscf-pool-remove {
-  display: none;
-}
 .jscf-pool-error {
   margin: -2px 0 4px;
   font-size: var(--blockr-font-size-xs);
@@ -998,14 +964,186 @@
   line-height: 1.4;
   color: var(--blockr-color-text-warning);
 }
-.jscf-groups--overlap .blockr-select--bordered .blockr-select__control,
+.jscf-groups--overlap .jscf-cols,
 .jscf-groups--overlap .jscf-groups-summary .jscf-groups-tag {
   border-color: var(--blockr-color-border-warning);
   background-color: var(--blockr-color-bg-warning);
 }
-.jscf-groups-add {
-  min-height: var(--blockr-control-h-xs);
+
+/* The columns of a split, one list in table order (_renderPoolsBand). Rows
+   are the design system's block-list rows: 34px, radius 6, 8px between their
+   parts, no space between rows, the hover wash and a "…" tool under the
+   pointer, the whole row drags. A pool is a stack: a tinted band (neutral,
+   since a pool has no colour of its own), its header a row with the name at
+   600, then its members. Past 8 rows the list scrolls. */
+.jscf-cols {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  max-height: 272px;
+  overflow-y: auto;
+  /* Pulled out by the rows' padding, so a name starts on the label's edge
+     and the hover wash reaches past it. */
+  margin: 2px -8px 0;
+  border: 1px solid transparent;
+  border-radius: var(--blockr-radius-lg);
+}
+.jscf-col-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  height: 34px;
+  padding: 0 8px;
+  border-radius: var(--blockr-radius-md);
+  font-size: var(--blockr-font-size-base);
+  color: var(--blockr-color-text-default);
+  cursor: grab;
+  outline: none;
+}
+.jscf-col-row:hover,
+.jscf-col-row:focus-visible {
+  background: var(--blockr-color-bg-hover);
+}
+.jscf-col-row:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--blockr-color-border-accent);
+}
+.jscf-col-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.jscf-col-meta,
+.jscf-col-n {
+  flex-shrink: 0;
+  font-size: var(--blockr-font-size-sm);
+  color: var(--blockr-color-text-muted);
+  white-space: nowrap;
+}
+.jscf-col-n {
+  min-width: 24px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+/* Meta text gives way to the "…"; a tool never covers the name. */
+.jscf-col-dots {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
   padding: 0;
+  color: var(--blockr-color-text-muted);
+  background: transparent;
+  border: none;
+  border-radius: var(--blockr-radius-sm);
+  cursor: pointer;
+}
+.jscf-col-dots:hover {
+  color: var(--blockr-color-text-default);
+  background: var(--blockr-color-bg-hover);
+}
+.jscf-col-row:hover > .jscf-col-dots,
+.jscf-col-row:focus-visible > .jscf-col-dots {
+  display: inline-flex;
+}
+.jscf-col-row:hover > .jscf-col-n,
+.jscf-col-row:focus-visible > .jscf-col-n {
+  display: none;
+}
+/* Read-only state: a neutral badge (design system, Badges). */
+.jscf-col-badge {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  height: 18px;
+  padding: 0 7px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--blockr-color-text-muted);
+  background: var(--blockr-color-bg-subtle);
+  border: 1px solid var(--blockr-color-border-default);
+  border-radius: var(--blockr-radius-pill);
+}
+.jscf-col-stack {
+  flex: none;
+  margin: 1px 0;
+  padding: 2px;
+  border-radius: var(--blockr-radius-lg);
+  background: color-mix(in srgb, var(--blockr-color-text-default) 5%, transparent);
+}
+.jscf-col-row--head .jscf-col-name {
+  flex: 0 1 auto;
+  font-weight: 600;
+}
+.jscf-col-row--head .jscf-col-meta {
+  flex: 1;
+}
+.jscf-col-row--member {
+  padding-left: 22px;
+}
+.jscf-col-chev {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--blockr-color-text-muted);
+}
+.jscf-col-chev svg {
+  width: 10px;
+  height: 10px;
+  transition: transform var(--blockr-transition);
+}
+.jscf-col-stack--folded .jscf-col-chev svg {
+  transform: rotate(-90deg);
+}
+.jscf-col-row--head .jscf-pool-name {
+  flex: 1;
+  margin-left: -8px;
+  font-size: var(--blockr-font-size-base);
+  font-weight: 600;
+}
+/* Drag: the row or band it would land on takes the accent tint (as the
+   outline's link drop), a 2px accent line marks a place between rows (as in
+   block lists). */
+.jscf-col--dragging {
+  opacity: 0.45;
+}
+.jscf-col--target,
+.jscf-col--target.jscf-col-row:hover {
+  background: var(--blockr-color-bg-accent-subtle);
+  box-shadow: inset 0 0 0 1px var(--blockr-color-border-accent-subtle);
+}
+.jscf-col-dropline {
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--blockr-color-border-accent);
+  pointer-events: none;
+  z-index: 1;
+}
+.jscf-cols-hidden {
+  margin: 4px 0 0;
+  font-size: var(--blockr-font-size-xs);
+  color: var(--blockr-color-text-muted);
+}
+.jscf-cols-hidden-level {
+  padding: 0;
+  font: inherit;
+  color: var(--blockr-color-text-accent);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+.jscf-cols-hidden-level:hover {
+  text-decoration: underline;
+}
+.jscf-cols-add {
+  margin: 4px 0 0 -8px;
 }
 
 /* ============================================================
@@ -1109,4 +1247,9 @@
   font-size: var(--blockr-font-size-xs);
   color: var(--blockr-color-text-muted);
   font-variant-numeric: tabular-nums;
+}
+.jscf-cols-count {
+  margin-left: 8px;
+  font-size: var(--blockr-font-size-xs);
+  color: var(--blockr-color-text-muted);
 }

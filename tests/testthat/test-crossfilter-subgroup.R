@@ -114,7 +114,7 @@ test_that("the payload carries the subgroup's levels, and swap trades the two", 
       expect_equal(session$returned$state$pinned(), "SEX")
       expect_equal(session$returned$state$subgroup(), "TRT")
       # The definition stays with its column.
-      expect_equal(session$returned$state$groups()$SEX$show, "F")
+      expect_equal(session$returned$state$groups()$SEX$columns[[1]]$members, "F")
 
       # A subgroup's pools are set like the group's, keyed by its column.
       session$setInputs(`expr-set_groups` = list(
@@ -123,7 +123,8 @@ test_that("the payload carries the subgroup's levels, and swap trades the two", 
                           custom = FALSE))
       ))
       session$flushReact()
-      expect_equal(session$returned$state$groups()$TRT$pools[[1]]$name,
+      # The older show/pools shape is still read: levels first, then pools.
+      expect_equal(session$returned$state$groups()$TRT$columns[[2]]$name,
                    "All patients")
     }
   )

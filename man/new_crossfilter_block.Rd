@@ -53,12 +53,15 @@ column need not have a card, and a card does not make a column the group.
 \item{groups}{Group definitions for the pinned column and the subgroup,
 edited in the \verb{Show groups} section under each field. A named list keyed by
 column, so switching the group column and back, or swapping group and
-subgroup, keeps each definition. An entry is
-\verb{list(show = <levels with a column of their own, in order>, pools = list(list(name = , members = , custom = )))}, \code{custom = FALSE} meaning the
-pool's name follows its members. A column with no entry shows every level
-in \code{\link[=crossfilter_level_order]{crossfilter_level_order()}} and has no pools. The block only records
-the definition; a package building on it (blockr.pharma's population
-filter) applies it.}
+subgroup, keeps each definition. An entry is \code{list(columns = list(list(name = , members = , custom = ), ...))}, the columns in table
+order. A column with an empty name is one level shown on its own; a named
+one is a pool of its members, \code{custom = FALSE} meaning the name follows
+the members. A level may be in two columns (shown on its own and pooled).
+A level in no column is not shown. A column with no entry shows every
+level in \code{\link[=crossfilter_level_order]{crossfilter_level_order()}}, one column each. The older shape,
+\verb{list(show = <levels>, pools = <list>)}, is still read: its levels come
+first, then its pools. The block only records the definition; a package
+building on it (blockr.pharma's population filter) applies it.}
 
 \item{subgroup}{A second column the board is split by, under \code{pinned},
 chosen in the \verb{Subgroup by} select below the groups. Same eligible

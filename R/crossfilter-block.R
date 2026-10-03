@@ -33,13 +33,16 @@
 #' @param groups Group definitions for the pinned column and the subgroup,
 #'   edited in the `Show groups` section under each field. A named list keyed by
 #'   column, so switching the group column and back, or swapping group and
-#'   subgroup, keeps each definition. An entry is
-#'   `list(show = <levels with a column of their own, in order>, pools =
-#'   list(list(name = , members = , custom = )))`, `custom = FALSE` meaning the
-#'   pool's name follows its members. A column with no entry shows every level
-#'   in [crossfilter_level_order()] and has no pools. The block only records
-#'   the definition; a package building on it (blockr.pharma's population
-#'   filter) applies it.
+#'   subgroup, keeps each definition. An entry is `list(columns =
+#'   list(list(name = , members = , custom = ), ...))`, the columns in table
+#'   order. A column with an empty name is one level shown on its own; a named
+#'   one is a pool of its members, `custom = FALSE` meaning the name follows
+#'   the members. A level may be in two columns (shown on its own and pooled).
+#'   A level in no column is not shown. A column with no entry shows every
+#'   level in [crossfilter_level_order()], one column each. The older shape,
+#'   `list(show = <levels>, pools = <list>)`, is still read: its levels come
+#'   first, then its pools. The block only records the definition; a package
+#'   building on it (blockr.pharma's population filter) applies it.
 #' @param subgroup A second column the board is split by, under `pinned`,
 #'   chosen in the `Subgroup by` select below the groups. Same eligible
 #'   columns as `pinned`, minus the pinned one. `NULL` (the default) means no
@@ -407,36 +410,62 @@ crossfilter_pool_default_name <- function(members, levels) {
   paste(ordered, collapse = " + ")
 }
 
-# One column's group definition in its canonical R shape: `show` a character
-# vector, `pools` an unnamed list of list(name, members, custom). Accepts what
-# Shiny delivers from the client (JS arrays arrive as lists) and what a saved
-# board gives back (length-1 arrays arrive as scalars). A pool without members
-# is kept: it is a pool being built. A pool without a name gets the default.
+# One column's group definition in its canonical R shape: `columns`, an
+# unnamed list of list(name, members, custom) in table order. An empty name is
+# a level shown on its own, one member; a name makes a pool. Accepts what Shiny
+# delivers from the client (JS arrays arrive as lists), what a saved board
+# gives back (length-1 arrays arrive as scalars) and the older `show` plus
+# `pools` shape, which becomes its shown levels followed by its pools. A pool
+# without members is kept: it is a pool being built. A pool of several
+# members without a name gets the default one.
 crossfilter_clean_group_def <- function(def, levels = character()) {
   chr <- function(x) {
     x <- as.character(unlist(x, use.names = FALSE))
     x[!is.na(x)]
   }
-  show <- unique(chr(def$show))
-  pools <- lapply(unname(def$pools %||% list()), function(p) {
+  cols <- if (is.null(def$columns) && (!is.null(def$show) ||
+                                       !is.null(def$pools))) {
+    c(
+      lapply(unique(chr(def$show)), function(v) {
+        list(name = "", members = v, custom = FALSE)
+      }),
+      lapply(unname(def$pools %||% list()), function(p) {
+        name <- chr(p$name)
+        # A pool always had a name; an empty one asked for the default.
+        if (!length(name) || !nzchar(trimws(name[[1L]]))) {
+          p$name <- crossfilter_pool_default_name(chr(p$members), levels)
+          p$custom <- FALSE
+        }
+        p
+      })
+    )
+  } else {
+    unname(def$columns %||% list())
+  }
+  cols <- lapply(cols, function(p) {
     members <- unique(chr(p$members))
     name <- chr(p$name)
     name <- if (length(name)) trimws(name[[1L]]) else ""
     custom <- isTRUE(as.logical(unlist(p$custom))[1L])
-    if (!nzchar(name)) {
+    if (!nzchar(name) && length(members) != 1L) {
       name <- crossfilter_pool_default_name(members, levels)
       custom <- FALSE
     }
-    list(name = name, members = members, custom = custom)
+    list(name = name, members = members, custom = nzchar(name) && custom)
   })
-  list(show = show, pools = pools)
+  list(columns = cols)
 }
 
-# No entry for a column means untouched: every level shown, in level order,
-# and no pools. A definition that says exactly that is not stored.
+# No entry for a column means untouched: every level on its own, in level
+# order. A definition that says exactly that is not stored.
 crossfilter_group_def_is_default <- function(def, levels) {
-  identical(as.character(def$show), as.character(levels)) &&
-    length(def$pools) == 0L
+  cols <- def$columns
+  all(vapply(cols, function(p) !nzchar(p$name), logical(1))) &&
+    identical(
+      unlist(lapply(cols, `[[`, "members"), use.names = FALSE) %||%
+        character(),
+      as.character(levels)
+    )
 }
 
 crossfilter_clean_groups <- function(groups) {
@@ -446,13 +475,12 @@ crossfilter_clean_groups <- function(groups) {
   lapply(groups, crossfilter_clean_group_def)
 }
 
-# `groups` as the client reads it: {COL: {show: [...], pools: [{name,
-# members: [...], custom}]}}. as.list() keeps a one-level vector an array.
+# `groups` as the client reads it: {COL: {columns: [{name, members: [...],
+# custom}]}}. as.list() keeps a one-level vector an array.
 crossfilter_groups_payload <- function(groups) {
   lapply(groups, function(def) {
     list(
-      show = as.list(as.character(def$show)),
-      pools = lapply(unname(def$pools), function(p) {
+      columns = lapply(unname(def$columns), function(p) {
         list(
           name = as.character(p$name),
           members = as.list(as.character(p$members)),
@@ -776,8 +804,13 @@ crossfilter_server <- function(active_dims, filters, range_filters,
         }
         lv <- vapply(column_levels(column), `[[`, character(1), "value")
         def <- crossfilter_clean_group_def(req, lv)
+        # A level shown on its own that the data no longer has goes; a pool
+        # keeps its members, as it always did.
         if (length(lv)) {
-          def$show <- def$show[def$show %in% lv]
+          def$columns <- Filter(
+            function(p) nzchar(p$name) || p$members %in% lv,
+            def$columns
+          )
         }
         cur <- r_groups()
         nxt <- cur
