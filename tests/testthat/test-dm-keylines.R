@@ -222,6 +222,16 @@ test_that("dm_keylines_html node tooltips carry PK/FK meaning", {
   expect_true(any(grepl("foreign key", tips)))
 })
 
+test_that("dm_keylines_html key buttons carry their name as an overflow tooltip", {
+  meta <- dm_keylines_meta(kl_dm_rich())
+  keys <- rvest::html_elements(kl_doc(meta), ".r2key")
+  names <- rvest::html_text(rvest::html_elements(keys, ".r2key__name"))
+  expect_identical(rvest::html_attr(keys, "data-blockr-tooltip"), names)
+  # Shown only while the name is cut off, and never as a native title.
+  expect_false(anyNA(rvest::html_attr(keys, "data-blockr-tooltip-overflow")))
+  expect_true(all(is.na(rvest::html_attr(keys, "title"))))
+})
+
 test_that("dm_keylines_html tags self-refs and renamed FKs, hides plain ones", {
   meta <- dm_keylines_meta(kl_dm_rich())
   doc <- kl_doc(meta)

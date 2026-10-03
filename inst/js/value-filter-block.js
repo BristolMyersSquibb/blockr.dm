@@ -173,8 +173,12 @@
       this.opPill.type = 'button';
       this.opPill.className = 'blockr-pill bi-filter-op-toggle';
       this.opPill.textContent = 'AND';
-      this.opPill.title =
+      // The pill shows the operator; its tooltip and screen readers say what
+      // a click does.
+      const opTip =
         'Toggle between AND (all conditions must match) and OR (any condition can match)';
+      this.opPill.setAttribute('aria-description', opTip);
+      Blockr.tooltip.set(this.opPill, opTip);
       this.opPill.addEventListener('click', () => {
         this.operator = this.operator === '&' ? '|' : '&';
         this.opPill.textContent = this.operator === '&' ? 'AND' : 'OR';
@@ -311,7 +315,9 @@
         pill.type = 'button';
         pill.className = 'blockr-pill blockr-popover-toggle';
         this._stylePill(pill, entry.mode || 'single');
-        pill.title = 'Toggle between single- and multi-select';
+        const modeTip = 'Toggle between single- and multi-select';
+        pill.setAttribute('aria-description', modeTip);
+        Blockr.tooltip.set(pill, modeTip);
         pill.addEventListener('click', () => {
           const cur = this.entries[idx];
           const newMode = (cur.mode === 'multi') ? 'single' : 'multi';

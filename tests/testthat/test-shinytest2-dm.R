@@ -112,6 +112,13 @@ test_that("Key-lines row click reveals the table preview", {
   # (a filled owner node + a referencing node for the inferred id key line).
   expect_gte(app$get_js("document.querySelectorAll('svg.rails2__wire .r2node').length"), 2)
 
+  # The key button's tooltip is blockr.ui's, which the diagram brings along
+  # on a board that loads nothing else of blockr.ui.
+  expect_equal(
+    app$get_js("Blockr.tooltip.text(document.querySelector('.r2key'))"),
+    app$get_js("document.querySelector('.r2key__name').textContent")
+  )
+
   # No preview and no selection before the user picks a table.
   expect_equal(n_preview(), 0)
   expect_equal(n_selected(), 0)
