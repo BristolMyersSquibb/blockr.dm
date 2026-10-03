@@ -266,8 +266,7 @@ test_that("Single parent table, no children", {
 # This block builds its expression with `bquote()`, which allocates a fresh
 # call tree on every read, so any spurious upstream invalidation (a dock view
 # switch re-fires the chain with byte-for-byte unchanged data) used to force a
-# full re-evaluation of this block and everything downstream of it. See
-# blockr.cdex/dev/profiling-plan.md, "Settled" item 8.
+# full re-evaluation of this block and everything downstream of it.
 
 # A dm rebuilt from scratch: equal in value, different object.
 cdisc_ref_dm <- function(extra_child = FALSE) {

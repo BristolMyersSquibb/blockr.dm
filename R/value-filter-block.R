@@ -207,8 +207,7 @@ value_filter_server <- function(state, drill = FALSE) {
       # invalidation (blockr.dock's view switches churn the chain with
       # byte-for-byte identical data). Keyed on a reactiveVal that only
       # changes when the shape actually changes, `expr` is not invalidated by
-      # that churn and hands back its cached object. See
-      # blockr.cdex/dev/profiling-plan.md, "Settled" item 8.
+      # that churn and hands back its cached object.
       #
       # A deliberately SEPARATE reactiveVal from `r_state`: `r_state` is the
       # JS-synced blob that round-trips to the client (sendCustomMessage /

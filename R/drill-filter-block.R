@@ -12,7 +12,7 @@
 #    returns the one block on the board that is the drill's destination, so a
 #    sender needs no configured target. That is the whole reason this is a
 #    separate class rather than an argument on the value filter: a board
-#    typically carries many value filters (the CDEx 244 board carries eight),
+#    typically carries many value filters (a large clinical board has eight),
 #    and a sender scanning for them cannot tell which one means "the cohort the
 #    user just drilled into". blockr.viz's senders fall back to the value
 #    filter when no drill filter is present, so existing boards are unaffected.
