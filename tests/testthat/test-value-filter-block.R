@@ -792,8 +792,8 @@ filter_of <- function(e) {
 }
 
 # `make_filter_block_expr()` builds with `bquote()`, which allocates a fresh
-# call tree on every read. See blockr.cdex/dev/profiling-plan.md, "Settled"
-# item 8, where this block re-evaluated on every dock view switch.
+# call tree on every read. That used to re-evaluate this block on every dock
+# view switch.
 
 # A data frame rebuilt from scratch: equal in value, different object.
 vf_ref_df <- function() {
@@ -1101,7 +1101,7 @@ test_that("filter_input_shape keeps the dm branch and column types", {
 test_that("column metadata is sent once per change, and always on announce", {
   # `data()` invalidates whenever the board churns, and the columns are the
   # same columns. At ~44 kB a push on a socket that does not compress, the
-  # duplicate was 574 kB over a ten minute CDEx session.
+  # duplicate was 574 kB over a ten minute session on a clinical board.
   testthat::skip_if_not_installed("blockr.core")
   blk <- new_value_filter_block()
 

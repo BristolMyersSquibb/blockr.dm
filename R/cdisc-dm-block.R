@@ -233,8 +233,7 @@ new_cdisc_dm_block <- function(set_keys = TRUE, dedup_cols = FALSE, ...) {
         # changes when the DECISION changes, `expr` is not invalidated by that
         # churn at all and hands back its cached object. This is the same
         # observer discipline the value filter block uses for
-        # `enforce_single_rule()`. See blockr.cdex/dev/profiling-plan.md,
-        # "Settled" item 8.
+        # `enforce_single_rule()`.
         #
         # The invalid branch MUST write an explicit "not ready" marker rather
         # than skip the write: silently leaving the last good decision in place
