@@ -9,7 +9,7 @@ name: ci
 
 jobs:
   ci:
-    uses: BristolMyersSquibb/blockr.ci/.github/workflows/ci.yaml@main
+    uses: BristolMyersSquibb/blockr.ci/.github/workflows/ci.yaml@v0.1.1
     secrets: inherit
     permissions:
       contents: write
