@@ -3,6 +3,7 @@
 \name{filter_trail}
 \alias{filter_trail}
 \alias{add_filter_trail}
+\alias{dataset_name}
 \alias{filter_trail_counts}
 \alias{trail_key}
 \alias{trail_expr}
@@ -19,6 +20,8 @@ add_filter_trail(
   tables = NULL,
   count = FALSE
 )
+
+dataset_name(x)
 
 filter_trail_counts(x)
 
@@ -79,8 +82,10 @@ generated code carries a bare \code{data} that resolves to \code{\link[utils:dat
 entry recorded with \code{table} carries its scope in a \code{tables} attribute on
 the vector, a named list keyed like the trail. \code{add_filter_trail()}
 returns \code{out}, with a \code{blockr_filters} attribute when there is a trail to
-carry. \code{filter_trail_counts()} returns a named list keyed like the trail,
+carry and a \code{blockr_dataset} attribute when \code{input} has one.
+\code{filter_trail_counts()} returns a named list keyed like the trail,
 \code{c(before = , after = )} for each entry recorded with \code{count = TRUE}.
+\code{dataset_name()} returns a string or \code{NULL}.
 }
 \description{
 The record of which filters produced a table, carried on the data itself as
@@ -129,6 +134,15 @@ entries that survive are carried without their scope, a data frame having
 no tables. A flatten with an empty include list and \code{.recursive = TRUE}
 reads every table reachable from the start table but passes only the
 start table; the boards do not use that form.
+}
+
+\section{Dataset name}{
+
+The same carry takes a \code{blockr_dataset} attribute along: a short name for
+what the board read (a study code, a file name), set by the reader on a
+table of its dm, where dm verbs leave it alone. \code{add_filter_trail()} copies
+it onto a data frame \code{out} that has none, so it reaches every chart and
+table the trail reaches. Downloads use it in the file name.
 }
 
 \examples{
