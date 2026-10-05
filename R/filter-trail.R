@@ -303,6 +303,16 @@ value_filter_clause <- function(columns, operator = "&") {
   for (i in seq_along(cols)) {
 
     e <- cols[[i]]
+
+    # A drill claim on subject ids carries the clause the user clicked
+    # (blockr.viz `dd_ctrl_claims(subject =)`): "AEBODSYS = Nausea" reads,
+    # sixty-nine ids do not.
+    lbl <- e$label
+    if (is.character(lbl) && length(lbl) == 1L && !is.na(lbl) && nzchar(lbl)) {
+      parts <- c(parts, lbl)
+      next
+    }
+
     vals <- as.character(unlist(e$values, use.names = FALSE))
     vals[vals == VALUE_FILTER_NA] <- "NA"
     vals[vals == VALUE_FILTER_EMPTY] <- "(empty)"

@@ -162,6 +162,16 @@ test_that("value_filter_clause renders columns the way the crossfilter does", {
   expect_null(value_filter_clause(NULL))
 })
 
+test_that("a subject-id claim reads as the clause that was clicked", {
+  ids <- list(name = "USUBJID", mode = "multi", values = c("01", "02", "03"),
+              label = "AEBODSYS = Gastrointestinal disorders")
+  expect_identical(value_filter_clause(list(ids)),
+                   "AEBODSYS = Gastrointestinal disorders")
+  # No label: the ids, as before.
+  ids$label <- NULL
+  expect_identical(value_filter_clause(list(ids)), "USUBJID = 01, 02, 03")
+})
+
 test_that("a clause scoped to one table leaves with that table", {
 
   # Frame level first: the scope rides on the trail vector, and `tables`
