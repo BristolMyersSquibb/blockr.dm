@@ -263,6 +263,7 @@
         edit: null,     // working definition for `col`
         local: false,   // the user has edited `edit` this session
         open: false,    // pools editor open, per session
+        hiddenAt: new Map(), // hidden level -> id of the column it sat after
         selects: [],    // Blockr.Select handles inside the band
         el: null        // the band's container
       });
@@ -1327,7 +1328,7 @@
       list.scrollTop = scrollTop;
 
       // Levels in no column are not shown; a click brings one back on its
-      // own, last.
+      // own, where it was when it was hidden.
       const hidden = s.levels.filter(l => !places.has(l.value));
       if (hidden.length) {
         const line = el('div', 'jscf-cols-hidden');
@@ -1339,7 +1340,14 @@
           b.textContent = l.value;
           tip(b, 'Show on its own');
           b.addEventListener('click', () => {
-            s.edit.columns.push(this._newColumn('', [l.value]));
+            const cols = s.edit.columns;
+            const after = s.hiddenAt.get(l.value);
+            // Hidden before this session, or its neighbour is gone: last.
+            let i = cols.length;
+            if (after === null) i = 0;
+            else if (cols.some(x => x.id === after)) i = cols.findIndex(x => x.id === after) + 1;
+            cols.splice(i, 0, this._newColumn('', [l.value]));
+            s.hiddenAt.delete(l.value);
             this._groupsEdited(s);
             this._renderPoolsBand(s);
           });
@@ -1573,11 +1581,27 @@
       const order = new Map(s.levels.map((l, i) => [l.value, i]));
       const rank = (v) => (order.has(v) ? order.get(v) : order.size);
       for (const c of kept) c.members.sort((a, b) => rank(a) - rank(b));
+      this._rememberHidden(s, before, kept);
       s.edit.columns = kept;
       for (const c of kept) this._renameDefault(s, c);
       this._groupsEdited(s);
       this._renderPoolsBand(s);
       return true;
+    }
+
+    // A level an edit leaves in no column remembers the column it sat after,
+    // so "Not shown" can put it back there. `null` is the top.
+    _rememberHidden(s, before, after) {
+      const shown = (cols) => new Set(cols.flatMap(c => c.members));
+      const was = shown(before);
+      const now = shown(after);
+      const kept = new Set(after.map(c => c.id));
+      for (const v of was) {
+        if (now.has(v)) continue;
+        let i = before.findIndex(c => c.members.includes(v)) - 1;
+        while (i >= 0 && !kept.has(before[i].id)) i--;
+        s.hiddenAt.set(v, i >= 0 ? before[i].id : null);
+      }
     }
 
     _wouldLeaveNone(s, fn) {
@@ -1603,8 +1627,10 @@
 
     _singleMenu(s, c) {
       const v = c.members[0];
+      // The row, not its "…": that one is hidden once the pointer leaves the
+      // row, and a menu anchored to it opens in the corner of the page.
       const dots = () => s.el.querySelector(
-        `.jscf-col-row[data-col="${c.id}"]:not([data-member]) .jscf-col-dots`) || s.el;
+        `.jscf-col-row[data-col="${c.id}"]:not([data-member])`) || s.el;
       // A new pool opens its levels menu, since one level is rarely the
       // pool anyone wants.
       const toPool = (copy) => (poolId) => {
