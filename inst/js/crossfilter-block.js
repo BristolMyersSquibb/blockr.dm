@@ -1564,10 +1564,19 @@
 
     // -- The rows' "…" menus. Every drag has its path here too. ------------
 
+    // The "…" shows only under the pointer. Its row holds that state while
+    // the menu is open: a hidden "…" measures 0x0, and the menu, which
+    // follows its anchor, jumps to the corner of the page.
     _openRowMenu(s, anchor, items) {
       const menu = window.Blockr && window.Blockr.menu;
       if (!menu) return;
-      menu(anchor, { items, align: 'end' });
+      const row = anchor.closest('.jscf-col-row');
+      if (row) row.classList.add('jscf-col-row--menu');
+      menu(anchor, {
+        items,
+        align: 'end',
+        onClose: () => { if (row) row.classList.remove('jscf-col-row--menu'); }
+      });
     }
 
     // Apply `fn` to a copy of the columns; refused if it leaves none.
