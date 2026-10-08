@@ -1,13 +1,16 @@
 note_dm <- function() {
   adsl <- data.frame(USUBJID = c("a", "b"), SEX = c("F", "M"))
-  attr(adsl, "blockr_note") <- "CA-244-0001 · extract 2026-09-01"
+  attr(adsl, "blockr_provenance") <- list(
+    dataset = "CA-244-0001",
+    note = "CA-244-0001 · extract 2026-09-01"
+  )
   ae <- data.frame(USUBJID = c("a", "a", "b"), TRTEMFL = c("Y", "N", "Y"))
   d <- dm::dm(adsl = adsl, ae = ae)
   d <- dm::dm_add_pk(d, adsl, USUBJID)
   dm::dm_add_fk(d, ae, USUBJID, adsl)
 }
 
-test_that("crossfilter_note reads the first table's blockr_note", {
+test_that("crossfilter_note reads the note from the provenance", {
   expect_identical(
     crossfilter_note(note_dm()),
     "CA-244-0001 · extract 2026-09-01"

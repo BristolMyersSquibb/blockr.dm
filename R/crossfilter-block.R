@@ -1472,20 +1472,17 @@ build_lookups_independent <- function(
 # -- UI ----------------------------------------------------------------------
 
 # The one line of text a data source can put under the cards, e.g. which
-# study and extract the board is looking at. It rides as a `blockr_note`
-# attribute on a TABLE rather than on the dm: every dm verb (filter, key
-# edits, dm_mutate_tbl) rebuilds the dm and drops its attributes, while a
-# table's attributes come through, the way `blockr_kinds` does. The first
-# table carrying one wins.
+# study and extract the board is looking at. It is the `note` field of the
+# `blockr_provenance` list (`?provenance`), which rides on a TABLE rather
+# than on the dm: every dm verb (filter, key edits, dm_mutate_tbl) rebuilds
+# the dm and drops its attributes, while a table's attributes come through,
+# the way `blockr_kinds` does.
 crossfilter_note <- function(dm_obj) {
-  for (tbl in dm::dm_get_tables(dm_obj)) {
-    note <- attr(tbl, "blockr_note", exact = TRUE)
-    if (is.character(note) && length(note) == 1L && !is.na(note) &&
-        nzchar(note)) {
-      return(note)
-    }
+  note <- provenance(dm_obj)$note
+  if (is.character(note) && length(note) == 1L && !is.na(note) &&
+      nzchar(note)) {
+    note
   }
-  NULL
 }
 
 crossfilter_ui <- function(id) {

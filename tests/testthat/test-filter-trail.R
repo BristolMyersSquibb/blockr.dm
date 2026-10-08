@@ -324,9 +324,9 @@ test_that("the counted expression asks for the count", {
   expect_true(isTRUE(as.list(e)$count))
 })
 
-test_that("the dataset name rides from a dm table onto the pulled frame", {
+test_that("the provenance rides from a dm table onto the pulled frame", {
   adsl <- data.frame(USUBJID = c("a", "b"), SEX = c("F", "M"))
-  attr(adsl, "blockr_dataset") <- "AQ-001"
+  attr(adsl, "blockr_provenance") <- list(dataset = "AQ-001", path = "/d/aq")
   adae <- data.frame(USUBJID = c("a", "b"), AETERM = c("x", "y"))
   d <- dm::dm(adsl = adsl, adae = adae) |>
     dm::dm_add_pk(adsl, USUBJID) |>
@@ -343,6 +343,7 @@ test_that("the dataset name rides from a dm table onto the pulled frame", {
     list(data = f)
   )
   expect_identical(dataset_name(ae), "AQ-001")
+  expect_identical(provenance(ae)$path, "/d/aq")
   expect_null(filter_trail(ae))
 
   # an aggregate that carries the trail carries the name
@@ -350,8 +351,9 @@ test_that("the dataset name rides from a dm table onto the pulled frame", {
   expect_identical(dataset_name(s), "AQ-001")
 })
 
-test_that("no dataset name, no attribute", {
+test_that("no provenance, no attribute", {
   d <- add_filter_trail(data.frame(x = 1), data.frame(x = 1), "k", "x = 1")
   expect_null(dataset_name(d))
-  expect_null(attr(d, "blockr_dataset"))
+  expect_null(provenance(d))
+  expect_null(attr(d, "blockr_provenance"))
 })

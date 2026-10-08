@@ -467,7 +467,7 @@
       this.panelsEl = el('div', 'jscf-panels');
       this.el.appendChild(this.panelsEl);
 
-      // The data source's note (R: `blockr_note` on a table), one grey line
+      // The data source's note (R: `blockr_provenance$note`), one grey line
       // under the cards. Below them on purpose: it is there for whoever looks
       // for it and scrolls away once several cards are open.
       this.noteEl = el('div', 'jscf-note');
