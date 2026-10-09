@@ -1397,6 +1397,21 @@
       const n = el('span', 'jscf-col-n');
       n.textContent = String(opts.n);
       row.appendChild(n);
+      // Hiding is one click, so a long list can be cut down without a menu
+      // per level. The "…" menu keeps its Hide.
+      if (opts.hide) {
+        const icons = (window.Blockr && window.Blockr.icons) || {};
+        const x = el('button', 'jscf-col-dots jscf-col-hide', icons.remove || '×');
+        x.type = 'button';
+        x.setAttribute('aria-label', 'Hide');
+        x.tabIndex = -1;
+        tip(x, 'Hide');
+        x.addEventListener('click', (e) => {
+          e.stopPropagation();
+          opts.hide();
+        });
+        row.appendChild(x);
+      }
       const dots = el('button', 'jscf-col-dots', ICON_DOTS);
       dots.type = 'button';
       dots.setAttribute('aria-label', 'Actions');
@@ -1422,13 +1437,21 @@
 
     _columnRow(s, c, places) {
       const v = c.members[0];
+      const hide = this._hideColumn(c);
       return this._row(s, {
         col: c,
         label: v,
         badge: this._twiceBadge(s, v, places),
         n: this._levelN(s, [v]),
+        // The last column has no x: a split keeps at least one.
+        hide: this._wouldLeaveNone(s, hide) ? null : () => this._edit(s, hide),
         menu: () => this._singleMenu(s, c)
       });
+    }
+
+    // The edit that takes a column off the list; its levels go to "Not shown".
+    _hideColumn(c) {
+      return (cols) => { cols.splice(cols.findIndex(x => x.id === c.id), 1); };
     }
 
     _poolStack(s, c, places) {
@@ -1661,7 +1684,7 @@
           if (pool && head) setTimeout(() => this._editLevels(s, pool, head), 0);
         }
       };
-      const hide = (cols) => { cols.splice(cols.findIndex(x => x.id === c.id), 1); };
+      const hide = this._hideColumn(c);
       return [
         { label: 'Move to pool…', onSelect: () => this._pickPool(s, dots(), `Move ${v} to`, toPool(false)) },
         { label: 'Also add to pool…', onSelect: () => this._pickPool(s, dots(), `Also add ${v} to`, toPool(true)) },

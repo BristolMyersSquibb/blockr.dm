@@ -1028,7 +1028,8 @@
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
-/* Meta text gives way to the "…"; a tool never covers the name. */
+/* Meta text gives way to the "…" (and the x on a level of its own); a tool
+   never covers the name. */
 .jscf-col-dots {
   display: none;
   align-items: center;
@@ -1046,6 +1047,10 @@
 .jscf-col-dots:hover {
   color: var(--blockr-color-text-default);
   background: var(--blockr-color-bg-hover);
+}
+.jscf-col-hide svg {
+  width: 12px;
+  height: 12px;
 }
 .jscf-col-row:hover > .jscf-col-dots,
 .jscf-col-row:focus-visible > .jscf-col-dots,
