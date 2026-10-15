@@ -127,6 +127,77 @@ test_that("set_groups is normalized and a default definition is dropped", {
   )
 })
 
+test_that("an unticked pool is kept apart from the columns", {
+  df <- cf_groups_df()
+  blk <- new_crossfilter_block(featured = c("TRT", "SEX"), pinned = "TRT")
+
+  testServer(
+    blockr.core:::get_s3_method("block_server", blk),
+    args = list(x = blk, data = list(data = function() df)),
+    {
+      session$flushReact()
+
+      # Every level on its own, plus a pool that is not a column: not the
+      # default, since the pool has to survive.
+      session$setInputs(`expr-set_groups` = list(
+        column = "TRT",
+        columns = list(
+          list(name = "", members = list("Placebo"), custom = FALSE),
+          list(name = "", members = list("Low"), custom = FALSE),
+          list(name = "", members = list("High"), custom = FALSE)
+        ),
+        hidden_pools = list(
+          list(name = "Active", members = list("Low", "High"), custom = TRUE),
+          # Empty or unnamed: nothing to keep.
+          list(name = "New pool", members = list(), custom = FALSE)
+        )
+      ))
+      session$flushReact()
+
+      expect_equal(
+        session$returned$state$groups(),
+        list(TRT = list(
+          columns = list(
+            list(name = "", members = "Placebo", custom = FALSE),
+            list(name = "", members = "Low", custom = FALSE),
+            list(name = "", members = "High", custom = FALSE)
+          ),
+          hidden_pools = list(
+            list(name = "Active", members = c("Low", "High"), custom = TRUE)
+          )
+        ))
+      )
+
+      # No hidden pool left: back to the default, and the entry goes.
+      session$setInputs(`expr-set_groups` = list(
+        column = "TRT",
+        columns = list(
+          list(name = "", members = list("Placebo"), custom = FALSE),
+          list(name = "", members = list("Low"), custom = FALSE),
+          list(name = "", members = list("High"), custom = FALSE)
+        ),
+        hidden_pools = list()
+      ))
+      session$flushReact()
+      expect_equal(session$returned$state$groups(), list())
+    }
+  )
+})
+
+test_that("the groups payload sends hidden pools only when there are some", {
+  out <- crossfilter_groups_payload(list(TRT = list(
+    columns = list(list(name = "", members = "A", custom = FALSE)),
+    hidden_pools = list(list(name = "P", members = c("A", "B"), custom = TRUE))
+  )))
+  expect_equal(
+    out$TRT$hidden_pools,
+    list(list(name = "P", members = list("A", "B"), custom = TRUE))
+  )
+  expect_null(
+    crossfilter_groups_payload(list(TRT = list(columns = list())))$TRT$hidden_pools
+  )
+})
+
 test_that("the data payload carries pinned_levels and groups", {
   df <- cf_groups_df()
   groups <- list(TRT = list(show = "Placebo", pools = list()))

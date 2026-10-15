@@ -45,26 +45,30 @@ dropping a column from it also takes it out of \verb{Group by}, for every
 reader of the board, which is a setting and not a filter.}
 
 \item{pinned}{The single column the block reports as the board's group,
-chosen in the \verb{Group by} select at the top of the block. Only \code{featured}
+chosen in the \code{By} select of the \code{Groups} section. Only \code{featured}
 columns on the parent table qualify. Grouping is independent of filtering: a pinned
 column need not have a card, and a card does not make a column the group.
 \code{NULL} (the default) means no group.}
 
 \item{groups}{Group definitions for the pinned column and the subgroup,
-edited in the \verb{Show groups} section under each field. A named list keyed by
-column, so switching the group column and back, or swapping group and
-subgroup, keeps each definition. An entry is \code{list(columns = list(list(name = , members = , custom = ), ...))}, the columns in table
-order. A column with an empty name is one level shown on its own; a named
-one is a pool of its members, \code{custom = FALSE} meaning the name follows
-the members. A level may be in two columns (shown on its own and pooled).
-A level in no column is not shown. A column with no entry shows every
-level in \code{\link[=crossfilter_level_order]{crossfilter_level_order()}}, one column each. The older shape,
-\verb{list(show = <levels>, pools = <list>)}, is still read: its levels come
-first, then its pools. The block only records the definition; a package
-building on it (blockr.pharma's population filter) applies it.}
+edited in the \code{Groups}, \code{Pools} and \code{Subgroups} sections of the block.
+A named list keyed by column, so switching the group column and back, or
+swapping group and subgroup, keeps each definition. An entry is
+\code{list(columns = list(list(name = , members = , custom = ), ...))}, the
+columns in table order. A column with an empty name is one level shown
+on its own; a named one is a pool of its members, \code{custom = FALSE}
+meaning the name follows the members. A level may be in two columns
+(shown on its own and pooled). A level in no column is not shown. A pool
+that is defined but not shown sits in \code{hidden_pools}, same shape as
+\code{columns}, so that it is kept without being a column. A column with no
+entry shows every level in \code{\link[=crossfilter_level_order]{crossfilter_level_order()}}, one column
+each. The older shape, \verb{list(show = <levels>, pools = <list>)}, is still
+read: its levels come first, then its pools. The block only records the
+definition; a package building on it (blockr.pharma's population filter)
+applies it.}
 
 \item{subgroup}{A second column the board is split by, under \code{pinned},
-chosen in the \verb{Subgroup by} select below the groups. Same eligible
+chosen in the \code{By} select of the \code{Subgroups} section. Same eligible
 columns as \code{pinned}, minus the pinned one. \code{NULL} (the default) means no
 subgroup. Its levels are pooled like the group's, through its entry in
 \code{groups}, and a button in its field swaps it with \code{pinned}. Like

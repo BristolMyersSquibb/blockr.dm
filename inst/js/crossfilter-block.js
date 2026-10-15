@@ -210,6 +210,14 @@
     return e;
   }
 
+  // A section title (design system, "Section titles"): the uppercase
+  // muted label over a section of the block.
+  function sectionTitle(text) {
+    const t = el('div', 'jscf-section-title');
+    t.textContent = text;
+    return t;
+  }
+
   // The design system's light-card tooltip (Blockr.tooltip, blockr.ui's
   // controls_dep()), for icon-only buttons and names that need one. No
   // native `title` anywhere in the block.
@@ -255,20 +263,18 @@
       // Group definitions under the Group by field. `this.groups` is taken:
       // it holds the crossfilter groups the cards count with.
       this.groupDefs = {};    // col -> {columns} as R last sent them
-      // One pools band per split, the group's and the subgroup's.
+      // One band per split, the group's and the subgroup's.
       const split = (role) => ({
         role,
         col: null,      // the column the band was built for
         levels: [],     // [{value, n}] for `col`
-        edit: null,     // working definition for `col`
+        edit: null,     // working definition for `col`: {shown, pools}
         local: false,   // the user has edited `edit` this session
-        open: false,    // pools editor open, per session
-        hiddenAt: new Map(), // hidden level -> id of the column it sat after
-        selects: [],    // Blockr.Select handles inside the band
         el: null        // the band's container
       });
       this._splits = { group: split('group'), subgroup: split('subgroup') };
-      this._subShown = false; // "+ Subgroup" clicked, nothing picked yet
+      this._subShown = false; // "+ Add subgroup" clicked, nothing picked yet
+      this._folded = {};      // section key -> folded, per session
       this._gPoolSeq = 0;
       this.measure = '.count';
       this.aggFunc = 'sum';
@@ -292,37 +298,45 @@
       // The control itself is Blockr.Select, the same component the dm table
       // pickers and the dplyr blocks mount (blockr.dplyr::blockr_select_dep(),
       // pulled in by crossfilter_deps()).
+      // Three sections, each under a section title that folds it: Groups
+      // (the column and which of its values are columns), Pools, Subgroups.
       this.groupFieldEl = el('div', 'jscf-group-field');
       this.groupFieldEl.style.display = 'none';
-      const groupLabel = el('label', 'blockr-label', 'Group by');
-      this.groupFieldEl.appendChild(groupLabel);
-      this.groupHostEl = el('div', 'jscf-group-select');
-      this.groupFieldEl.appendChild(this.groupHostEl);
-      // The pools of the pinned column, folded under the select. Inside the
-      // field, so it hides with it.
-      const bandEl = () => {
-        const b = el('div', 'jscf-groups');
+      const bandEl = (cls) => {
+        const b = el('div', cls);
         b.style.display = 'none';
         return b;
       };
-      this._splits.group.el = bandEl();
-      this.groupFieldEl.appendChild(this._splits.group.el);
-      // Show groups and Subgroup are rare, so at rest they are one line of "+"
-      // links under the group. A link goes away while its section is on the
-      // block, and comes back when the section is removed.
-      this.splitAddEl = el('div', 'blockr-add-row jscf-split-add');
-      this.groupFieldEl.appendChild(this.splitAddEl);
-      // The second split, under the group's own settings, with pools of its
-      // own and its own "+ Show subgroups" link. Same field, so it hides with it:
-      // there is no subgroup without a group.
-      this.subgroupFieldEl = el('div', 'jscf-subgroup-field');
+      this._groupsSec = this._section('groups', 'Groups', true);
+      const gBody = this._groupsSec.body;
+      gBody.appendChild(el('label', 'blockr-label', 'By'));
+      this.groupHostEl = el('div', 'jscf-group-select');
+      gBody.appendChild(this.groupHostEl);
+      this._splits.group.el = bandEl('jscf-groups');
+      gBody.appendChild(this._splits.group.el);
+      this.groupFieldEl.appendChild(this._groupsSec.el);
+      // The group's pools: a section of their own, on the block while there
+      // is a group to pool.
+      this._poolsSec = this._section('pools', 'Pools');
+      this._poolsSec.el.style.display = 'none';
+      this._splits.group.poolsEl = this._poolsSec.body;
+      this.groupFieldEl.appendChild(this._poolsSec.el);
+      // The second split, with columns and pools of its own. Same field, so
+      // it hides with it: there is no subgroup without a group. A subgroup is
+      // rare, so at rest the section is its title and "+ Add subgroup".
+      this._subSec = this._section('subgroups', 'Subgroups');
+      this.subgroupFieldEl = this._subSec.el;
+      this.subgroupFieldEl.classList.add('jscf-subgroup-field');
       this.subgroupFieldEl.style.display = 'none';
+      const sBody = this._subSec.body;
       this.subgroupPickEl = el('div', 'jscf-subgroup-pick');
-      this.subgroupFieldEl.appendChild(this.subgroupPickEl);
-      this._splits.subgroup.el = bandEl();
-      this.subgroupFieldEl.appendChild(this._splits.subgroup.el);
-      this.subgroupAddEl = el('div', 'blockr-add-row jscf-split-add');
-      this.subgroupFieldEl.appendChild(this.subgroupAddEl);
+      sBody.appendChild(this.subgroupPickEl);
+      this.splitAddEl = el('div', 'blockr-add-row jscf-split-add');
+      sBody.appendChild(this.splitAddEl);
+      this._splits.subgroup.el = bandEl('jscf-groups');
+      sBody.appendChild(this._splits.subgroup.el);
+      this._splits.subgroup.poolsEl = bandEl('jscf-pools-host');
+      sBody.appendChild(this._splits.subgroup.poolsEl);
       this.groupFieldEl.appendChild(this.subgroupFieldEl);
       this.el.appendChild(this.groupFieldEl);
 
@@ -884,6 +898,7 @@
         return;
       }
       this.groupFieldEl.style.display = '';
+      this._syncSummaries();
 
       const labels = {};
       for (const f of this.featured) labels[f.dim] = f.label || '';
@@ -917,9 +932,9 @@
     // On the block only once someone asks for it ("+ Subgroup") or it is set.
     // The x and the "(none)" option both clear it and bring the link back.
     // "(none)" is the sentinel the picker block uses for an optional role.
-    // Its pools are edited exactly as the group's, in a band of its own under
-    // the select. The swap button trades the two columns; each takes its
-    // pools along, because `groups` is keyed by column.
+    // Its columns and pools are edited exactly as the group's, in a band of
+    // its own under the select. The swap button trades the two columns; each
+    // takes its pools along, because `groups` is keyed by column.
     _renderSubgroupField() {
       if (!this.subgroupFieldEl) return;
       if (this._subgroupSelect) {
@@ -927,15 +942,16 @@
         this._subgroupSelect = null;
       }
       this.subgroupPickEl.innerHTML = '';
-      const shown = !!this.pinned && (!!this.subgroup || this._subShown);
-      this.subgroupFieldEl.style.display = shown ? '' : 'none';
+      const head = this._subSec.tools;
+      head.innerHTML = '';
+      const on = !!this.pinned;
+      const shown = on && (!!this.subgroup || this._subShown);
+      this.subgroupFieldEl.style.display = on ? '' : 'none';
       this._renderSplitAdd();
-      if (!shown) return;
+      this._syncSummaries();
+      if (!on || !shown) return;
 
       const icons = window.Blockr.icons;
-      const head = el('div', 'jscf-section-head');
-      head.appendChild(el('label', 'blockr-label', 'Subgroup by'));
-      head.appendChild(el('span', 'jscf-topbar-spacer'));
       if (this.subgroup) {
         const swap = el('button', 'jscf-section-swap', ICON_SWAP);
         swap.type = 'button';
@@ -958,7 +974,7 @@
       };
       rm.addEventListener('click', clear);
       head.appendChild(rm);
-      this.subgroupPickEl.appendChild(head);
+      this.subgroupPickEl.appendChild(el('label', 'blockr-label', 'By'));
 
       const host = el('div', 'jscf-subgroup-select');
       this.subgroupPickEl.appendChild(host);
@@ -987,57 +1003,39 @@
       this._subgroupSelect.el.classList.add('blockr-select--bordered');
     }
 
-    // The "+" links for the sections that are not on the block: Show groups
-    // and Subgroup under the group, Show subgroups under the subgroup.
-    _renderSplitAdd() {
+    // A "+" link (design system, the add link). It says what it adds, so it
+    // has no tooltip.
+    _addLink(text, onClick) {
       const icons = window.Blockr.icons;
-      // Each link says what it adds, so none has a tooltip.
-      const link = (text, onClick) => {
-        const a = el('span', 'blockr-add-link',
-          `<span class="blockr-add-icon">${icons.plus}</span> ${text}`);
-        a.setAttribute('role', 'button');
-        a.tabIndex = 0;
-        a.addEventListener('click', onClick);
-        a.addEventListener('keydown', (e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            onClick();
-          }
-        });
-        return a;
-      };
-      const fill = (row, links) => {
-        if (!row) return;
-        row.innerHTML = '';
-        row.style.display = links.length ? '' : 'none';
-        for (const a of links) row.appendChild(a);
-      };
-      // Each link names the section it opens. The subgroup's says whose
-      // levels it shows: the group's section sits right above it.
-      const poolsLink = (s) => link(s.role === 'subgroup' ? 'Show subgroups' : 'Show groups',
-        () => {
-          s.open = true;
-          this._renderPoolsBand(s);
-        });
-
-      const g = this._splits.group;
-      const s = this._splits.subgroup;
-      const groupLinks = [];
-      if (this.pinned) {
-        if (!this._poolsShown(g) && g.levels.length) groupLinks.push(poolsLink(g));
-        if (!this.subgroup && !this._subShown) {
-          groupLinks.push(link('Subgroup', () => {
-            this._subShown = true;
-            this._renderSubgroupField();
-            const ctrl = this.subgroupFieldEl.querySelector('.blockr-select__control');
-            if (ctrl) setTimeout(() => ctrl.click(), 0);
-          }));
+      const a = el('span', 'blockr-add-link',
+        `<span class="blockr-add-icon">${icons.plus}</span> `);
+      a.appendChild(document.createTextNode(text));
+      a.setAttribute('role', 'button');
+      a.tabIndex = 0;
+      a.addEventListener('click', onClick);
+      a.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onClick();
         }
-      }
-      fill(this.splitAddEl, groupLinks);
-      fill(this.subgroupAddEl,
-        this.pinned && this.subgroup && !this._poolsShown(s) && s.levels.length
-          ? [poolsLink(s)] : []);
+      });
+      return a;
+    }
+
+    // "+ Add subgroup" in the Subgroups section, while there is none.
+    _renderSplitAdd() {
+      const row = this.splitAddEl;
+      if (!row) return;
+      row.innerHTML = '';
+      const shown = !!this.pinned && !this.subgroup && !this._subShown;
+      row.style.display = shown ? '' : 'none';
+      if (!shown) return;
+      row.appendChild(this._addLink('Add subgroup', () => {
+        this._subShown = true;
+        this._renderSubgroupField();
+        const ctrl = this.subgroupFieldEl.querySelector('.blockr-select__control');
+        if (ctrl) setTimeout(() => ctrl.click(), 0);
+      }));
     }
 
     _swapSplit() {
@@ -1046,13 +1044,19 @@
       Shiny.setInputValue(nsBase + '-swap_split', Date.now(), { priority: 'event' });
     }
 
-    // -- Pools bands --------------------------------------------------------
-    // A split column's levels, regrouped: which levels keep a column of their
-    // own, in what order, and which pools of levels get one besides. The
-    // group and the subgroup each have a band, one `split` object each (see
-    // the constructor). State in R is `groups` (see new_crossfilter_block()),
-    // keyed by column; a band edits the entry for its column and sends it
-    // whole on every change.
+    // -- Split bands --------------------------------------------------------
+    // A split column's levels, regrouped. Under each split's select, the
+    // Columns list ticks what the table shows: each level on its own, and
+    // each pool, a named set of levels defined in the Pools list below it. A
+    // level may be pooled whether or not it is shown on its own, and is then
+    // counted in both. A pool that is not ticked keeps its definition.
+    //
+    // The group and the subgroup each have a band, one `split` object each
+    // (see the constructor). State in R is `groups` (see
+    // new_crossfilter_block()), keyed by column; a band edits the entry for
+    // its column and sends it whole on every change, as one list of columns
+    // (the levels shown on their own, in level order, then the ticked pools)
+    // and the unticked pools as `hidden_pools`.
     //
     // The client owns the definition while it is being edited. R never
     // answers `set_groups`, and a data payload for the same column does not
@@ -1080,7 +1084,6 @@
           keep.set(col, this.groupDefs[col]);
           continue;
         }
-        if (col !== s.col) s.open = false;
         s.col = col;
         s.local = false;
         rebuilt.push(s);
@@ -1092,43 +1095,65 @@
       }
       for (const s of rebuilt) {
         s.edit = s.col ? this._groupDefFor(s) : null;
-        this._renderPoolsBand(s);
+        this._renderBand(s);
       }
       this._renderSplitAdd();
     }
 
-    // The working copy for a split's column: R's entry, or the untouched
-    // default (every level on its own, in level order). One list of
-    // columns in table order; a column with an empty name is one level on
-    // its own, a named one is a pool. `open` is the pool's fold, per session.
+    // The working copy for a split's column, from R's entry or the untouched
+    // default (every level on its own, no pools). `shown` is the levels with
+    // a column of their own; a pool's `shown` says it is a column, its
+    // `custom` that its name was typed.
     _groupDefFor(s) {
-      const single = (v) => ({ id: ++this._gPoolSeq, name: '', members: [v], custom: false, open: true });
       const d = this.groupDefs[s.col];
-      if (!d) return { columns: s.levels.map(l => single(l.value)) };
-      return {
-        columns: asArray(d.columns).map(p => ({
-          id: ++this._gPoolSeq,
-          name: p.name == null ? '' : String(p.name),
-          members: asArray(p.members).map(String),
-          custom: p.custom === true,
-          open: true
-        }))
-      };
+      if (!d) return { shown: s.levels.map(l => l.value), pools: [] };
+      const shown = [];
+      const pools = [];
+      const pool = (p, on) => ({
+        id: ++this._gPoolSeq,
+        name: String(p.name),
+        members: asArray(p.members).map(String),
+        custom: p.custom === true,
+        shown: on
+      });
+      for (const p of asArray(d.columns)) {
+        const name = p.name == null ? '' : String(p.name);
+        if (name !== '') {
+          pools.push(pool(p, true));
+        } else {
+          for (const m of asArray(p.members).map(String)) {
+            if (!shown.includes(m)) shown.push(m);
+          }
+        }
+      }
+      for (const p of asArray(d.hidden_pools)) pools.push(pool(p, false));
+      return { shown, pools };
     }
 
     _isDefaultGroupDef(s, def) {
-      const all = s.levels.map(l => l.value);
-      return def.columns.length === all.length &&
-        def.columns.every((c, i) => c.name === '' && c.members.length === 1 &&
-          c.members[0] === all[i]);
+      const shown = new Set(def.shown);
+      return !def.pools.length && shown.size === s.levels.length &&
+        s.levels.every(l => shown.has(l.value));
     }
 
-    // The columns the definition produces, in table order.
+    _shownPools(def) {
+      return def.pools.filter(p => p.shown && p.members.length);
+    }
+
+    // The definition as R stores it: the columns in table order.
     _groupColumns(s) {
-      return s.edit.columns.filter(c => c.members.length).map(c => (
-        c.name === ''
-          ? { name: c.members[0], title: c.members[0] }
-          : { name: c.name, title: `${c.name}: ${c.members.join(', ')}` }));
+      const order = s.levels.map(l => l.value);
+      const shown = new Set(s.edit.shown);
+      const singles = order.filter(v => shown.has(v))
+        .concat(s.edit.shown.filter(v => !order.includes(v)));
+      const col = (p) => ({ name: p.name, members: p.members.slice(), custom: !!p.custom });
+      return singles.map(v => ({ name: '', members: [v], custom: false }))
+        .concat(this._shownPools(s.edit).map(col));
+    }
+
+    _hiddenPools(s) {
+      return s.edit.pools.filter(p => !p.shown && p.members.length)
+        .map(p => ({ name: p.name, members: p.members.slice(), custom: !!p.custom }));
     }
 
     _levelN(s, members) {
@@ -1137,49 +1162,38 @@
       return members.reduce((sum, m) => sum + (n[m] || 0), 0);
     }
 
-    // The section is on the block while it is being edited or holds a
-    // definition that changes anything.
-    _poolsShown(s) {
-      return !!s.col && !!s.edit && s.levels.length > 0 &&
-        (s.open || !this._isDefaultGroupDef(s, s.edit));
-    }
-
     _groupsEdited(s) {
       s.local = true;
-      const def = s.edit;
-      const out = {
-        columns: def.columns.map(c => ({
-          name: c.name,
-          members: c.members.slice(),
-          custom: !!c.custom
-        }))
-      };
-      if (this._isDefaultGroupDef(s, def)) delete this.groupDefs[s.col];
+      const out = { columns: this._groupColumns(s), hidden_pools: this._hiddenPools(s) };
+      if (this._isDefaultGroupDef(s, s.edit)) delete this.groupDefs[s.col];
       else this.groupDefs[s.col] = out;
       this._syncOverlap(s);
+      this._syncSummaries();
       const nsBase = this.el.id.replace(/-crossfilter_input$/, '');
       Shiny.setInputValue(nsBase + '-set_groups',
         Object.assign({ column: s.col }, out), { priority: 'event' });
     }
 
-    // A split keeps at least one column: an edit that would leave none is
-    // refused, and the menu row that would make it is disabled.
-    _leavesNoColumn(columns) {
-      return !columns.some(c => c.members.length);
+    // A split keeps at least one column: the edit that would leave none is
+    // disabled where it would be made.
+    _leavesNoColumn(def) {
+      return !def.shown.length && !this._shownPools(def).length;
     }
 
-    // Each level present in the data -> the columns it sits in. Mirrors
-    // group_definition() in blockr.pharma, which counts only levels present
-    // in the data.
+    // Each level present in the data -> the columns it sits in: '' for its
+    // own, else the pool's name. Mirrors group_definition() in
+    // blockr.pharma, which counts only levels present in the data.
     _levelPlaces(s) {
       const present = new Set(s.levels.map(l => l.value));
       const places = new Map();
-      for (const c of s.edit.columns) {
-        for (const v of new Set(c.members)) {
-          if (!present.has(v)) continue;
-          if (!places.has(v)) places.set(v, []);
-          places.get(v).push(c);
-        }
+      const add = (v, where) => {
+        if (!present.has(v)) return;
+        if (!places.has(v)) places.set(v, []);
+        places.get(v).push(where);
+      };
+      for (const v of new Set(s.edit.shown)) add(v, '');
+      for (const p of this._shownPools(s.edit)) {
+        for (const v of new Set(p.members)) add(v, p.name);
       }
       return places;
     }
@@ -1195,7 +1209,7 @@
 
     // A group's columns may overlap: composer pools the outer split. A
     // subgroup's may not, and a table would fail far from here. So the
-    // subgroup's list takes the amber cue and says why, while it overlaps,
+    // subgroup's band takes the amber cue and says why, while it overlaps,
     // however it got there (an edit, the swap, a saved board).
     _syncOverlap(s) {
       if (s.role !== 'subgroup' || !s.el) return;
@@ -1224,283 +1238,266 @@
       return Select;
     }
 
-    // Structural rebuild: fold, add or remove a pool, any edit of the list.
-    // Never called while a menu anchored in the band is open; those rebuild
-    // when they close.
-    _renderPoolsBand(s) {
+    // The whole band, rebuilt on any edit. Never called while a menu
+    // anchored in the band is open; those rebuild when they close.
+    // The split's Columns go in its section, its pools in `poolsEl`: the
+    // Pools section for the group, a field under the Columns for the
+    // subgroup.
+    _renderBand(s) {
       if (!s.el) return;
       if (s.menu) { try { s.menu.close(); } catch (_) {} s.menu = null; }
-      // An edit redraws the list; it stays scrolled where it was.
-      const scrollTop = s.listEl && s.listEl.isConnected ? s.listEl.scrollTop : 0;
-      s.listEl = null;
       s.el.innerHTML = '';
-      if (!this._poolsShown(s)) {
-        s.el.style.display = 'none';
-        this._renderSplitAdd();
-        return;
-      }
-      s.el.style.display = '';
-
-      const icons = (window.Blockr && window.Blockr.icons) || {};
-
-      // Open: the list, and a fold that closes it. Closed but set: the
-      // columns as tags and an Edit link. Either way an x puts every level
-      // back and takes the section off the block.
-      const head = el('div', 'jscf-section-head');
-      head.appendChild(el('label', 'blockr-label',
-        s.role === 'subgroup' ? 'Show subgroups' : 'Show groups'));
-      // Past 8 rows the list scrolls; the count says how long it is.
-      if (s.open && s.edit.columns.length > 8) {
-        head.appendChild(el('span', 'jscf-cols-count', `${s.edit.columns.length} columns`));
-      }
-      head.appendChild(el('span', 'jscf-topbar-spacer'));
-      if (s.open) {
-        const fold = el('button', 'jscf-groups-fold jscf-groups-fold--open', icons.chevron || '');
-        fold.type = 'button';
-        fold.setAttribute('aria-label', 'Fold the columns');
-        tip(fold, 'Done');
-        fold.setAttribute('aria-expanded', 'true');
-        fold.addEventListener('click', () => {
-          s.open = false;
-          this._renderPoolsBand(s);
-        });
-        head.appendChild(fold);
-      } else {
-        const edit = el('button', 'jscf-section-edit', 'Edit');
-        // A quiet button: text only, muted, the hover wash.
-        edit.type = 'button';
-        edit.addEventListener('click', () => {
-          s.open = true;
-          this._renderPoolsBand(s);
-        });
-        head.appendChild(edit);
-      }
-      const rm = el('button', 'blockr-row-remove jscf-section-remove', icons.remove || '×');
-      rm.type = 'button';
-      const rmText = s.role === 'subgroup' ? 'Show every subgroup separately' : 'Show every group separately';
-      rm.setAttribute('aria-label', rmText);
-      tip(rm, rmText);
-      rm.addEventListener('click', () => {
-        const wasSet = !this._isDefaultGroupDef(s, s.edit);
-        delete this.groupDefs[s.col];
-        s.edit = this._groupDefFor(s);
-        s.open = false;
-        if (wasSet) this._groupsEdited(s);
-        this._renderPoolsBand(s);
-      });
-      head.appendChild(rm);
-      s.el.appendChild(head);
-      // The overlap warning, filled by _syncOverlap (subgroup only).
-      s.warnEl = el('div', 'jscf-groups-warning');
-      s.warnEl.setAttribute('role', 'status');
-      s.el.appendChild(s.warnEl);
-      this._renderSplitAdd();
-
-      if (!s.open) {
-        const summary = el('div', 'jscf-groups-summary');
-        for (const c of this._groupColumns(s)) {
-          const tag = el('span', 'blockr-select__tag jscf-groups-tag');
-          const label = el('span', 'blockr-select__tag-label');
-          label.textContent = c.name;
-          if (c.title !== c.name) tip(tag, c.title);
-          tag.appendChild(label);
-          summary.appendChild(tag);
+      s.poolsEl.innerHTML = '';
+      s.warnEl = null;
+      const on = !!s.col && !!s.edit && s.levels.length > 0;
+      s.el.style.display = on ? '' : 'none';
+      if (s.role === 'group') this._poolsSec.el.style.display = on ? '' : 'none';
+      else s.poolsEl.style.display = on ? '' : 'none';
+      if (on) {
+        if (s.role === 'subgroup') {
+          s.warnEl = el('div', 'jscf-groups-warning');
+          s.warnEl.setAttribute('role', 'status');
+          s.el.appendChild(s.warnEl);
         }
-        s.el.appendChild(summary);
+        s.el.appendChild(this._levelSection(s));
+        s.poolsEl.appendChild(this._poolSection(s));
         this._syncOverlap(s);
-        return;
       }
+      this._syncSummaries();
+    }
 
-      // The list: one row per column, in table order (design system, Block
-      // lists). A pool is a stack, its header a row and its members rows in
-      // its band. Past 8 rows the list scrolls.
-      const list = el('div', 'jscf-cols');
+    // A section of the block: a section title (design system, "Section
+    // titles") that folds it, tools at the end of its head, and a body
+    // indented to the title's text. Folded, the head says what the section
+    // holds instead. Fold state is per session.
+    _section(key, title, first) {
+      const icons = (window.Blockr && window.Blockr.icons) || {};
+      const sec = el('div', 'jscf-section' + (first ? ' jscf-section--first' : ''));
+      const head = el('div', 'jscf-section-head');
+      const toggle = el('button', 'jscf-section-toggle',
+        `<span class="jscf-section-chev">${icons.chevron || ''}</span>`);
+      toggle.type = 'button';
+      toggle.appendChild(sectionTitle(title));
+      const summary = el('span', 'jscf-section-summary');
+      toggle.appendChild(summary);
+      head.appendChild(toggle);
+      head.appendChild(el('span', 'jscf-topbar-spacer'));
+      const tools = el('span', 'jscf-section-tools');
+      head.appendChild(tools);
+      const body = el('div', 'jscf-section-body');
+      sec.appendChild(head);
+      sec.appendChild(body);
+      const set = (folded) => {
+        sec.classList.toggle('jscf-section--folded', folded);
+        toggle.setAttribute('aria-expanded', String(!folded));
+        toggle.setAttribute('aria-label', `${folded ? 'Show' : 'Hide'} ${title}`);
+      };
+      set(!!this._folded[key]);
+      toggle.addEventListener('click', () => {
+        this._folded[key] = !this._folded[key];
+        set(this._folded[key]);
+      });
+      return { el: sec, body, tools, summary };
+    }
+
+    // What a folded section holds, on its head.
+    _syncSummaries() {
+      if (!this._groupsSec) return;
+      const n = (k, word) => `${k} ${word}${k === 1 ? '' : 's'}`;
+      const cols = (s) => (s.edit && s.levels.length ? this._groupColumns(s).length : 0);
+      const g = this._splits.group;
+      const sub = this._splits.subgroup;
+      this._groupsSec.summary.textContent = this.pinned
+        ? `${this.pinned} · ${n(cols(g), 'column')}` : 'Not grouped';
+      const pools = g.edit ? g.edit.pools.length : 0;
+      this._poolsSec.summary.textContent = pools ? n(pools, 'pool') : 'None';
+      this._subSec.summary.textContent = this.subgroup
+        ? `${this.subgroup} · ${n(cols(sub), 'column')}` : 'None';
+    }
+
+    // A field label inside a section, its tools at the end.
+    _fieldHead(text, extra) {
+      const head = el('div', 'jscf-section-head');
+      head.appendChild(el('label', 'blockr-label')).textContent = text;
+      if (extra) {
+        head.appendChild(el('span', 'jscf-topbar-spacer'));
+        head.appendChild(extra);
+      }
+      return head;
+    }
+
+    // Columns: one checkbox per level, then one per pool. Ticked, it is a
+    // column of the table. Past 8 rows the list scrolls.
+    _levelSection(s) {
+      const box = el('div', 'jscf-levels');
+      box.appendChild(this._fieldHead('Columns'));
+      const list = el('div', 'jscf-level-list');
       list.setAttribute('role', 'list');
-      const places = this._levelPlaces(s);
-      for (const c of s.edit.columns) {
-        list.appendChild(c.name === ''
-          ? this._columnRow(s, c, places)
-          : this._poolStack(s, c, places));
+      const shown = new Set(s.edit.shown);
+      const lock = (cb) => {
+        cb.input.disabled = true;
+        tip(cb.el, 'A split keeps at least one column');
+      };
+      const row = (cb, n, meta) => {
+        const r = el('div', 'jscf-level-row');
+        r.setAttribute('role', 'listitem');
+        r.appendChild(cb.el);
+        if (meta) r.appendChild(el('span', 'jscf-col-meta', meta));
+        r.appendChild(el('span', 'jscf-col-n', String(n)));
+        list.appendChild(r);
+      };
+      for (const l of s.levels) {
+        const on = shown.has(l.value);
+        const cb = window.Blockr.checkbox(l.value, on,
+          (checked) => this._setShown(s, l.value, checked));
+        if (on && this._leavesNoColumn(this._withShown(s, l.value, false))) lock(cb);
+        row(cb, l.n);
       }
-      this._wireDrag(s, list);
-      s.el.appendChild(list);
-      s.listEl = list;
-      list.scrollTop = scrollTop;
-
-      // Levels in no column are not shown; a click brings one back on its
-      // own, where it was when it was hidden.
-      const hidden = s.levels.filter(l => !places.has(l.value));
-      if (hidden.length) {
-        const line = el('div', 'jscf-cols-hidden');
-        line.appendChild(document.createTextNode('Not shown: '));
-        hidden.forEach((l, i) => {
-          if (i) line.appendChild(document.createTextNode(', '));
-          const b = el('button', 'jscf-cols-hidden-level');
-          b.type = 'button';
-          b.textContent = l.value;
-          tip(b, 'Show on its own');
-          b.addEventListener('click', () => {
-            const cols = s.edit.columns;
-            const after = s.hiddenAt.get(l.value);
-            // Hidden before this session, or its neighbour is gone: last.
-            let i = cols.length;
-            if (after === null) i = 0;
-            else if (cols.some(x => x.id === after)) i = cols.findIndex(x => x.id === after) + 1;
-            cols.splice(i, 0, this._newColumn('', [l.value]));
-            s.hiddenAt.delete(l.value);
-            this._groupsEdited(s);
-            this._renderPoolsBand(s);
-          });
-          line.appendChild(b);
-        });
-        s.el.appendChild(line);
+      for (const p of s.edit.pools) {
+        if (!p.members.length) continue;
+        const cb = window.Blockr.checkbox(p.name, p.shown,
+          (checked) => this._setPoolShown(s, p, checked));
+        if (p.shown && this._leavesNoColumn(this._withPoolShown(s, p, false))) lock(cb);
+        row(cb, this._levelN(s, p.members), 'pool');
       }
-
-      const add = el('button', 'blockr-btn blockr-btn--quiet blockr-btn--s jscf-cols-add',
-        s.role === 'subgroup' ? 'Add subgroup pool' : 'Add pool');
-      add.type = 'button';
-      add.addEventListener('click', () => this._addPool(s));
-      s.el.appendChild(add);
-
-      this._syncOverlap(s);
+      box.appendChild(list);
+      return box;
     }
 
-    _newColumn(name, members, custom) {
-      return { id: ++this._gPoolSeq, name, members: members.slice(), custom: !!custom, open: true };
+    _withShown(s, v, on) {
+      const shown = s.edit.shown.filter(x => x !== v);
+      if (on) shown.push(v);
+      return { shown, pools: s.edit.pools };
     }
 
-    // "2×" on a level that is in two columns, its tooltip naming them.
-    _twiceBadge(s, value, places) {
-      const cols = places.get(value) || [];
-      if (cols.length < 2) return null;
-      const badge = el('span', 'jscf-col-badge', `${cols.length}×`);
-      const names = cols.map(c => (c.name === '' ? 'its own' : c.name));
-      tip(badge, `In ${cols.length} columns: ${names.join(', ')}. Counted in each.`);
-      return badge;
+    _withPoolShown(s, p, on) {
+      return {
+        shown: s.edit.shown,
+        pools: s.edit.pools.map(x => (x === p ? Object.assign({}, x, { shown: on }) : x))
+      };
     }
 
-    // A row: the name, the "2×" badge where it applies, N, and the "…" tool
-    // that takes N's place under the pointer. The whole row drags.
-    _row(s, opts) {
-      const row = el('div', 'jscf-col-row' + (opts.cls ? ' ' + opts.cls : ''));
+    _setShown(s, v, on) {
+      const next = this._withShown(s, v, on);
+      if (!this._leavesNoColumn(next)) {
+        s.edit.shown = next.shown;
+        // A default pool name may have been taken or freed.
+        for (const p of s.edit.pools) this._renameDefault(s, p);
+        this._groupsEdited(s);
+      }
+      this._renderBand(s);
+    }
+
+    _setPoolShown(s, p, on) {
+      if (!this._leavesNoColumn(this._withPoolShown(s, p, on))) {
+        p.shown = on;
+        this._groupsEdited(s);
+      }
+      this._renderBand(s);
+    }
+
+    // The pools, one card each: the name, N and a "…" menu, then the
+    // members as tags. A click on the tags edits them. The group's pools
+    // are the Pools section, whose head names them; the subgroup's are a
+    // field of its section. Past about four cards the list scrolls, so a
+    // long list does not push the filters off the block.
+    _poolSection(s) {
+      const sub = s.role === 'subgroup';
+      const box = el('div', 'jscf-pools');
+      if (sub) {
+        const count = s.edit.pools.length
+          ? el('span', 'jscf-section-count', String(s.edit.pools.length)) : null;
+        box.appendChild(this._fieldHead('Pools', count));
+      }
+      if (s.edit.pools.length) {
+        const list = el('div', 'jscf-pool-list');
+        list.setAttribute('role', 'list');
+        for (const p of s.edit.pools) list.appendChild(this._poolRow(s, p));
+        box.appendChild(list);
+      }
+      const add = el('div', 'blockr-add-row jscf-split-add');
+      add.appendChild(this._addLink(sub ? 'Add subgroup pool' : 'Add pool',
+        () => this._addPool(s)));
+      box.appendChild(add);
+      return box;
+    }
+
+    _poolRow(s, p) {
+      const row = el('div', 'jscf-pool' + (p.shown ? '' : ' jscf-pool--hidden'));
       row.setAttribute('role', 'listitem');
-      row.draggable = true;
-      row.tabIndex = 0;
-      row.dataset.col = String(opts.col.id);
-      if (opts.member != null) row.dataset.member = opts.member;
-      if (opts.lead) row.appendChild(opts.lead);
-      const name = el('span', 'jscf-col-name');
-      name.textContent = opts.label;
-      row.appendChild(name);
-      if (opts.meta) row.appendChild(el('span', 'jscf-col-meta', opts.meta));
-      if (opts.badge) row.appendChild(opts.badge);
-      const n = el('span', 'jscf-col-n');
-      n.textContent = String(opts.n);
-      row.appendChild(n);
-      // Hiding is one click, so a long list can be cut down without a menu
-      // per level. The "…" menu keeps its Hide.
-      if (opts.hide) {
-        const icons = (window.Blockr && window.Blockr.icons) || {};
-        const x = el('button', 'jscf-col-dots jscf-col-hide', icons.remove || '×');
-        x.type = 'button';
-        x.setAttribute('aria-label', 'Hide');
-        x.tabIndex = -1;
-        tip(x, 'Hide');
-        x.addEventListener('click', (e) => {
-          e.stopPropagation();
-          opts.hide();
-        });
-        row.appendChild(x);
+      row.dataset.pool = String(p.id);
+
+      // The name renames like a block title: the hover wash, and
+      // data-blockr-editable's text cursor and "Double-click to edit".
+      const head = el('div', 'jscf-pool-head');
+      const name = el('span', 'jscf-pool-label');
+      name.textContent = p.name;
+      name.setAttribute('data-blockr-editable', '');
+      name.addEventListener('dblclick', () => this._renamePool(s, p, name));
+      head.appendChild(name);
+      head.appendChild(el('span', 'jscf-topbar-spacer'));
+      if (!p.shown) {
+        const off = el('span', 'jscf-col-meta', 'not shown');
+        tip(off, 'Tick it under Columns to make it a column');
+        head.appendChild(off);
       }
-      const dots = el('button', 'jscf-col-dots', ICON_DOTS);
+      head.appendChild(el('span', 'jscf-col-n', String(this._levelN(s, p.members))));
+      const dots = el('button', 'jscf-pool-dots', ICON_DOTS);
       dots.type = 'button';
-      dots.setAttribute('aria-label', 'Actions');
-      dots.tabIndex = -1;
+      dots.setAttribute('aria-label', 'Pool actions');
       dots.addEventListener('click', (e) => {
         e.stopPropagation();
-        this._openRowMenu(s, dots, opts.menu());
+        this._openRowMenu(s, dots, this._poolMenu(s, p, row));
       });
-      row.appendChild(dots);
-      row.addEventListener('keydown', (e) => {
-        if (e.target !== row) return;
-        if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown') && opts.member == null) {
-          e.preventDefault();
-          this._moveColumnBy(s, opts.col, e.key === 'ArrowUp' ? -1 : 1);
-        } else if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          this._openRowMenu(s, dots, opts.menu());
-        }
-      });
-      if (name.scrollWidth > name.clientWidth || opts.label.length > 28) tip(name, opts.label);
+      head.appendChild(dots);
+      row.appendChild(head);
+
+      const members = el('button', 'jscf-pool-members');
+      members.type = 'button';
+      members.setAttribute('aria-label', `Edit the levels of ${p.name}`);
+      for (const v of p.members) {
+        const tag = el('span', 'blockr-select__tag jscf-groups-tag');
+        const label = el('span', 'blockr-select__tag-label');
+        label.textContent = v;
+        tag.appendChild(label);
+        members.appendChild(tag);
+      }
+      members.addEventListener('click', () => this._editLevels(s, p, row));
+      row.appendChild(members);
       return row;
     }
 
-    _columnRow(s, c, places) {
-      const v = c.members[0];
-      const hide = this._hideColumn(c);
-      return this._row(s, {
-        col: c,
-        label: v,
-        badge: this._twiceBadge(s, v, places),
-        n: this._levelN(s, [v]),
-        // The last column has no x: a split keeps at least one.
-        hide: this._wouldLeaveNone(s, hide) ? null : () => this._edit(s, hide),
-        menu: () => this._singleMenu(s, c)
-      });
+    _poolMenu(s, p, row) {
+      const rest = { shown: s.edit.shown, pools: s.edit.pools.filter(x => x !== p) };
+      return [
+        { label: 'Rename', onSelect: () => {
+          const nameEl = row.querySelector('.jscf-pool-label');
+          if (nameEl) setTimeout(() => this._renamePool(s, p, nameEl), 0);
+        } },
+        { label: 'Edit levels…', onSelect: () => setTimeout(() => this._editLevels(s, p, row), 0) },
+        { divider: true },
+        { label: 'Remove pool', danger: true,
+          disabled: this._leavesNoColumn(rest),
+          reason: 'A split keeps at least one column',
+          onSelect: () => {
+            s.edit.pools = rest.pools;
+            this._groupsEdited(s);
+            this._renderBand(s);
+          } }
+      ];
     }
 
-    // The edit that takes a column off the list; its levels go to "Not shown".
-    _hideColumn(c) {
-      return (cols) => { cols.splice(cols.findIndex(x => x.id === c.id), 1); };
-    }
-
-    _poolStack(s, c, places) {
-      const stack = el('div', 'jscf-col-stack' + (c.open ? '' : ' jscf-col-stack--folded'));
-      stack.dataset.col = String(c.id);
-      const chev = el('span', 'jscf-col-chev', ((window.Blockr && window.Blockr.icons) || {}).chevron || '');
-      const head = this._row(s, {
-        col: c,
-        cls: 'jscf-col-row--head',
-        label: c.name,
-        meta: c.members.length === 1 ? '1 level' : `${c.members.length} levels`,
-        n: this._levelN(s, c.members),
-        menu: () => this._poolMenu(s, c)
+    // The menu's anchor holds its open state: the "…" stays visible while
+    // the menu is open.
+    _openRowMenu(s, anchor, items) {
+      const menu = window.Blockr && window.Blockr.menu;
+      if (!menu) return;
+      anchor.classList.add('jscf-pool-dots--open');
+      menu(anchor, {
+        items,
+        align: 'end',
+        onClose: () => anchor.classList.remove('jscf-pool-dots--open')
       });
-      head.appendChild(chev);
-      head.setAttribute('aria-expanded', c.open ? 'true' : 'false');
-      // A click folds, a double-click renames (design system, Renaming in
-      // place). The fold waits out the double-click.
-      let clickTimer = null;
-      head.addEventListener('click', (e) => {
-        if (e.target.closest('.jscf-col-dots, input')) return;
-        clearTimeout(clickTimer);
-        clickTimer = setTimeout(() => {
-          c.open = !c.open;
-          this._renderPoolsBand(s);
-        }, 220);
-      });
-      const nameEl = head.querySelector('.jscf-col-name');
-      nameEl.setAttribute('data-blockr-editable', '');
-      head.addEventListener('dblclick', (e) => {
-        if (e.target.closest('.jscf-col-dots')) return;
-        clearTimeout(clickTimer);
-        this._renamePool(s, c, nameEl);
-      });
-      stack.appendChild(head);
-      if (c.open) {
-        for (const v of c.members) {
-          stack.appendChild(this._row(s, {
-            col: c,
-            member: v,
-            cls: 'jscf-col-row--member',
-            label: v,
-            badge: this._twiceBadge(s, v, places),
-            n: this._levelN(s, [v]),
-            menu: () => this._memberMenu(s, c, v)
-          }));
-        }
-      }
-      return stack;
     }
 
     // The pool's name turns into a field where it is. Enter or a click
@@ -1515,10 +1512,9 @@
       input.setAttribute('aria-label', 'Pool name');
       const err = el('div', 'jscf-pool-error');
       err.style.display = 'none';
-      const row = nameEl.closest('.jscf-col-row');
-      row.draggable = false;
+      const head = nameEl.closest('.jscf-pool-head');
       nameEl.replaceWith(input);
-      row.after(err);
+      head.after(err);
       input.focus();
       input.select();
       const problem = (raw) => {
@@ -1547,7 +1543,7 @@
           }
         }
         done = true;
-        this._renderPoolsBand(s);
+        this._renderBand(s);
       };
       input.addEventListener('input', () => {
         showErr(input.value.trim() === c.name ? '' : problem(input.value));
@@ -1563,215 +1559,34 @@
       });
     }
 
-    // Every column name but `col`'s own: the levels on their own and the
-    // other pools.
+    // Every column name but `col`'s own: the levels shown on their own and
+    // the other pools.
     _takenNames(s, col) {
-      const taken = new Set();
-      for (const c of s.edit.columns) {
-        if (c === col) continue;
-        if (c.name === '') { if (c.members.length) taken.add(c.members[0]); }
-        else taken.add(c.name);
-      }
+      const taken = new Set(s.edit.shown);
+      for (const p of s.edit.pools) if (p !== col) taken.add(p.name);
       return taken;
     }
 
     // A pool whose name was never typed follows its members.
     _renameDefault(s, c) {
-      if (c.name === '' || c.custom) return;
+      if (c.custom) return;
       c.name = uniqueName(poolDefaultName(c.members, s.levels), this._takenNames(s, c));
     }
 
-    _pools(s) {
-      return s.edit.columns.filter(c => c.name !== '');
-    }
-
-    // -- The rows' "…" menus. Every drag has its path here too. ------------
-
-    // The "…" shows only under the pointer. Its row holds that state while
-    // the menu is open: a hidden "…" measures 0x0, and the menu, which
-    // follows its anchor, jumps to the corner of the page.
-    _openRowMenu(s, anchor, items) {
-      const menu = window.Blockr && window.Blockr.menu;
-      if (!menu) return;
-      const row = anchor.closest('.jscf-col-row');
-      if (row) row.classList.add('jscf-col-row--menu');
-      menu(anchor, {
-        items,
-        align: 'end',
-        onClose: () => { if (row) row.classList.remove('jscf-col-row--menu'); }
-      });
-    }
-
-    // Apply `fn` to a copy of the columns; refused if it leaves none.
-    _edit(s, fn) {
-      const before = s.edit.columns;
-      const next = before.map(c => Object.assign({}, c, { members: c.members.slice() }));
-      fn(next);
-      const kept = next.filter(c => c.name !== '' || c.members.length);
-      if (this._leavesNoColumn(kept)) return false;
-      // A pool lists its members in level order, however they arrived.
-      const order = new Map(s.levels.map((l, i) => [l.value, i]));
-      const rank = (v) => (order.has(v) ? order.get(v) : order.size);
-      for (const c of kept) c.members.sort((a, b) => rank(a) - rank(b));
-      this._rememberHidden(s, before, kept);
-      s.edit.columns = kept;
-      for (const c of kept) this._renameDefault(s, c);
-      this._groupsEdited(s);
-      this._renderPoolsBand(s);
-      return true;
-    }
-
-    // A level an edit leaves in no column remembers the column it sat after,
-    // so "Not shown" can put it back there. `null` is the top.
-    _rememberHidden(s, before, after) {
-      const shown = (cols) => new Set(cols.flatMap(c => c.members));
-      const was = shown(before);
-      const now = shown(after);
-      const kept = new Set(after.map(c => c.id));
-      for (const v of was) {
-        if (now.has(v)) continue;
-        let i = before.findIndex(c => c.members.includes(v)) - 1;
-        while (i >= 0 && !kept.has(before[i].id)) i--;
-        s.hiddenAt.set(v, i >= 0 ? before[i].id : null);
-      }
-    }
-
-    _wouldLeaveNone(s, fn) {
-      const next = s.edit.columns.map(c => Object.assign({}, c, { members: c.members.slice() }));
-      fn(next);
-      return this._leavesNoColumn(next);
-    }
-
-    // Pick a pool (or a new one) from a menu, then run `then(pool)`.
-    _pickPool(s, anchor, title, then) {
-      const pools = this._pools(s);
-      const menu = window.Blockr && window.Blockr.menu;
-      if (!menu) return;
-      const items = pools.map(p => ({
-        label: p.name,
-        meta: `${p.members.length}`,
-        onSelect: () => then(p.id)
-      }));
-      if (items.length) items.push({ divider: true });
-      items.push({ label: 'New pool', onSelect: () => then(null) });
-      setTimeout(() => menu(anchor, { items, align: 'end', caption: title }), 0);
-    }
-
-    _singleMenu(s, c) {
-      const v = c.members[0];
-      // The row, not its "…": that one is hidden once the pointer leaves the
-      // row, and a menu anchored to it opens in the corner of the page.
-      const dots = () => s.el.querySelector(
-        `.jscf-col-row[data-col="${c.id}"]:not([data-member])`) || s.el;
-      // A new pool opens its levels menu, since one level is rarely the
-      // pool anyone wants.
-      const toPool = (copy) => (poolId) => {
-        let fresh = null;
-        const ok = this._edit(s, (cols) => {
-          const i = cols.findIndex(x => x.id === c.id);
-          if (poolId == null) {
-            fresh = this._newColumn('New pool', [v]);
-            cols.splice(copy ? i + 1 : i, copy ? 0 : 1, fresh);
-          } else {
-            const p = cols.find(x => x.id === poolId);
-            if (!p.members.includes(v)) p.members.push(v);
-            if (!copy) cols.splice(i, 1);
-          }
-        });
-        if (ok && fresh) {
-          const pool = s.edit.columns.find(x => x.id === fresh.id);
-          const head = s.el.querySelector(`.jscf-col-row--head[data-col="${fresh.id}"]`);
-          if (pool && head) setTimeout(() => this._editLevels(s, pool, head), 0);
-        }
-      };
-      const hide = this._hideColumn(c);
-      return [
-        { label: 'Move to pool…', onSelect: () => this._pickPool(s, dots(), `Move ${v} to`, toPool(false)) },
-        { label: 'Also add to pool…', onSelect: () => this._pickPool(s, dots(), `Also add ${v} to`, toPool(true)) },
-        { label: 'Move to top', disabled: s.edit.columns[0] === c,
-          onSelect: () => this._edit(s, (cols) => {
-            const i = cols.findIndex(x => x.id === c.id);
-            cols.unshift(cols.splice(i, 1)[0]);
-          }) },
-        { divider: true },
-        { label: 'Hide', disabled: this._wouldLeaveNone(s, hide),
-          reason: 'A split keeps at least one column',
-          onSelect: () => this._edit(s, hide) }
-      ];
-    }
-
-    _memberMenu(s, c, v) {
-      const own = s.edit.columns.some(x => x.name === '' && x.members[0] === v);
-      const out = (copy) => (cols) => {
-        const i = cols.findIndex(x => x.id === c.id);
-        const p = cols[i];
-        if (!copy) p.members = p.members.filter(m => m !== v);
-        cols.splice(i + 1, 0, this._newColumn('', [v]));
-        if (!p.members.length) cols.splice(i, 1);
-      };
-      const remove = (cols) => {
-        const i = cols.findIndex(x => x.id === c.id);
-        cols[i].members = cols[i].members.filter(m => m !== v);
-        if (!cols[i].members.length) cols.splice(i, 1);
-      };
-      return [
-        { label: 'Move out of the pool', onSelect: () => this._edit(s, out(false)) },
-        { label: 'Also show on its own', disabled: own, reason: 'Already shown on its own',
-          onSelect: () => this._edit(s, out(true)) },
-        { divider: true },
-        { label: 'Remove from the pool', disabled: this._wouldLeaveNone(s, remove),
-          reason: 'A split keeps at least one column',
-          onSelect: () => this._edit(s, remove) }
-      ];
-    }
-
-    _poolMenu(s, c) {
-      const ownOf = (cols, v) => cols.findIndex(x => x.name === '' && x.members[0] === v);
-      const hasOwn = c.members.some(v => ownOf(s.edit.columns, v) >= 0);
-      const head = () => s.el.querySelector(
-        `.jscf-col-row--head[data-col="${c.id}"]`) || s.el;
-      const removePool = (cols) => { cols.splice(cols.findIndex(x => x.id === c.id), 1); };
-      return [
-        { label: 'Rename', onSelect: () => {
-          const nameEl = head().querySelector('.jscf-col-name');
-          if (nameEl) setTimeout(() => this._renamePool(s, c, nameEl), 0);
-        } },
-        { label: 'Edit levels…', onSelect: () => setTimeout(() => this._editLevels(s, c, head()), 0) },
-        { label: "Hide members' own rows", disabled: !hasOwn,
-          reason: 'No member is shown on its own',
-          onSelect: () => this._edit(s, (cols) => {
-            for (const v of c.members) {
-              const i = ownOf(cols, v);
-              if (i >= 0) cols.splice(i, 1);
-            }
-          }) },
-        { label: 'Ungroup', onSelect: () => this._edit(s, (cols) => {
-          const i = cols.findIndex(x => x.id === c.id);
-          const singles = c.members.filter(v => ownOf(cols, v) < 0)
-            .map(v => this._newColumn('', [v]));
-          cols.splice(i, 1, ...singles);
-        }) },
-        { divider: true },
-        { label: 'Remove pool', disabled: this._wouldLeaveNone(s, removePool),
-          reason: 'A split keeps at least one column',
-          onSelect: () => this._edit(s, removePool) }
-      ];
-    }
-
     // A pool's members from a menu of every level, ticked (Select.menu,
-    // multi). A tick adds: the level keeps its own row, which is how a
-    // double count is made; each option says where the level already is.
-    // The list redraws when the menu closes, so the anchor stays put.
+    // multi). Whether a level is also shown on its own is the Groups
+    // section's business; each option names the other pools it is in. The
+    // band redraws when the menu closes, so the anchor stays put.
     _editLevels(s, c, anchor, onDone) {
       const Select = this._select();
       const places = this._levelPlaces(s);
       const options = s.levels.map(l => {
-        const where = (places.get(l.value) || []).filter(x => x !== c)
-          .map(x => (x.name === '' ? 'own column' : x.name));
+        const where = (places.get(l.value) || [])
+          .filter(x => x !== '' && x !== c.name)
+          .map(x => `in ${x}`);
         return { value: l.value, label: where.concat(String(l.n)).join(' · ') };
       });
-      const metaEl = anchor.querySelector && anchor.querySelector('.jscf-col-meta');
-      const nEl = anchor.querySelector && anchor.querySelector('.jscf-col-n');
+      const nEl = anchor.querySelector('.jscf-pool-head .jscf-col-n');
       s.menu = Select.menu(anchor, {
         mode: 'multi',
         title: c.name,
@@ -1783,182 +1598,34 @@
           c.members = order.filter(v => values.includes(v))
             .concat(values.filter(v => !order.includes(v)));
           this._renameDefault(s, c);
-          if (metaEl) metaEl.textContent = c.members.length === 1 ? '1 level' : `${c.members.length} levels`;
           if (nEl) nEl.textContent = String(this._levelN(s, c.members));
           this._groupsEdited(s);
         },
         onClose: () => {
           s.menu = null;
           // A pool left empty when its menu closes was never built.
-          if (!c.members.length) {
-            const rest = s.edit.columns.filter(x => x !== c);
-            if (!this._leavesNoColumn(rest)) {
-              s.edit.columns = rest;
-              this._groupsEdited(s);
-            }
-          }
-          this._renderPoolsBand(s);
-          const back = s.el.querySelector(`.jscf-col-row--head[data-col="${c.id}"]`);
-          if (back) back.scrollIntoView({ block: 'nearest' });
+          if (!c.members.length) s.edit.pools = s.edit.pools.filter(x => x !== c);
+          this._renderBand(s);
           if (onDone) onDone();
         }
       });
     }
 
     _addPool(s) {
-      const pool = this._newColumn(
-        uniqueName('New pool', this._takenNames(s, null)), []);
-      s.edit.columns.push(pool);
-      this._renderPoolsBand(s);
-      const head = s.el.querySelector(`.jscf-col-row--head[data-col="${pool.id}"]`);
-      if (head) {
-        head.scrollIntoView({ block: 'nearest' });
-        setTimeout(() => this._editLevels(s, pool, head), 0);
+      const pool = {
+        id: ++this._gPoolSeq,
+        name: uniqueName('New pool', this._takenNames(s, null)),
+        members: [],
+        custom: false,
+        shown: true
+      };
+      s.edit.pools.push(pool);
+      this._renderBand(s);
+      const row = s.poolsEl.querySelector(`.jscf-pool[data-pool="${pool.id}"]`);
+      if (row) {
+        row.scrollIntoView({ block: 'nearest' });
+        setTimeout(() => this._editLevels(s, pool, row), 0);
       }
-    }
-
-    _moveColumnBy(s, c, delta) {
-      const cols = s.edit.columns;
-      const i = cols.indexOf(c);
-      const j = i + delta;
-      if (i < 0 || j < 0 || j >= cols.length) return;
-      cols.splice(j, 0, cols.splice(i, 1)[0]);
-      this._groupsEdited(s);
-      this._renderPoolsBand(s);
-      const row = s.el.querySelector(`.jscf-col-row[data-col="${c.id}"]:not([data-member])`);
-      if (row) row.focus();
-    }
-
-    // -- Drag ---------------------------------------------------------------
-    // A drag moves; held with Alt it copies. Between two columns it places
-    // the dragged thing there (a 2px accent line, as in block lists); onto
-    // a level it pools the two, onto a pool it joins it (the row or band
-    // takes the accent tint, as in the outline).
-
-    _wireDrag(s, list) {
-      let src = null;
-      // One line, placed over the gap; inserting it into the list would move
-      // the rows under the pointer.
-      const line = el('div', 'jscf-col-dropline');
-      line.style.display = 'none';
-      const clear = () => {
-        line.style.display = 'none';
-        for (const t of list.querySelectorAll('.jscf-col--target')) t.classList.remove('jscf-col--target');
-      };
-      // Where a drop at clientY over `target` lands.
-      const zone = (e) => {
-        const row = e.target.closest && e.target.closest('.jscf-col-row');
-        if (!row || !list.contains(row)) return null;
-        const col = s.edit.columns.find(c => String(c.id) === row.dataset.col);
-        if (!col) return null;
-        if (row.dataset.member != null) return { kind: 'onto', col, el: row.closest('.jscf-col-stack') };
-        const box = row.closest('.jscf-col-stack') || row;
-        const r = row.getBoundingClientRect();
-        const y = (e.clientY - r.top) / r.height;
-        const isHead = row.classList.contains('jscf-col-row--head');
-        if (y < 0.28) return { kind: 'before', col, el: box };
-        if (y > 0.72 && !(isHead && col.open && col.members.length)) return { kind: 'after', col, el: box };
-        return { kind: 'onto', col, el: col.name === '' ? row : box };
-      };
-      const valid = (z) => {
-        if (!z || !src) return false;
-        if (src.member == null && z.col === src.col) return false;
-        if (src.member != null && z.kind === 'onto' && z.col === src.col) return false;
-        // A pool dropped onto something merges; dropped onto itself it does not.
-        return true;
-      };
-      list.addEventListener('dragstart', (e) => {
-        const row = e.target.closest && e.target.closest('.jscf-col-row');
-        if (!row) return;
-        const col = s.edit.columns.find(c => String(c.id) === row.dataset.col);
-        if (!col) return;
-        src = { col, member: row.dataset.member != null ? row.dataset.member : null };
-        e.dataTransfer.effectAllowed = 'copyMove';
-        e.dataTransfer.setData('text/plain', src.member != null ? src.member : (col.name || col.members[0]));
-        (row.dataset.member == null && row.closest('.jscf-col-stack') || row).classList.add('jscf-col--dragging');
-      });
-      list.addEventListener('dragover', (e) => {
-        if (!src) return;
-        const z = zone(e);
-        clear();
-        if (!valid(z)) return;
-        e.preventDefault();
-        e.dataTransfer.dropEffect = e.altKey ? 'copy' : 'move';
-        if (z.kind === 'onto') {
-          z.el.classList.add('jscf-col--target');
-        } else {
-          if (line.parentNode !== list) list.appendChild(line);
-          const top = z.kind === 'before' ? z.el.offsetTop : z.el.offsetTop + z.el.offsetHeight;
-          line.style.top = (top - 1) + 'px';
-          line.style.display = '';
-        }
-      });
-      list.addEventListener('dragleave', (e) => {
-        if (!list.contains(e.relatedTarget)) clear();
-      });
-      list.addEventListener('drop', (e) => {
-        if (!src) return;
-        const z = zone(e);
-        clear();
-        if (!valid(z)) return;
-        e.preventDefault();
-        this._applyDrop(s, src, z, e.altKey);
-        src = null;
-      });
-      list.addEventListener('dragend', () => {
-        clear();
-        src = null;
-        for (const t of list.querySelectorAll('.jscf-col--dragging')) t.classList.remove('jscf-col--dragging');
-      });
-    }
-
-    _applyDrop(s, src, z, copy) {
-      this._edit(s, (cols) => {
-        const find = (c) => cols.find(x => x.id === c.id);
-        const from = find(src.col);
-        const to = find(z.col);
-        // What is dragged: one level (a level's row or a pool's member) or a
-        // whole pool.
-        const members = src.member != null ? [src.member] : from.members.slice();
-        const take = () => {
-          if (copy) return;
-          if (src.member != null) {
-            from.members = from.members.filter(m => m !== src.member);
-            if (!from.members.length) cols.splice(cols.indexOf(from), 1);
-          } else {
-            cols.splice(cols.indexOf(from), 1);
-          }
-        };
-        if (z.kind === 'onto') {
-          if (to.name === '') {
-            // Onto a level: the two become a pool where the level was. A
-            // dragged pool keeps its name.
-            // _edit() names a pool whose name was never typed.
-            const keep = src.member == null && from.name !== '';
-            const pool = this._newColumn(keep ? from.name : 'New pool',
-              to.members.concat(members.filter(m => !to.members.includes(m))),
-              keep && from.custom);
-            cols.splice(cols.indexOf(to), 1, pool);
-            take();
-          } else {
-            for (const m of members) if (!to.members.includes(m)) to.members.push(m);
-            take();
-          }
-          return;
-        }
-        // Between columns: a level lands as its own row, a pool as itself.
-        const moved = src.member != null || from.name === ''
-          ? this._newColumn('', members)
-          : (copy ? this._newColumn(from.name, members, from.custom) : from);
-        if (copy && moved.custom) {
-          moved.name = uniqueName(moved.name, this._takenNames({ edit: { columns: cols } }, null));
-        }
-        if (moved === from) cols.splice(cols.indexOf(from), 1);
-        else take();
-        let at = cols.indexOf(to);
-        if (at < 0) at = cols.length;
-        cols.splice(z.kind === 'before' ? at : at + 1, 0, moved);
-      });
     }
 
     // -- Receive data from R ------------------------------------------------

@@ -26,25 +26,28 @@
 #'   dropping a column from it also takes it out of `Group by`, for every
 #'   reader of the board, which is a setting and not a filter.
 #' @param pinned The single column the block reports as the board's group,
-#'   chosen in the `Group by` select at the top of the block. Only `featured`
+#'   chosen in the `By` select of the `Groups` section. Only `featured`
 #'   columns on the parent table qualify. Grouping is independent of filtering: a pinned
 #'   column need not have a card, and a card does not make a column the group.
 #'   `NULL` (the default) means no group.
 #' @param groups Group definitions for the pinned column and the subgroup,
-#'   edited in the `Show groups` section under each field. A named list keyed by
-#'   column, so switching the group column and back, or swapping group and
-#'   subgroup, keeps each definition. An entry is `list(columns =
-#'   list(list(name = , members = , custom = ), ...))`, the columns in table
-#'   order. A column with an empty name is one level shown on its own; a named
-#'   one is a pool of its members, `custom = FALSE` meaning the name follows
-#'   the members. A level may be in two columns (shown on its own and pooled).
-#'   A level in no column is not shown. A column with no entry shows every
-#'   level in [crossfilter_level_order()], one column each. The older shape,
-#'   `list(show = <levels>, pools = <list>)`, is still read: its levels come
-#'   first, then its pools. The block only records the definition; a package
-#'   building on it (blockr.pharma's population filter) applies it.
+#'   edited in the `Groups`, `Pools` and `Subgroups` sections of the block.
+#'   A named list keyed by column, so switching the group column and back, or
+#'   swapping group and subgroup, keeps each definition. An entry is
+#'   `list(columns = list(list(name = , members = , custom = ), ...))`, the
+#'   columns in table order. A column with an empty name is one level shown
+#'   on its own; a named one is a pool of its members, `custom = FALSE`
+#'   meaning the name follows the members. A level may be in two columns
+#'   (shown on its own and pooled). A level in no column is not shown. A pool
+#'   that is defined but not shown sits in `hidden_pools`, same shape as
+#'   `columns`, so that it is kept without being a column. A column with no
+#'   entry shows every level in [crossfilter_level_order()], one column
+#'   each. The older shape, `list(show = <levels>, pools = <list>)`, is still
+#'   read: its levels come first, then its pools. The block only records the
+#'   definition; a package building on it (blockr.pharma's population filter)
+#'   applies it.
 #' @param subgroup A second column the board is split by, under `pinned`,
-#'   chosen in the `Subgroup by` select below the groups. Same eligible
+#'   chosen in the `By` select of the `Subgroups` section. Same eligible
 #'   columns as `pinned`, minus the pinned one. `NULL` (the default) means no
 #'   subgroup. Its levels are pooled like the group's, through its entry in
 #'   `groups`, and a button in its field swaps it with `pinned`. Like
@@ -417,7 +420,10 @@ crossfilter_pool_default_name <- function(members, levels) {
 # gives back (length-1 arrays arrive as scalars) and the older `show` plus
 # `pools` shape, which becomes its shown levels followed by its pools. A pool
 # without members is kept: it is a pool being built. A pool of several
-# members without a name gets the default one.
+# members without a name gets the default one. `hidden_pools`, pools defined
+# but unticked in the Columns list, are kept apart from `columns` so that a
+# reader of `columns` never sees them; the entry carries them only when there
+# are some.
 crossfilter_clean_group_def <- function(def, levels = character()) {
   chr <- function(x) {
     x <- as.character(unlist(x, use.names = FALSE))
@@ -453,14 +459,26 @@ crossfilter_clean_group_def <- function(def, levels = character()) {
     }
     list(name = name, members = members, custom = nzchar(name) && custom)
   })
-  list(columns = cols)
+  hidden <- lapply(unname(def$hidden_pools %||% list()), function(p) {
+    name <- chr(p$name)
+    list(
+      name = if (length(name)) trimws(name[[1L]]) else "",
+      members = unique(chr(p$members)),
+      custom = isTRUE(as.logical(unlist(p$custom))[1L])
+    )
+  })
+  hidden <- Filter(function(p) nzchar(p$name) && length(p$members), hidden)
+  out <- list(columns = cols)
+  if (length(hidden)) out$hidden_pools <- hidden
+  out
 }
 
 # No entry for a column means untouched: every level on its own, in level
 # order. A definition that says exactly that is not stored.
 crossfilter_group_def_is_default <- function(def, levels) {
   cols <- def$columns
-  all(vapply(cols, function(p) !nzchar(p$name), logical(1))) &&
+  !length(def$hidden_pools) &&
+    all(vapply(cols, function(p) !nzchar(p$name), logical(1))) &&
     identical(
       unlist(lapply(cols, `[[`, "members"), use.names = FALSE) %||%
         character(),
@@ -476,18 +494,22 @@ crossfilter_clean_groups <- function(groups) {
 }
 
 # `groups` as the client reads it: {COL: {columns: [{name, members: [...],
-# custom}]}}. as.list() keeps a one-level vector an array.
+# custom}], hidden_pools: [...]}}, `hidden_pools` only when there are some.
+# as.list() keeps a one-level vector an array.
 crossfilter_groups_payload <- function(groups) {
-  lapply(groups, function(def) {
+  col <- function(p) {
     list(
-      columns = lapply(unname(def$columns), function(p) {
-        list(
-          name = as.character(p$name),
-          members = as.list(as.character(p$members)),
-          custom = isTRUE(p$custom)
-        )
-      })
+      name = as.character(p$name),
+      members = as.list(as.character(p$members)),
+      custom = isTRUE(p$custom)
     )
+  }
+  lapply(groups, function(def) {
+    out <- list(columns = lapply(unname(def$columns), col))
+    if (length(def$hidden_pools)) {
+      out$hidden_pools <- lapply(unname(def$hidden_pools), col)
+    }
+    out
   })
 }
 
