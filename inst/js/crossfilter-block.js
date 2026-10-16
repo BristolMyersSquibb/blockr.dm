@@ -1161,13 +1161,13 @@
       return { shown, pools, order };
     }
 
-    // The Columns rows in order: `order` without what is gone, then any
-    // level or pool it does not name yet (new data, a new pool).
+    // The Columns rows in order, each once: `order` without what is gone,
+    // then any level or pool it does not name yet (new data, a new pool).
     _orderKeys(s, def = s.edit) {
       const lv = s.levels.map(l => 'l:' + l.value);
       const pk = def.pools.map(p => 'p:' + p.id);
       const known = new Set(lv.concat(pk));
-      const keys = asArray(def.order).filter(k => known.has(k));
+      const keys = [...new Set(asArray(def.order))].filter(k => known.has(k));
       for (const k of lv.concat(pk)) if (!keys.includes(k)) keys.push(k);
       return keys;
     }
@@ -1613,7 +1613,8 @@
 
       const members = el('button', 'jscf-pool-members');
       members.type = 'button';
-      members.setAttribute('aria-label', `Edit the levels of ${p.name}`);
+      members.setAttribute('aria-label', `Edit the values of ${p.name}`);
+      tip(members, 'Click to add or remove values');
       for (const v of p.members) {
         const tag = el('span', 'blockr-select__tag jscf-groups-tag');
         const label = el('span', 'blockr-select__tag-label');
@@ -1784,7 +1785,8 @@
         shown: true
       };
       s.edit.pools.push(pool);
-      s.edit.order = this._orderKeys(s).concat('p:' + pool.id);
+      // _orderKeys() puts the new pool last.
+      s.edit.order = this._orderKeys(s);
       this._renderBand(s);
       const row = s.poolsEl.querySelector(`.jscf-pool[data-pool="${pool.id}"]`);
       if (row) {
