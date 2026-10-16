@@ -307,7 +307,8 @@
         b.style.display = 'none';
         return b;
       };
-      this._groupsSec = this._section('groups', 'Groups', true);
+      this._groupsSec = this._section('groups', 'Groups', true,
+        'Each ticked value is a column, in this order.');
       const gBody = this._groupsSec.body;
       gBody.appendChild(el('label', 'blockr-label', 'By'));
       this.groupHostEl = el('div', 'jscf-group-select');
@@ -317,14 +318,16 @@
       this.groupFieldEl.appendChild(this._groupsSec.el);
       // The group's pools: a section of their own, on the block while there
       // is a group to pool.
-      this._poolsSec = this._section('pools', 'Pools');
+      this._poolsSec = this._section('pools', 'Pools', false,
+        'Several values combined into one more column.');
       this._poolsSec.el.style.display = 'none';
       this._splits.group.poolsEl = this._poolsSec.body;
       this.groupFieldEl.appendChild(this._poolsSec.el);
       // The second split, with columns and pools of its own. Same field, so
       // it hides with it: there is no subgroup without a group. A subgroup is
       // rare, so at rest the section is its title and "+ Add subgroup".
-      this._subSec = this._section('subgroups', 'Subgroups');
+      this._subSec = this._section('subgroups', 'Subgroups', false,
+        'Each column split again by the values of a second column.');
       this.subgroupFieldEl = this._subSec.el;
       this.subgroupFieldEl.classList.add('jscf-subgroup-field');
       this.subgroupFieldEl.style.display = 'none';
@@ -1103,12 +1106,20 @@
     // The working copy for a split's column, from R's entry or the untouched
     // default (every level on its own, no pools). `shown` is the levels with
     // a column of their own; a pool's `shown` says it is a column, its
-    // `custom` that its name was typed.
+    // `custom` that its name was typed. `order` is every row of the Columns
+    // list, ticked or not, in table order: 'l:<level>' or 'p:<pool id>'.
     _groupDefFor(s) {
       const d = this.groupDefs[s.col];
-      if (!d) return { shown: s.levels.map(l => l.value), pools: [] };
+      if (!d) {
+        return {
+          shown: s.levels.map(l => l.value),
+          pools: [],
+          order: s.levels.map(l => 'l:' + l.value)
+        };
+      }
       const shown = [];
       const pools = [];
+      const order = [];
       const pool = (p, on) => ({
         id: ++this._gPoolSeq,
         name: String(p.name),
@@ -1119,36 +1130,76 @@
       for (const p of asArray(d.columns)) {
         const name = p.name == null ? '' : String(p.name);
         if (name !== '') {
-          pools.push(pool(p, true));
+          const pp = pool(p, true);
+          pools.push(pp);
+          order.push('p:' + pp.id);
         } else {
           for (const m of asArray(p.members).map(String)) {
-            if (!shown.includes(m)) shown.push(m);
+            if (shown.includes(m)) continue;
+            shown.push(m);
+            order.push('l:' + m);
           }
         }
       }
-      for (const p of asArray(d.hidden_pools)) pools.push(pool(p, false));
-      return { shown, pools };
+      // A level that is not a column takes its place in level order, before
+      // the first shown level that comes after it.
+      const rank = new Map(s.levels.map((l, i) => [l.value, i]));
+      for (const l of s.levels) {
+        const k = 'l:' + l.value;
+        if (order.includes(k)) continue;
+        const i = rank.get(l.value);
+        const at = order.findIndex(x => x.startsWith('l:') &&
+          rank.has(x.slice(2)) && rank.get(x.slice(2)) > i);
+        if (at < 0) order.push(k);
+        else order.splice(at, 0, k);
+      }
+      for (const p of asArray(d.hidden_pools)) {
+        const pp = pool(p, false);
+        pools.push(pp);
+        order.push('p:' + pp.id);
+      }
+      return { shown, pools, order };
+    }
+
+    // The Columns rows in order: `order` without what is gone, then any
+    // level or pool it does not name yet (new data, a new pool).
+    _orderKeys(s, def = s.edit) {
+      const lv = s.levels.map(l => 'l:' + l.value);
+      const pk = def.pools.map(p => 'p:' + p.id);
+      const known = new Set(lv.concat(pk));
+      const keys = asArray(def.order).filter(k => known.has(k));
+      for (const k of lv.concat(pk)) if (!keys.includes(k)) keys.push(k);
+      return keys;
     }
 
     _isDefaultGroupDef(s, def) {
       const shown = new Set(def.shown);
+      const keys = this._orderKeys(s, def);
       return !def.pools.length && shown.size === s.levels.length &&
-        s.levels.every(l => shown.has(l.value));
+        s.levels.every((l, i) => shown.has(l.value) && keys[i] === 'l:' + l.value);
     }
 
     _shownPools(def) {
       return def.pools.filter(p => p.shown && p.members.length);
     }
 
-    // The definition as R stores it: the columns in table order.
+    // The definition as R stores it: the ticked columns in table order.
     _groupColumns(s) {
-      const order = s.levels.map(l => l.value);
       const shown = new Set(s.edit.shown);
-      const singles = order.filter(v => shown.has(v))
-        .concat(s.edit.shown.filter(v => !order.includes(v)));
-      const col = (p) => ({ name: p.name, members: p.members.slice(), custom: !!p.custom });
-      return singles.map(v => ({ name: '', members: [v], custom: false }))
-        .concat(this._shownPools(s.edit).map(col));
+      const pools = new Map(s.edit.pools.map(p => ['p:' + p.id, p]));
+      const out = [];
+      for (const k of this._orderKeys(s)) {
+        if (k.startsWith('l:')) {
+          const v = k.slice(2);
+          if (shown.has(v)) out.push({ name: '', members: [v], custom: false });
+        } else {
+          const p = pools.get(k);
+          if (p && p.shown && p.members.length) {
+            out.push({ name: p.name, members: p.members.slice(), custom: !!p.custom });
+          }
+        }
+      }
+      return out;
     }
 
     _hiddenPools(s) {
@@ -1270,7 +1321,7 @@
     // titles") that folds it, tools at the end of its head, and a body
     // indented to the title's text. Folded, the head says what the section
     // holds instead. Fold state is per session.
-    _section(key, title, first) {
+    _section(key, title, first, help) {
       const icons = (window.Blockr && window.Blockr.icons) || {};
       const sec = el('div', 'jscf-section' + (first ? ' jscf-section--first' : ''));
       const head = el('div', 'jscf-section-head');
@@ -1281,6 +1332,16 @@
       const summary = el('span', 'jscf-section-summary');
       toggle.appendChild(summary);
       head.appendChild(toggle);
+      // What the section is for, on the info icon beside its title: outside
+      // the toggle, so reading it does not fold the section.
+      if (help) {
+        const info = el('span', 'jscf-section-help', icons.info || 'i');
+        info.tabIndex = 0;
+        info.setAttribute('role', 'img');
+        info.setAttribute('aria-label', help);
+        tip(info, help);
+        head.appendChild(info);
+      }
       head.appendChild(el('span', 'jscf-topbar-spacer'));
       const tools = el('span', 'jscf-section-tools');
       head.appendChild(tools);
@@ -1326,8 +1387,10 @@
       return head;
     }
 
-    // Columns: one checkbox per level, then one per pool. Ticked, it is a
-    // column of the table. Past 8 rows the list scrolls.
+    // Columns: one row per level and per pool, in table order. Ticked, it is
+    // a column of the table. The grip on the left reorders: only the grip,
+    // so a click on a name never starts a drag. Past 8 rows the list
+    // scrolls.
     _levelSection(s) {
       const box = el('div', 'jscf-levels');
       box.appendChild(this._fieldHead('Columns'));
@@ -1338,40 +1401,136 @@
         cb.input.disabled = true;
         tip(cb.el, 'A split keeps at least one column');
       };
-      const row = (cb, n, meta) => {
+      const icons = (window.Blockr && window.Blockr.icons) || {};
+      const row = (key, label, cb, n, meta) => {
         const r = el('div', 'jscf-level-row');
         r.setAttribute('role', 'listitem');
+        r.dataset.key = key;
+        const grip = el('button', 'jscf-level-grip', icons.grip || ICON_DOTS);
+        grip.type = 'button';
+        grip.setAttribute('aria-label', `Move ${label}`);
+        tip(grip, 'Drag to reorder');
+        r.appendChild(grip);
         r.appendChild(cb.el);
         if (meta) r.appendChild(el('span', 'jscf-col-meta', meta));
         r.appendChild(el('span', 'jscf-col-n', String(n)));
         list.appendChild(r);
       };
-      for (const l of s.levels) {
-        const on = shown.has(l.value);
-        const cb = window.Blockr.checkbox(l.value, on,
-          (checked) => this._setShown(s, l.value, checked));
-        if (on && this._leavesNoColumn(this._withShown(s, l.value, false))) lock(cb);
-        row(cb, l.n);
-      }
-      for (const p of s.edit.pools) {
-        if (!p.members.length) continue;
+      const levels = new Map(s.levels.map(l => ['l:' + l.value, l]));
+      const pools = new Map(s.edit.pools.map(p => ['p:' + p.id, p]));
+      for (const k of this._orderKeys(s)) {
+        const l = levels.get(k);
+        if (l) {
+          const on = shown.has(l.value);
+          const cb = window.Blockr.checkbox(l.value, on,
+            (checked) => this._setShown(s, l.value, checked));
+          if (on && this._leavesNoColumn(this._withShown(s, l.value, false))) lock(cb);
+          row(k, l.value, cb, l.n);
+          continue;
+        }
+        const p = pools.get(k);
+        if (!p || !p.members.length) continue;
         const cb = window.Blockr.checkbox(p.name, p.shown,
           (checked) => this._setPoolShown(s, p, checked));
         if (p.shown && this._leavesNoColumn(this._withPoolShown(s, p, false))) lock(cb);
-        row(cb, this._levelN(s, p.members), 'pool');
+        row(k, p.name, cb, this._levelN(s, p.members), 'pool');
       }
+      this._wireReorder(s, list);
       box.appendChild(list);
       return box;
+    }
+
+    // Reordering by the grip: pointer events rather than HTML drag and drop,
+    // so it works with a mouse, a pen or a finger, and what moves is decided
+    // once, on release, from where the pointer is then. A 2px accent line
+    // marks the gap the row would land in. ArrowUp and ArrowDown on a
+    // focused grip move its row by one.
+    _wireReorder(s, list) {
+      const rows = () => Array.from(list.querySelectorAll('.jscf-level-row'));
+      list.addEventListener('keydown', (e) => {
+        const grip = e.target.closest && e.target.closest('.jscf-level-grip');
+        if (!grip || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return;
+        e.preventDefault();
+        const all = rows();
+        const i = all.indexOf(grip.closest('.jscf-level-row'));
+        const j = e.key === 'ArrowUp' ? i - 1 : i + 2;
+        if (j < 0 || j > all.length) return;
+        this._moveKey(s, all[i].dataset.key, all[j] ? all[j].dataset.key : null, true);
+      });
+      list.addEventListener('pointerdown', (e) => {
+        const grip = e.target.closest && e.target.closest('.jscf-level-grip');
+        if (!grip || e.button !== 0) return;
+        e.preventDefault();
+        const all = rows();
+        const row = grip.closest('.jscf-level-row');
+        const from = all.indexOf(row);
+        const line = el('div', 'jscf-col-dropline');
+        line.style.display = 'none';
+        list.appendChild(line);
+        row.classList.add('jscf-level-row--dragging');
+        list.classList.add('jscf-level-list--dragging');
+        grip.setPointerCapture(e.pointerId);
+        let to = from;
+        const move = (ev) => {
+          const box = list.getBoundingClientRect();
+          // Near an edge of a list that scrolls, scroll it.
+          if (ev.clientY < box.top + 16) list.scrollTop -= 8;
+          else if (ev.clientY > box.bottom - 16) list.scrollTop += 8;
+          to = all.filter(r => {
+            const b = r.getBoundingClientRect();
+            return ev.clientY > b.top + b.height / 2;
+          }).length;
+          const still = to === from || to === from + 1;
+          line.style.display = still ? 'none' : '';
+          if (still) return;
+          const y = all[to] ? all[to].getBoundingClientRect().top
+            : all[all.length - 1].getBoundingClientRect().bottom;
+          line.style.top = `${y - box.top + list.scrollTop - 1}px`;
+        };
+        const end = (commit) => {
+          grip.removeEventListener('pointermove', move);
+          grip.removeEventListener('pointerup', up);
+          grip.removeEventListener('pointercancel', cancel);
+          line.remove();
+          row.classList.remove('jscf-level-row--dragging');
+          list.classList.remove('jscf-level-list--dragging');
+          if (commit && to !== from && to !== from + 1) {
+            this._moveKey(s, row.dataset.key, all[to] ? all[to].dataset.key : null);
+          }
+        };
+        const up = () => end(true);
+        const cancel = () => end(false);
+        grip.addEventListener('pointermove', move);
+        grip.addEventListener('pointerup', up);
+        grip.addEventListener('pointercancel', cancel);
+      });
+    }
+
+    // Move the row `key` before the row `before` (null: to the end).
+    _moveKey(s, key, before, refocus) {
+      const keys = this._orderKeys(s).filter(k => k !== key);
+      const at = before == null ? -1 : keys.indexOf(before);
+      if (at < 0) keys.push(key);
+      else keys.splice(at, 0, key);
+      s.edit.order = keys;
+      this._groupsEdited(s);
+      this._renderBand(s);
+      if (refocus) {
+        const grip = s.el.querySelector(
+          `.jscf-level-row[data-key="${CSS.escape(key)}"] .jscf-level-grip`);
+        if (grip) grip.focus();
+      }
     }
 
     _withShown(s, v, on) {
       const shown = s.edit.shown.filter(x => x !== v);
       if (on) shown.push(v);
-      return { shown, pools: s.edit.pools };
+      return { shown, pools: s.edit.pools, order: s.edit.order };
     }
 
     _withPoolShown(s, p, on) {
       return {
+        order: s.edit.order,
         shown: s.edit.shown,
         pools: s.edit.pools.map(x => (x === p ? Object.assign({}, x, { shown: on }) : x))
       };
@@ -1468,7 +1627,11 @@
     }
 
     _poolMenu(s, p, row) {
-      const rest = { shown: s.edit.shown, pools: s.edit.pools.filter(x => x !== p) };
+      const rest = {
+        shown: s.edit.shown,
+        pools: s.edit.pools.filter(x => x !== p),
+        order: asArray(s.edit.order).filter(k => k !== 'p:' + p.id)
+      };
       return [
         { label: 'Rename', onSelect: () => {
           const nameEl = row.querySelector('.jscf-pool-label');
@@ -1481,6 +1644,7 @@
           reason: 'A split keeps at least one column',
           onSelect: () => {
             s.edit.pools = rest.pools;
+            s.edit.order = rest.order;
             this._groupsEdited(s);
             this._renderBand(s);
           } }
@@ -1620,6 +1784,7 @@
         shown: true
       };
       s.edit.pools.push(pool);
+      s.edit.order = this._orderKeys(s).concat('p:' + pool.id);
       this._renderBand(s);
       const row = s.poolsEl.querySelector(`.jscf-pool[data-pool="${pool.id}"]`);
       if (row) {

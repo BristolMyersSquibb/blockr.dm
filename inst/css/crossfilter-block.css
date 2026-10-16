@@ -879,6 +879,28 @@
 .jscf-section--folded .jscf-section-tools {
   display: none;
 }
+/* The info icon beside a section title: muted, 12px, its tooltip says
+   what the section is for. */
+.jscf-section-help {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  color: var(--blockr-color-text-disabled);
+  border-radius: var(--blockr-radius-sm);
+  cursor: help;
+}
+.jscf-section-help:hover,
+.jscf-section-help:focus-visible {
+  color: var(--blockr-color-text-muted);
+}
+.jscf-section-help:focus-visible {
+  outline: var(--blockr-focus-outline);
+  outline-offset: var(--blockr-focus-offset);
+}
+.jscf-section-help svg {
+  width: 12px;
+  height: 12px;
+}
 .jscf-section-tools {
   display: inline-flex;
   align-items: center;
@@ -972,6 +994,7 @@
   margin-top: 4px;
 }
 .jscf-level-list {
+  position: relative;
   display: flex;
   flex-direction: column;
   max-height: 224px;
@@ -984,6 +1007,59 @@
   align-items: center;
   gap: 8px;
   min-height: 28px;
+}
+/* The grip, the only place a drag starts (as blockr.dock's view grip):
+   14px wide, text-disabled, muted under the pointer, grab cursor, a little
+   in from the "Columns" label. */
+.jscf-level-list {
+  padding-left: 4px;
+}
+.jscf-level-grip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 14px;
+  height: 22px;
+  padding: 0;
+  color: var(--blockr-color-text-disabled);
+  background: none;
+  border: 0;
+  border-radius: var(--blockr-radius-sm);
+  cursor: grab;
+  touch-action: none;
+}
+.jscf-level-row:hover .jscf-level-grip,
+.jscf-level-grip:focus-visible {
+  color: var(--blockr-color-text-muted);
+}
+.jscf-level-grip:focus-visible {
+  outline: var(--blockr-focus-outline);
+  outline-offset: var(--blockr-focus-offset);
+}
+.jscf-level-grip svg {
+  width: 12px;
+  height: 12px;
+}
+.jscf-level-list--dragging,
+.jscf-level-list--dragging .jscf-level-grip {
+  cursor: grabbing;
+  user-select: none;
+}
+.jscf-level-row--dragging {
+  opacity: 0.45;
+}
+/* Where a dragged row would land: a 2px accent line over the gap (as in
+   block lists). */
+.jscf-col-dropline {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--blockr-color-border-accent);
+  pointer-events: none;
+  z-index: 1;
 }
 .jscf-level-row .blockr-checkbox {
   flex: 1;
