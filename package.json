@@ -1,0 +1,9 @@
+{
+  "name": "blockr.dm",
+  "private": true,
+  "description": "Tests for the block JavaScript in inst/blocks (see tests/js/).",
+  "type": "commonjs",
+  "scripts": {
+    "test": "node --test tests/js/*.test.js"
+  }
+}

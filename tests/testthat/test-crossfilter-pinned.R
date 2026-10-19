@@ -93,43 +93,29 @@ test_that("featured and pinned round-trip through block state", {
 
 test_that("grouping by a column does not open its filter card", {
   # The two are separate facts: a column can split every exhibit on the board
-  # without any of its levels being filtered out. Cards are opened from the
-  # pill row, the group's included.
+  # without any of its levels being filtered out.
   blk <- new_crossfilter_block(featured = "Species", pinned = "Species")
-
-  testServer(
-    blockr.core:::get_s3_method("block_server", blk),
-    args = list(x = blk, data = list(data = function() iris)),
-    {
-      session$flushReact()
-      expect_equal(session$returned$state$pinned(), "Species")
-      expect_equal(session$returned$state$active_dims(), list())
-    }
-  )
+  state <- blockr.core:::initial_block_state(blk)
+  expect_equal(state$pinned, "Species")
+  expect_length(state$active_dims, 0L)
+  expect_equal(cf_payload(blk, iris)$pinned, "Species")
 })
 
 test_that("a pin that is not pinnable is dropped, not drawn", {
   # Sepal.Length is numeric (a range dim), so it can never hold the pinned
-  # card. A board naming it should open without a pinned card rather than with
-  # one that cannot render.
+  # card. A board naming it opens without a pinned card.
   blk <- new_crossfilter_block(
     featured = c("Species", "Sepal.Length"),
     pinned = "Sepal.Length"
   )
-
-  testServer(
-    blockr.core:::get_s3_method("block_server", blk),
-    args = list(x = blk, data = list(data = function() iris)),
-    {
-      session$flushReact()
-      expect_equal(session$returned$state$active_dims(), list())
-    }
-  )
+  msg <- cf_payload(blk, iris)
+  expect_null(msg$pinned)
+  expect_equal(unlist(msg$pinnable), "Species")
 })
 
-test_that("moving the pin keeps the previous column and its filter", {
-  # Switching the split must not widen the population under the reader: the
-  # old column stays active, filter and all, as an ordinary card.
+test_that("the pinned column's filter is an ordinary filter", {
+  # Switching the split (crossfilter.js, set_pinned) leaves the cards and
+  # filters as they are; the filter on the old group still filters.
   df <- data.frame(
     Species = iris$Species,
     Site = rep(c("A", "B"), length.out = nrow(iris)),
@@ -137,103 +123,20 @@ test_that("moving the pin keeps the previous column and its filter", {
   )
   blk <- new_crossfilter_block(
     featured = c("Species", "Site"),
-    pinned = "Species",
+    pinned = "Site",
     active_dims = list(.tbl = "Species"),
     filters = list(.tbl = list(Species = "setosa"))
   )
-
-  testServer(
-    blockr.core:::get_s3_method("block_server", blk),
-    args = list(x = blk, data = list(data = function() df)),
-    {
-      session$flushReact()
-      # The block's own module is nested one level down ("expr"), so its
-      # inputs carry that namespace prefix from here.
-      session$setInputs(`expr-set_pinned` = "Site")
-      session$flushReact()
-
-      expect_equal(session$returned$state$pinned(), "Site")
-      # The column that lost the pin keeps its card and its filter. Site gains
-      # the pin without gaining a card.
-      expect_equal(session$returned$state$active_dims()$.tbl, "Species")
-      expect_equal(session$returned$state$filters(),
-                   list(.tbl = list(Species = "setosa")))
-
-      result <- eval(session$returned$expr(), list(data = df))
-      expect_true(all(as.character(result$Species) == "setosa"))
-    }
+  expr <- crossfilter_expr(
+    blockr.core:::initial_block_state(blk), list(data = df)
   )
+  result <- eval(expr, list(data = df))
+  expect_true(all(as.character(result$Species) == "setosa"))
 })
 
-test_that("clearing all dimensions leaves the group standing", {
-  # Clear all takes the cards, including the group's own card if it has one.
-  # What it must not take is the split: the board keeps grouping.
-  blk <- new_crossfilter_block(
-    featured = "Species", pinned = "Species",
-    active_dims = list(.tbl = "Species")
-  )
 
-  testServer(
-    blockr.core:::get_s3_method("block_server", blk),
-    args = list(x = blk, data = list(data = function() iris)),
-    {
-      session$flushReact()
-      session$setInputs(`expr-clear_filters` = 1)
-      session$flushReact()
-      expect_equal(session$returned$state$pinned(), "Species")
-    }
-  )
-})
 
-test_that("the featured vocabulary is editable from the client", {
-  # A board built without `featured =` has to be able to grow one, or the
-  # feature is only reachable by editing board code.
-  blk <- new_crossfilter_block()
 
-  testServer(
-    blockr.core:::get_s3_method("block_server", blk),
-    args = list(x = blk, data = list(data = function() iris)),
-    {
-      session$flushReact()
-      expect_equal(session$returned$state$featured(), character())
 
-      session$setInputs(`expr-set_featured` = list("Species", "Sepal.Length"))
-      session$flushReact()
-      expect_equal(session$returned$state$featured(),
-                   c("Species", "Sepal.Length"))
 
-      # ... and then pinned, which is the only route to a group on such a board
-      session$setInputs(`expr-set_pinned` = "Species")
-      session$flushReact()
-      expect_equal(session$returned$state$pinned(), "Species")
-      expect_equal(session$returned$state$active_dims(), list())
 
-      # Un-featuring the pinned column drops the pin with it: the pin is a mark
-      # on a member of the vocabulary, not a value of its own.
-      session$setInputs(`expr-set_featured` = list("Sepal.Length"))
-      session$flushReact()
-      expect_equal(session$returned$state$featured(), "Sepal.Length")
-    }
-  )
-})
-
-test_that("an empty pick unpins without clearing the cards", {
-  blk <- new_crossfilter_block(
-    featured = "Species", pinned = "Species",
-    active_dims = list(.tbl = "Species")
-  )
-
-  testServer(
-    blockr.core:::get_s3_method("block_server", blk),
-    args = list(x = blk, data = list(data = function() iris)),
-    {
-      session$flushReact()
-      session$setInputs(`expr-set_pinned` = "")
-      session$flushReact()
-      expect_equal(session$returned$state$pinned(), character())
-      # The card stays: unpinning stops the split, it does not narrow or widen
-      # the population.
-      expect_equal(session$returned$state$active_dims(), list(.tbl = "Species"))
-    }
-  )
-})

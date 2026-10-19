@@ -10,9 +10,9 @@ library(shinytest2)
 # Read the JS-side block state for a given block id (the actual UI
 # state, not r_filters on the R side).
 get_block_js_state <- function(app, block_id) {
-  input_id <- paste0("board-block_", block_id, "-expr-crossfilter_input")
+  input_id <- paste0("board-block_", block_id, "-expr-block")
   raw <- app$get_js(sprintf(
-    "JSON.stringify((function () { var el = document.getElementById(\"%s\"); if (!el || !el._block) return null; var b = el._block; return {activeDims: b.activeDims, filters: b.filters, panels: Object.keys(b.panels || {}), ready: !!b._ready}; })())",
+    "JSON.stringify((function () { var el = document.getElementById(\"%s\"); if (!el || !el._blockr || !el._blockr.instance) return null; var b = el._blockr.instance.block; return {activeDims: b.activeDims, filters: b.filters, panels: Object.keys(b.panels || {}), ready: !!b._ready}; })())",
     input_id
   ))
   if (is.null(raw) || identical(raw, "null")) return(NULL)
@@ -137,14 +137,14 @@ test_that("dragging the range slider does not cause an R->JS echo", {
   click_test_ctrl(app, "cf_active", "clear_all")
 
   block_id <- "cf_active"
-  input_id <- paste0("board-block_", block_id, "-expr-crossfilter_input")
+  input_id <- paste0("board-block_", block_id, "-expr-block")
 
   # Install JS-side counters on setData / setExternalFilters so we can
   # detect any R->JS echo that follows the simulated drag.
   app$run_js(sprintf(
     "(function () { var el = document.getElementById(\"%s\");
-       if (!el || !el._block) return;
-       var b = el._block;
+       if (!el || !el._blockr || !el._blockr.instance) return;
+       var b = el._blockr.instance.block;
        window.__snap_setData = 0;
        window.__snap_setExt  = 0;
        var rd = b.setData.bind(b);
@@ -175,7 +175,7 @@ test_that("dragging the range slider does not cause an R->JS echo", {
   # by an R-side echo.
   raw <- app$get_js(sprintf(
     "JSON.stringify((function () { var el = document.getElementById(\"%s\");
-       var b = el._block;
+       var b = el._blockr.instance.block;
        var card = el.querySelector('.dm-cf-filter-card[data-dim=\"Sepal.Length\"]');
        return {
          filters: b.filters,

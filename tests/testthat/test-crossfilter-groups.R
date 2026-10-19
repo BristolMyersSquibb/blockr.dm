@@ -35,9 +35,9 @@ test_that("groups round-trip through block state", {
   )
   expect_equal(state$groups, groups)
   # Empty is the default and has to survive as such.
-  expect_equal(
+  expect_length(
     blockr.core:::initial_block_state(new_crossfilter_block())$groups,
-    list()
+    0L
   )
 })
 
@@ -53,170 +53,84 @@ cf_groups_df <- function() {
   )
 }
 
-test_that("set_groups is normalized and a default definition is dropped", {
-  df <- cf_groups_df()
-  blk <- new_crossfilter_block(featured = c("TRT", "SEX"), pinned = "TRT")
+test_that("a group definition is normalized and a default one is dropped", {
+  # The client keeps the definitions it edits (crossfilter.js, groupDefs);
+  # these clean what a constructor or a saved board brings.
+  levels <- c("Placebo", "Low", "High")
+  def <- crossfilter_clean_group_def(list(columns = list(
+    list(name = "", members = list("High"), custom = FALSE),
+    list(name = "Active", members = list("Low", "High"), custom = TRUE),
+    list(name = "", members = list("Low", "Placebo"), custom = TRUE),
+    list(name = "New pool", members = list(), custom = FALSE)
+  )), levels)
+  expect_equal(def, list(columns = list(
+    list(name = "", members = "High", custom = FALSE),
+    list(name = "Active", members = c("Low", "High"), custom = TRUE),
+    # Several members and no name: the default, following the members.
+    list(name = "Placebo + Low", members = c("Low", "Placebo"),
+         custom = FALSE),
+    # No members: kept, it is a pool being built.
+    list(name = "New pool", members = character(), custom = FALSE)
+  )))
 
-  testServer(
-    blockr.core:::get_s3_method("block_server", blk),
-    args = list(x = blk, data = list(data = function() df)),
-    {
-      session$flushReact()
-      expect_equal(session$returned$state$groups(), list())
+  every_level <- crossfilter_clean_group_def(list(columns = lapply(
+    levels, function(l) list(name = "", members = l, custom = FALSE)
+  )), levels)
+  expect_true(crossfilter_group_def_is_default(every_level, levels))
 
-      # What Shiny delivers from the client: JS arrays arrive as lists.
-      # Columns in table order: a level, a pool, a level again.
-      session$setInputs(`expr-set_groups` = list(
-        column = "TRT",
-        columns = list(
-          list(name = "", members = list("High"), custom = FALSE),
-          list(name = "Active", members = list("Low", "High"), custom = TRUE),
-          list(name = "", members = list("Placebo"), custom = FALSE),
-          list(name = "", members = list("Low", "Placebo"), custom = TRUE),
-          list(name = "New pool", members = list(), custom = FALSE),
-          # A level the data does not have, on its own: dropped.
-          list(name = "", members = list("Gone"), custom = FALSE)
-        )
-      ))
-      session$flushReact()
-
-      expect_equal(
-        session$returned$state$groups(),
-        list(TRT = list(columns = list(
-          list(name = "", members = "High", custom = FALSE),
-          list(name = "Active", members = c("Low", "High"), custom = TRUE),
-          list(name = "", members = "Placebo", custom = FALSE),
-          # Several members and no name: the default, following the members.
-          list(name = "Placebo + Low", members = c("Low", "Placebo"),
-               custom = FALSE),
-          # No members: kept, it is a pool being built.
-          list(name = "New pool", members = character(), custom = FALSE)
-        )))
-      )
-
-      # Every level on its own, in level order: the entry goes.
-      session$setInputs(`expr-set_groups` = list(
-        column = "TRT",
-        columns = list(
-          list(name = "", members = list("Placebo"), custom = FALSE),
-          list(name = "", members = list("Low"), custom = FALSE),
-          list(name = "", members = list("High"), custom = FALSE)
-        )
-      ))
-      session$flushReact()
-      expect_equal(session$returned$state$groups(), list())
-
-      # The older show/pools shape: its levels, then its pools.
-      session$setInputs(`expr-set_groups` = list(
-        column = "TRT",
-        show = list("High", "Placebo"),
-        pools = list(
-          list(name = "", members = list("Low"), custom = TRUE)
-        )
-      ))
-      session$flushReact()
-      expect_equal(
-        session$returned$state$groups(),
-        list(TRT = list(columns = list(
-          list(name = "", members = "High", custom = FALSE),
-          list(name = "", members = "Placebo", custom = FALSE),
-          list(name = "Low", members = "Low", custom = FALSE)
-        )))
-      )
-    }
+  # The older show/pools shape: its levels, then its pools.
+  expect_equal(
+    crossfilter_clean_group_def(list(
+      show = list("High", "Placebo"),
+      pools = list(list(name = "", members = list("Low"), custom = TRUE))
+    ), levels),
+    list(columns = list(
+      list(name = "", members = "High", custom = FALSE),
+      list(name = "", members = "Placebo", custom = FALSE),
+      list(name = "Low", members = "Low", custom = FALSE)
+    ))
   )
 })
 
-test_that("the data payload carries pinned_levels and groups", {
+test_that("the payload carries pinned_levels, the state the groups", {
   df <- cf_groups_df()
-  groups <- list(TRT = list(show = "Placebo", pools = list()))
   blk <- new_crossfilter_block(
-    featured = c("TRT", "SEX"), pinned = "TRT", groups = groups,
+    featured = c("TRT", "SEX"), pinned = "TRT",
+    groups = list(TRT = list(show = "Placebo", pools = list())),
     active_dims = list(.tbl = "SEX"),
     filters = list(.tbl = list(SEX = "F"))
   )
+  msg <- cf_payload(blk, df)
 
-  testServer(
-    blockr.core:::get_s3_method("block_server", blk),
-    args = list(x = blk, data = list(data = function() df)),
-    {
-      sent <- list()
-      root <- session$rootScope()
-      root$sendCustomMessage <- function(type, message) {
-        sent[[length(sent) + 1L]] <<- list(type = type, message = message)
-        invisible()
-      }
-
-      session$flushReact()
-      data_msgs <- Filter(function(m) m$type == "js-crossfilter-data", sent)
-      expect_gte(length(data_msgs), 1L)
-      msg <- data_msgs[[length(data_msgs)]]$message
-
-      # Level order of the factor, unused level left out, rows of the
-      # unfiltered input (the SEX filter does not change them).
-      expect_equal(
-        msg$pinned_levels,
-        list(
-          list(value = "Placebo", n = 3L),
-          list(value = "Low", n = 1L),
-          list(value = "High", n = 2L)
-        )
-      )
-      # The older shape arrives converted; a one-level column stays an array.
-      expect_equal(
-        msg$groups,
-        list(TRT = list(columns = list(
-          list(name = "", members = list("Placebo"), custom = FALSE)
-        )))
-      )
-
-      # A groups edit does not re-ship the data: the client already has it.
-      n_before <- length(sent)
-      session$setInputs(`expr-set_groups` = list(
-        column = "TRT",
-        columns = list(list(name = "", members = list("High"), custom = FALSE))
-      ))
-      session$flushReact()
-      expect_equal(
-        session$returned$state$groups()$TRT$columns[[1]]$members, "High"
-      )
-      expect_equal(length(sent), n_before)
-
-      # A recreated client gets the current groups with the cached payload.
-      session$setInputs(`expr-crossfilter_input_ready` = 1)
-      session$flushReact()
-      re_ship <- sent[[length(sent)]]
-      expect_identical(re_ship$type, "js-crossfilter-data")
-      expect_equal(re_ship$message$groups$TRT$columns[[1]]$members,
-                   list("High"))
-    }
+  # Level order of the factor, unused level left out, rows of the unfiltered
+  # input (the SEX filter does not change them).
+  expect_equal(
+    msg$pinned_levels,
+    list(
+      list(value = "Placebo", n = 3L),
+      list(value = "Low", n = 1L),
+      list(value = "High", n = 2L)
+    )
+  )
+  # The groups are state, not payload: an edit costs no data. The older
+  # shape arrives converted.
+  expect_null(msg$groups)
+  state <- blockr.core:::initial_block_state(blk)
+  expect_equal(
+    state$groups,
+    list(TRT = list(columns = list(
+      list(name = "", members = "Placebo", custom = FALSE)
+    )))
   )
 })
 
 test_that("with no active dims the payload still carries pinned_levels", {
-  df <- cf_groups_df()
   blk <- new_crossfilter_block(featured = "TRT", pinned = "TRT")
-
-  testServer(
-    blockr.core:::get_s3_method("block_server", blk),
-    args = list(x = blk, data = list(data = function() df)),
-    {
-      sent <- list()
-      root <- session$rootScope()
-      root$sendCustomMessage <- function(type, message) {
-        sent[[length(sent) + 1L]] <<- list(type = type, message = message)
-        invisible()
-      }
-      session$flushReact()
-      data_msgs <- Filter(function(m) m$type == "js-crossfilter-data", sent)
-      msg <- data_msgs[[length(data_msgs)]]$message
-      expect_length(msg$lookups, 0L)
-      expect_equal(
-        vapply(msg$pinned_levels, `[[`, character(1), "value"),
-        c("Placebo", "Low", "High")
-      )
-      expect_equal(msg$groups, list())
-    }
+  msg <- cf_payload(blk, cf_groups_df())
+  expect_length(msg$lookups, 0L)
+  expect_equal(
+    vapply(msg$pinned_levels, `[[`, character(1), "value"),
+    c("Placebo", "Low", "High")
   )
 })
 

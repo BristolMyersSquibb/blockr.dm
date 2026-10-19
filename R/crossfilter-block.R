@@ -79,25 +79,35 @@ new_crossfilter_block <- function(
   # What the header counts. Unset, it counts rows across the tables, which is
   # all a generic dm offers. A block that knows what its subject table holds
   # (blockr.pharma's population filter: patients) names the unit, and the
-  # header then counts the subject table's keys in it.
+  # header then counts the subject table's keys in it. An option, not state:
+  # it comes from the constructor every time.
   subject_unit <- args[["subject_unit"]]
   args[["subject_unit"]] <- NULL
 
   do.call(
-    blockr.core::new_transform_block,
+    blockr.ui::new_js_block,
     c(
       list(
-        server = crossfilter_server(
-          active_dims, filters, range_filters, measure, agg_func, featured,
-          pinned, groups, subgroup, subject_unit = subject_unit
+        "crossfilter",
+        state = list(
+          active_dims = active_dims,
+          filters = filters,
+          range_filters = range_filters,
+          measure = measure,
+          agg_func = agg_func,
+          featured = featured,
+          pinned = pinned,
+          groups = crossfilter_clean_groups(groups),
+          subgroup = subgroup
         ),
-        ui = crossfilter_ui,
+        expr = crossfilter_expr,
+        class = cls,
+        pkg = "blockr.dm",
+        options = list(subject_unit = subject_unit),
         allow_empty_state = c(
           "active_dims", "filters", "range_filters", "measure", "agg_func",
           "featured", "pinned", "groups", "subgroup"
-        ),
-        external_ctrl = TRUE,
-        class = cls
+        )
       ),
       args
     )
@@ -491,803 +501,358 @@ crossfilter_groups_payload <- function(groups) {
   })
 }
 
-crossfilter_server <- function(active_dims, filters, range_filters,
-                               measure, agg_func, featured = character(),
-                               pinned = NULL, groups = list(),
-                               subgroup = NULL, subject_unit = NULL) {
-  function(id, data) {
-    shiny::moduleServer(id, function(input, output, session) {
-      ns <- session$ns
-
-      # --- Coerce input: accept data.frame or dm ---
-      r_input_is_df <- shiny::reactiveVal(FALSE)
-
-      dm_data <- shiny::reactive({
-        d <- data()
-        if (is.data.frame(d)) {
-          r_input_is_df(TRUE)
-          dm::dm(.tbl = d)
-        } else {
-          shiny::req(inherits(d, "dm"))
-          tbl_names <- names(dm::dm_get_tables(d))
-          r_input_is_df(length(tbl_names) == 1)
-          d
-        }
-      })
-
-      # --- dm info: extract tables, PKs, FKs ---
-      dm_info <- shiny::reactive({
-        dm_obj <- dm_data()
-
-        table_names <- names(dm::dm_get_tables(dm_obj))
-        tables <- stats::setNames(
-          lapply(table_names, function(tbl) dm_obj[[tbl]]),
-          table_names
-        )
-        pks <- dm::dm_get_all_pks(dm_obj)
-        fks <- dm::dm_get_all_fks(dm_obj)
-
-        # Sort: parents before children
-        n_fks <- vapply(table_names, function(tbl) {
-          sum(fks$child_table == tbl)
-        }, integer(1))
-        table_names <- table_names[order(n_fks)]
-
-        list(
-          table_names = table_names,
-          tables = tables,
-          pks = pks,
-          fks = fks
-        )
-      })
-
-      # --- Key column helper ---
-      find_key_column <- function(tbl_name) {
-        info <- dm_info()
-        pk_row <- info$pks[info$pks$table == tbl_name, ]
-        if (nrow(pk_row) > 0) return(pk_row$pk_col[[1]][[1]])
-        fk_row <- info$fks[info$fks$child_table == tbl_name, ]
-        if (nrow(fk_row) > 0) return(fk_row$child_fk_cols[[1]][[1]])
-        NULL
-      }
-
-      # --- Column classification ---
-      column_info_per_table <- shiny::reactive({
-        info <- dm_info()
-        result <- list()
-
-        for (tbl_name in info$table_names) {
-          df <- info$tables[[tbl_name]]
-          if (!is.data.frame(df) || ncol(df) == 0) next
-
-          is_numeric <- vapply(df, is.numeric, logical(1))
-          is_date <- vapply(df, function(col) {
-            inherits(col, c("Date", "POSIXct", "POSIXlt"))
-          }, logical(1))
-          is_low_cardinality <- vapply(seq_along(df), function(i) {
-            col <- df[[i]]
-            if (is.numeric(col)) {
-              length(unique(col[is.finite(col)])) <= 10
-            } else {
-              length(unique(col)) <= 10
-            }
-          }, logical(1))
-          names(is_low_cardinality) <- names(df)
-
-          is_dimension <- (!is_numeric & !is_date) |
-            (is_numeric & is_low_cardinality)
-          is_range_dim <- is_numeric & !is_low_cardinality
-          is_date_dim <- is_date
-
-          # Exclude key columns from dimensions
-          key_col <- find_key_column(tbl_name)
-          fk_rows <- info$fks[info$fks$child_table == tbl_name, ]
-          all_fk_cols <- if (nrow(fk_rows) > 0) {
-            unique(unlist(fk_rows$child_fk_cols))
-          } else {
-            character()
-          }
-          exclude_cols <- unique(c(key_col, all_fk_cols))
-          for (ec in exclude_cols) {
-            if (ec %in% names(is_dimension)) {
-              is_dimension[ec] <- FALSE
-              is_range_dim[ec] <- FALSE
-              is_date_dim[ec] <- FALSE
-            }
-          }
-
-          col_labels <- vapply(names(df), function(cn) {
-            lbl <- attr(df[[cn]], "label")
-            if (is.null(lbl)) "" else lbl
-          }, character(1))
-
-          # as.list(): Shiny serializes sendCustomMessage payloads with
-          # jsonlite (keep_vec_names = TRUE). Named vectors trigger a
-          # deprecation warning today, and a future jsonlite will encode
-          # them as ARRAYS (names dropped) — silently breaking the JS,
-          # which indexes these as keyed objects (e.g. labels[dim]).
-          # Named lists produce the same keyed-object JSON, forever.
-          result[[tbl_name]] <- list(
-            dimensions = as.list(names(df)[is_dimension]),
-            range_dimensions = as.list(names(df)[is_range_dim]),
-            date_dimensions = as.list(names(df)[is_date_dim]),
-            measures = as.list(names(df)[is_numeric & !is_low_cardinality]),
-            labels = as.list(col_labels)
-          )
-        }
-        result
-      })
-
-      # --- State ---
-      r_active_dims <- shiny::reactiveVal(active_dims)
-      r_filters <- shiny::reactiveVal(filters)
-      r_range_filters <- shiny::reactiveVal(range_filters)
-      r_measure <- shiny::reactiveVal(measure %||% ".count")
-      r_agg_func <- shiny::reactiveVal(agg_func %||% "sum")
-      r_featured <- shiny::reactiveVal(as.character(featured %||% character()))
-      r_pinned <- shiny::reactiveVal(as.character(pinned %||% character()))
-      r_groups <- shiny::reactiveVal(crossfilter_clean_groups(groups))
-      r_subgroup <- shiny::reactiveVal(as.character(subgroup %||% character()))
-
-      # Everything the client needs for the chip shelf and the pinned card. A
-      # pin naming a column that is not (or no longer) pinnable is dropped
-      # here, so a saved board whose study lost the column opens without one
-      # rather than with a card that cannot be drawn.
-      pin_info <- shiny::reactive({
-        col_info <- column_info_per_table()
-        parent <- crossfilter_parent_table(dm_info())
-        feat <- crossfilter_featured_dims(r_featured(), col_info, parent)
-        pinnable <- crossfilter_pinnable(feat, parent)
-        pin <- intersect(r_pinned(), pinnable)
-        pin_tbl <- NULL
-        if (length(pin)) {
-          for (f in feat) {
-            if (identical(f$dim, pin[[1L]])) {
-              pin_tbl <- f$table
-              break
-            }
-          }
-        }
-        # The subgroup takes the same columns as the group, never the group's
-        # own: splitting the board twice by one column says nothing.
-        sub <- intersect(r_subgroup(), setdiff(pinnable, pin))
-        list(
-          featured = unname(feat),
-          pinnable = as.list(pinnable),
-          pinned = if (length(pin)) pin[[1L]] else NULL,
-          pinned_table = pin_tbl,
-          subgroup = if (length(pin) && length(sub)) sub[[1L]] else NULL
-        )
-      })
-
-      # A column's levels and row counts, read from the unfiltered input. The
-      # pinned column lives on `pinned_table`; any other column is looked up
-      # on the parent table, then on the rest.
-      column_levels <- function(column, tbl_name = NULL) {
-        info <- dm_info()
-        search <- unique(c(
-          tbl_name, crossfilter_parent_table(info), info$table_names
-        ))
-        for (tbl in search) {
-          df <- info$tables[[tbl]]
-          if (is.data.frame(df) && column %in% names(df)) {
-            return(crossfilter_levels_with_n(df, column))
-          }
-        }
-        list()
-      }
-
-      pinned_levels <- shiny::reactive({
-        pin <- pin_info()
-        if (is.null(pin$pinned)) {
-          return(list())
-        }
-        column_levels(pin$pinned, pin$pinned_table)
-      })
-
-      subgroup_levels <- shiny::reactive({
-        pin <- pin_info()
-        if (is.null(pin$subgroup)) {
-          return(list())
-        }
-        column_levels(pin$subgroup, pin$pinned_table)
-      })
-
-      # Self-write guard: when the JS UI submits state to R, the
-      # matching R->JS push observer below would echo it back and the
-      # browser would paint the same state on top of itself (cheap but
-      # can flicker / cause loops on edge values). Flip this TRUE
-      # whenever an R-side observer is the one mutating the
-      # reactiveVals because of a JS submission; the push observer
-      # clears it without sending. External writes (AI assistant,
-      # board restore) skip this path, so they DO get pushed.
-      self_write <- new.env(parent = emptyenv())
-      self_write$active <- FALSE
-
-      # --- Add/remove filter dimensions from JS ---
-      shiny::observeEvent(input$add_filter, {
-        req <- input$add_filter
-        tbl <- req$table
-        dim <- req$dim
-        active <- r_active_dims()
-        current <- active[[tbl]] %||% character()
-        if (!dim %in% current) {
-          active[[tbl]] <- c(current, dim)
-          self_write$active <- TRUE
-          r_active_dims(active)
-        }
-      })
-
-      shiny::observeEvent(input$remove_filter, {
-        req <- input$remove_filter
-        tbl <- req$table
-        dim <- req$dim
-        active <- r_active_dims()
-        current <- active[[tbl]] %||% character()
-        active[[tbl]] <- setdiff(current, dim)
-        if (length(active[[tbl]]) == 0) active[[tbl]] <- NULL
-        self_write$active <- TRUE
-        r_active_dims(active)
-        # Also clear any filter on this dim
-        flt <- r_filters()
-        if (!is.null(flt[[tbl]])) {
-          flt[[tbl]][[dim]] <- NULL
-          if (length(flt[[tbl]]) == 0) flt[[tbl]] <- NULL
-          self_write$active <- TRUE
-          r_filters(flt)
-        }
-        rflt <- r_range_filters()
-        if (!is.null(rflt[[tbl]])) {
-          rflt[[tbl]][[dim]] <- NULL
-          if (length(rflt[[tbl]]) == 0) rflt[[tbl]] <- NULL
-          self_write$active <- TRUE
-          r_range_filters(rflt)
-        }
-      })
-
-      # Grouping does not open a card. The two are separate facts: a column can
-      # split every exhibit on the board without any of its levels being
-      # filtered out, and the reverse. An observer used to force the pinned
-      # column into `active_dims` and to the front of its table, which made
-      # every group pick create a card and move the one already on screen.
-      # The pill row is where a card is opened now, the group's included.
-
-      # Moving the pin leaves the previous column exactly as it is: an ordinary
-      # card, filter and all. Dropping its filter here would widen the
-      # population under a reader who was looking at something else. An empty
-      # string unpins, which is how a board or a test clears the split; the UI
-      # does not offer it, because a board whose exhibits bind a stamped column
-      # by name loses that column when the group goes.
-      shiny::observeEvent(input$set_pinned, {
-        val <- input$set_pinned
-        if (is.null(val)) {
-          return()
-        }
-        val <- as.character(val)
-        r_pinned(if (length(val) && nzchar(val[[1L]])) val[[1L]] else character())
-      }, ignoreInit = TRUE)
-
-      # The subgroup, unlike the group, can be cleared from the UI: nothing on
-      # a board depends on it existing, a chart faceted by it draws one panel
-      # when it is gone. An empty string clears it.
-      shiny::observeEvent(input$set_subgroup, {
-        val <- as.character(unlist(input$set_subgroup))
-        r_subgroup(if (length(val) && nzchar(val[[1L]])) val[[1L]] else character())
-      }, ignoreInit = TRUE)
-
-      # The subgroup becomes the group and the group the subgroup. One input
-      # rather than a set_pinned and a set_subgroup from the client: between
-      # the two the pair would name one column twice, and pin_info() drops a
-      # subgroup equal to the group. Each column keeps its entry in `groups`,
-      # so its pools move with it.
-      shiny::observeEvent(input$swap_split, {
-        pin <- pin_info()
-        if (is.null(pin$pinned) || is.null(pin$subgroup)) {
-          return()
-        }
-        r_pinned(pin$subgroup)
-        r_subgroup(pin$pinned)
-      }, ignoreInit = TRUE)
-
-      # The vocabulary is edited in the gear, not only in board code: a board
-      # built before this existed, or by someone who never wrote `featured =`,
-      # has to be able to grow one. `ignoreNULL = FALSE` so clearing it back to
-      # nothing arrives as a value rather than as silence.
-      # The group definition for one column, sent whole by the client on every
-      # edit. Nothing is sent back: the client owns the definition while it
-      # is being edited, and an echo would redraw the band under the user.
-      shiny::observeEvent(input$set_groups, {
-        req <- input$set_groups
-        column <- as.character(unlist(req$column))
-        if (length(column) != 1L || is.na(column) || !nzchar(column)) {
-          return()
-        }
-        lv <- vapply(column_levels(column), `[[`, character(1), "value")
-        def <- crossfilter_clean_group_def(req, lv)
-        # A level shown on its own that the data no longer has goes; a pool
-        # keeps its members, as it always did.
-        if (length(lv)) {
-          def$columns <- Filter(
-            function(p) nzchar(p$name) || p$members %in% lv,
-            def$columns
-          )
-        }
-        cur <- r_groups()
-        nxt <- cur
-        if (crossfilter_group_def_is_default(def, lv)) {
-          nxt[[column]] <- NULL
-        } else {
-          nxt[[column]] <- def
-        }
-        if (!length(nxt)) nxt <- list()
-        if (!identical(nxt, cur)) r_groups(nxt)
-      }, ignoreInit = TRUE)
-
-      shiny::observeEvent(input$set_featured, {
-        vals <- as.character(unlist(input$set_featured))
-        vals <- vals[nzchar(vals)]
-        r_featured(unique(vals))
-      }, ignoreInit = TRUE, ignoreNULL = FALSE)
-
-      shiny::observeEvent(input$clear_filters, {
-        self_write$active <- TRUE
-        r_active_dims(list())
-        self_write$active <- TRUE
-        r_filters(list())
-        self_write$active <- TRUE
-        r_range_filters(list())
-      })
-
-      shiny::observeEvent(input$measure_switch, {
-        val <- input$measure_switch
-        if (!is.null(val)) {
-          self_write$active <- TRUE
-          r_measure(val)
-        }
-      }, ignoreInit = TRUE)
-
-      shiny::observeEvent(input$agg_func_switch, {
-        val <- input$agg_func_switch
-        if (!is.null(val)) {
-          self_write$active <- TRUE
-          r_agg_func(val)
-        }
-      }, ignoreInit = TRUE)
-
-      # --- Build lookups and send to JS ---
-      # Last shipped lookup payload + its identity key. Spurious invalidations
-      # reach the data observe below through board-wide transitions (a view
-      # switch parks and un-parks the visibility channels) with the upstream dm
-      # POINTER-IDENTICAL (blockr.core's unchanged-inputs guard returns the
-      # cached object) -- without the guard every first visit to a view re-ran
-      # the full lookup build (~0.2-0.5s) and re-shipped the multi-MB payload
-      # (~27MB on a real study, several times per session). The cached payload
-      # also backs the `_ready` handshake: if the client element is ever
-      # genuinely recreated (its JS state lost), it announces itself and gets
-      # the LAST payload re-shipped without a rebuild.
-      last_send <- new.env(parent = emptyenv())
-
-      shiny::observe({
-        info <- dm_info()
-        active <- r_active_dims()
-        col_info <- column_info_per_table()
-        cur_measure <- r_measure()
-        cur_agg_func <- r_agg_func()
-        pin <- pin_info()
-
-        # Everything that shapes the payload. dm_data() compares by pointer
-        # when upstream re-evals were skipped, so this is cheap. Filter state
-        # is deliberately NOT part of the key: filter changes travel through
-        # the dedicated js-crossfilter-filters observer, not a data re-ship.
-        send_key <- list(dm_data(), active, cur_measure, cur_agg_func, pin)
-        if (identical(send_key, last_send$key)) {
-          message("[js-crossfilter] payload unchanged, send skipped")
-          return()
-        }
-
-        t_start <- proc.time()[3]
-
-        # Build lookups only if there are active dims
-        lookup_info <- NULL
-        has_dims <- any(vapply(active, length, integer(1)) > 0)
-        if (has_dims) {
-          measure_col <- if (cur_measure != ".count") cur_measure else NULL
-          # Try standard single-parent lookup first
-          lookup_info <- build_crossfilter_lookups(
-            info$tables, active, info$pks, info$fks, measure_col
-          )
-          # Check if all active dims are covered
-          if (!is.null(lookup_info)) {
-            all_dims <- unlist(active, use.names = FALSE)
-            covered <- names(lookup_info$dim_source)
-            if (!all(all_dims %in% covered)) {
-              # Standard builder missed some dims — use flat fallback
-              lookup_info <- NULL
-            }
-          }
-          # Fallback: use dm_flatten_to_tbl for multi-parent schemas
-          if (is.null(lookup_info)) {
-            lookup_info <- build_lookups_flat(
-              dm_data(), active, measure_col
-            )
-          }
-          # Last resort: no FKs at all — independent per-table lookups
-          if (is.null(lookup_info)) {
-            lookup_info <- build_lookups_independent(
-              info$tables, active, measure_col
-            )
-          }
-        }
-
-        if (!is.null(lookup_info)) {
-          # Dictionary-encode char/factor columns (codes + global levels) and
-          # serialize as columnar JSON; the client keeps the codes in its
-          # crossfilter rows and decodes only at its edges. toJSON returns a
-          # "json" class; Shiny embeds it verbatim (json_verbatim = TRUE), so
-          # JS receives parsed objects. See encode_crossfilter_payload() for
-          # the sentinel and na = "null" contracts.
-          enc <- encode_crossfilter_payload(lookup_info$lookups)
-
-          # Gzip the columnar JSON unless a deployment opts out (see
-          # compress_crossfilter_lookups); the websocket itself never
-          # compresses.
-          use_gzip <- isTRUE(getOption("blockr.dm.crossfilter_gzip", TRUE))
-          encoded_lookups <- if (use_gzip) {
-            compress_crossfilter_lookups(enc$lookups)
-          } else {
-            enc$lookups
-          }
-
-          # Force arrays for length-1 vectors (avoid JSON scalar unboxing)
-          safe_active <- lapply(active, as.list)
-
-          t_elapsed <- round((proc.time()[3] - t_start) * 1000)
-          sizes <- vapply(encoded_lookups, nchar, numeric(1))
-          message(sprintf(
-            "[js-crossfilter] R prep: %dms | lookups%s: %s | levels=%dKB",
-            t_elapsed,
-            if (use_gzip) " (gzip+b64)" else "",
-            paste(
-              names(sizes), round(sizes / 1024), "KB",
-              sep = "=", collapse = ", "
-            ),
-            round(nchar(enc$levels) / 1024)
-          ))
-
-          # Ship the current filter state too — block restore loads
-          # r_filters at boot and JS needs to repaint selected bars /
-          # slider ranges to match. shiny::isolate() is critical here:
-          # without it this observe would gain a dependency on
-          # r_filters / r_range_filters and re-fire on every filter
-          # change, calling setData -> _teardown on the JS side and
-          # snapping the slider back to its bounds. The dedicated
-          # observeEvent on filter state (below) is responsible for
-          # propagating subsequent changes.
-          safe_cat <- lapply(shiny::isolate(r_filters()), function(tbl) {
-            lapply(tbl, function(vals) as.list(as.character(vals)))
-          })
-          safe_rng <- lapply(shiny::isolate(r_range_filters()), function(tbl) {
-            lapply(tbl, function(rng) as.list(as.numeric(unlist(rng))))
-          })
-
-          payload <- list(
-            id = ns("crossfilter_input"),
-            lookups = encoded_lookups,
-            # "deflate" = the Compression Streams API name for the ZLIB
-            # framing that R's memCompress(type = "gzip") actually emits.
-            compression = if (use_gzip) "deflate" else NULL,
-            levels = enc$levels,
-            dim_source = lookup_info$dim_source,
-            parent_key = lookup_info$parent_key,
-            parent_table = lookup_info$parent_table,
-            child_fk_cols = lookup_info$child_fk_cols,
-            # Only when the block names what its subjects are: the header
-            # then counts them. Otherwise (and from the flat and independent
-            # builders, which have no parent) it counts rows.
-            parent_n = if (!is.null(subject_unit)) lookup_info$parent_n,
-            subject_unit = subject_unit,
-            column_info = col_info,
-            all_columns = col_info,
-            active_dims = safe_active,
-            cat_filters = safe_cat,
-            rng_filters = safe_rng,
-            measure = cur_measure,
-            agg_func = cur_agg_func,
-            featured = pin$featured,
-            pinnable = pin$pinnable,
-            pinned = pin$pinned,
-            pinned_levels = pinned_levels(),
-            subgroup = pin$subgroup,
-            subgroup_levels = subgroup_levels(),
-            # Isolated: a groups edit comes from the client, which already
-            # has it, so it must not re-ship the data.
-            groups = crossfilter_groups_payload(shiny::isolate(r_groups())),
-            note = crossfilter_note(dm_data())
-          )
-          session$sendCustomMessage("js-crossfilter-data", payload)
-          last_send$key <- send_key
-          last_send$msg <- payload
-        } else {
-          # No active dims — send empty state with column catalog
-          safe_active <- lapply(active, as.list)
-          payload <- list(
-            id = ns("crossfilter_input"),
-            lookups = list(),
-            dim_source = list(),
-            parent_key = NULL,
-            parent_table = NULL,
-            child_fk_cols = list(),
-            column_info = col_info,
-            all_columns = col_info,
-            active_dims = safe_active,
-            featured = pin$featured,
-            pinnable = pin$pinnable,
-            pinned = pin$pinned,
-            pinned_levels = pinned_levels(),
-            subgroup = pin$subgroup,
-            subgroup_levels = subgroup_levels(),
-            # Isolated: a groups edit comes from the client, which already
-            # has it, so it must not re-ship the data.
-            groups = crossfilter_groups_payload(shiny::isolate(r_groups())),
-            note = crossfilter_note(dm_data())
-          )
-          session$sendCustomMessage("js-crossfilter-data", payload)
-          last_send$key <- send_key
-          last_send$msg <- payload
-        }
-      })
-
-      # --- Client ready handshake ---
-      # The widget's data lives on the DOM element (el._block) and survives
-      # dockview re-parenting, so the guard above never starves a live client.
-      # The binding announces itself on EVERY bind that did not already find a
-      # parked payload, and gets the cached payload re-shipped -- no lookup
-      # rebuild. Two cases need it:
-      #   * the element was genuinely RECREATED (fresh bind, JS state gone);
-      #   * the block sits in a DEFERRED dock panel, so crossfilter-block.js
-      #     shipped with that panel and the boot push above reached a client
-      #     with no registered handler -- Shiny drops such messages silently,
-      #     and no client-side queue can catch a message that arrived before
-      #     the queue's own script. Without the re-ship the block stays blank
-      #     for the whole session, even once the user visits its view.
-      # At cold start the announcement arrives before the first payload exists
-      # (the binding initializes before the server's first flush), so the NULL
-      # check makes it a no-op there; the data observe handles the initial
-      # ship.
-      shiny::observeEvent(input$crossfilter_input_ready, {
-        if (!is.null(last_send$msg)) {
-          message("[js-crossfilter] client re-initialized, re-shipping cached payload")
-          # The cached msg embeds the filter state AS OF the last lookup
-          # build; filters changed since then traveled on the dedicated
-          # js-crossfilter-filters channel and are NOT in the cache. Refresh
-          # the two filter fields from the live reactives so a recreated
-          # client paints the CURRENT selections instead of snapping back to
-          # (and then re-submitting) the boot-time state. Lookups themselves
-          # are filter-independent, so the cache stays valid.
-          msg <- last_send$msg
-          msg$groups <- crossfilter_groups_payload(shiny::isolate(r_groups()))
-          msg$cat_filters <- lapply(shiny::isolate(r_filters()), function(tbl) {
-            lapply(tbl, function(vals) as.list(as.character(vals)))
-          })
-          msg$rng_filters <- lapply(
-            shiny::isolate(r_range_filters()),
-            function(tbl) {
-              lapply(tbl, function(rng) as.list(as.numeric(unlist(rng))))
-            }
-          )
-          session$sendCustomMessage("js-crossfilter-data", msg)
-        }
-      })
-
-      # --- JS -> R: receive filter state ---
-      # `ignoreInit = TRUE`: the JS InputBinding holds back its first
-      # getValue() (returns null until setData has rendered the
-      # constructor state). Belt + suspenders.
-      # JS -> R. The client publishes its filter state once on its first
-      # setData, before the user has touched anything, so this fires on every
-      # cold start with the state R already has.
-      #
-      # That echo must not read as a change. An empty JS object arrives as a
-      # NAMED empty list, while the constructor default is a plain `list()`, and
-      # the two are not identical() -- so `r_filters(state$cat_filters %||%
-      # list())` wrote a "new" value, the block re-evaluated, and EVERY block
-      # downstream redrew. On a board whose pipeline takes seconds the table has
-      # already painted by the time the echo lands, so you see the right content,
-      # then a rebuild: the startup double render. Normalise the empty case, and
-      # only write when the value actually differs.
-      #
-      # `self_write` is flipped only when a write really happens. Setting it
-      # unconditionally would leave it armed after a no-op echo, and the R -> JS
-      # observer below would swallow the NEXT genuine change (an AI write, a
-      # board restore) as if it were this echo coming back.
-      norm_filters <- function(x) {
-        if (!length(x)) list() else x
-      }
-
-      shiny::observeEvent(input$crossfilter_input, {
-
-        state <- input$crossfilter_input
-
-        cat_new <- norm_filters(state$cat_filters)
-        rng_new <- norm_filters(state$rng_filters)
-
-        if (!identical(cat_new, shiny::isolate(r_filters()))) {
-          self_write$active <- TRUE
-          r_filters(cat_new)
-        }
-
-        if (!identical(rng_new, shiny::isolate(r_range_filters()))) {
-          self_write$active <- TRUE
-          r_range_filters(rng_new)
-        }
-      }, ignoreInit = TRUE)
-
-      # --- R -> JS: push filter changes when the caller is NOT the JS
-      # UI (e.g. AI assistant writing via vars$filters(...), or board
-      # restore). The user's bug was: AI writes -> r_filters changes
-      # -> expr() recomputes -> downstream filters correctly, but the
-      # bars / sliders never repainted because nothing on the R side
-      # was watching r_filters / r_range_filters to ship the new
-      # state to JS. This observer closes the loop.
-      #
-      # ignoreInit = TRUE: the data observe already ships the
-      # constructor's filter state in its js-crossfilter-data payload
-      # at first flush; this is for subsequent changes only.
-      shiny::observeEvent(
-        list(r_filters(), r_range_filters()),
-        {
-          if (isTRUE(self_write$active)) {
-            self_write$active <- FALSE
-            return()
-          }
-          cat <- r_filters()
-          rng <- r_range_filters()
-          safe_cat <- lapply(cat, function(tbl) {
-            lapply(tbl, function(vals) as.list(as.character(vals)))
-          })
-          safe_rng <- lapply(rng, function(tbl) {
-            lapply(tbl, function(rng) as.list(as.numeric(unlist(rng))))
-          })
-          session$sendCustomMessage("js-crossfilter-filters", list(
-            id = ns("crossfilter_input"),
-            cat_filters = safe_cat,
-            rng_filters = safe_rng
-          ))
-        },
-        ignoreInit = TRUE
-      )
-
-      # --- Expression: dm::dm_filter() ---
-      list(
-        expr = shiny::reactive({
-          cat_filters <- r_filters()
-          rng_filters <- r_range_filters()
-
-          if (length(cat_filters) == 0 && length(rng_filters) == 0) {
-            return(quote(identity(data)))
-          }
-
-          table_conditions <- list()
-          all_tables <- unique(c(names(cat_filters), names(rng_filters)))
-
-          info <- dm_info()
-
-          for (tbl in all_tables) {
-            conditions <- list()
-            tbl_df <- info$tables[[tbl]]
-            col_of <- function(dim) {
-              if (is.data.frame(tbl_df) && dim %in% names(tbl_df)) {
-                tbl_df[[dim]]
-              }
-            }
-
-            tbl_cat <- cat_filters[[tbl]]
-            if (!is.null(tbl_cat)) {
-              for (dim in names(tbl_cat)) {
-                cond <- crossfilter_cat_condition(
-                  dim, tbl_cat[[dim]], col_of(dim)
-                )
-                if (!is.null(cond)) {
-                  conditions <- c(conditions, list(cond))
-                }
-              }
-            }
-
-            tbl_rng <- rng_filters[[tbl]]
-            if (!is.null(tbl_rng)) {
-              for (dim in names(tbl_rng)) {
-                rng <- unlist(tbl_rng[[dim]])
-                if (!is.null(rng) && length(rng) == 2) {
-                  is_date_col <- dim %in% names(tbl_df) &&
-                    inherits(tbl_df[[dim]], c("Date", "POSIXct", "POSIXlt"))
-                  if (is_date_col) {
-                    lo_val <- call(
-                      "as.Date",
-                      as.character(as.Date(rng[1], origin = "1970-01-01"))
-                    )
-                    hi_val <- call(
-                      "as.Date",
-                      as.character(as.Date(rng[2], origin = "1970-01-01"))
-                    )
-                  } else {
-                    lo_val <- rng[1]
-                    hi_val <- rng[2]
-                  }
-                  lo <- call(">=", as.name(dim), lo_val)
-                  hi <- call("<=", as.name(dim), hi_val)
-                  conditions <- c(conditions, list(call("&", lo, hi)))
-                }
-              }
-            }
-
-            if (length(conditions) > 0) {
-              if (length(conditions) == 1) {
-                combined <- conditions[[1]]
-              } else {
-                combined <- Reduce(
-                  function(a, b) call("&", a, b),
-                  conditions
-                )
-              }
-              table_conditions[[tbl]] <- combined
-            }
-          }
-
-          if (length(table_conditions) == 0) {
-            return(quote(identity(data)))
-          }
-
-          # What this block contributes to the filter trail (see
-          # `?filter_trail`). Rendered from the live state, so it says what a
-          # reader needs ("SEX = F; lb.LBSTRESN 50 to 99") rather than the
-          # deparsed condition. The two `identity(data)` returns above are not
-          # wrapped: `identity()` hands the object back unchanged, so an
-          # incoming trail passes through them untouched.
-          clause <- crossfilter_clause(cat_filters, rng_filters)
-
-          # Single-table input (data.frame or 1-table dm): use dplyr::filter
-          if (r_input_is_df()) {
-            # Combine all conditions (from the single table)
-            all_conds <- unname(table_conditions)
-            combined <- if (length(all_conds) == 1) {
-              all_conds[[1]]
-            } else {
-              Reduce(function(a, b) call("&", a, b), all_conds)
-            }
-            return(
-              trail_expr(
-                as.call(list(quote(dplyr::filter), quote(data), combined)),
-                trail_key(session),
-                clause
-              )
-            )
-          }
-
-          # Multi-table dm: use dm::dm_filter
-          expr <- call("dm_filter", quote(data))
-          for (tbl in names(table_conditions)) {
-            expr[[tbl]] <- table_conditions[[tbl]]
-          }
-          expr[[1]] <- quote(dm::dm_filter)
-          trail_expr(expr, trail_key(session), clause)
-        }),
-        state = list(
-          active_dims = r_active_dims,
-          filters = r_filters,
-          range_filters = r_range_filters,
-          measure = r_measure,
-          agg_func = r_agg_func,
-          # Config as state: a serialized board is rebuilt from its
-          # constructor plus its state, so a `featured` vocabulary that lived
-          # only in the constructor call would not survive a save.
-          featured = r_featured,
-          pinned = r_pinned,
-          groups = r_groups,
-          subgroup = r_subgroup
-        )
-      )
-    })
+# The input as a dm, and whether it came as a single table (a data frame or
+# a dm of one table), which the expression filters with dplyr::filter().
+crossfilter_as_dm <- function(d) {
+  if (is.data.frame(d)) {
+    return(list(dm = dm::dm(.tbl = d), is_df = TRUE))
   }
+  stopifnot(inherits(d, "dm"))
+  list(dm = d, is_df = length(names(dm::dm_get_tables(d))) == 1L)
+}
+
+# Tables (parents before children), primary and foreign keys.
+crossfilter_dm_info <- function(dm_obj) {
+  table_names <- names(dm::dm_get_tables(dm_obj))
+  tables <- stats::setNames(
+    lapply(table_names, function(tbl) dm_obj[[tbl]]),
+    table_names
+  )
+  pks <- dm::dm_get_all_pks(dm_obj)
+  fks <- dm::dm_get_all_fks(dm_obj)
+  n_fks <- vapply(table_names, function(tbl) {
+    sum(fks$child_table == tbl)
+  }, integer(1))
+  list(
+    table_names = table_names[order(n_fks)],
+    tables = tables,
+    pks = pks,
+    fks = fks
+  )
+}
+
+crossfilter_key_column <- function(info, tbl_name) {
+  pk_row <- info$pks[info$pks$table == tbl_name, ]
+  if (nrow(pk_row) > 0) return(pk_row$pk_col[[1]][[1]])
+  fk_row <- info$fks[info$fks$child_table == tbl_name, ]
+  if (nrow(fk_row) > 0) return(fk_row$child_fk_cols[[1]][[1]])
+  NULL
+}
+
+# Per table, which columns are categorical, range and date dimensions, which
+# are measures, and their labels. Keys are no dimensions.
+crossfilter_column_info <- function(info) {
+  result <- list()
+
+  for (tbl_name in info$table_names) {
+    df <- info$tables[[tbl_name]]
+    if (!is.data.frame(df) || ncol(df) == 0) next
+
+    is_numeric <- vapply(df, is.numeric, logical(1))
+    is_date <- vapply(df, function(col) {
+      inherits(col, c("Date", "POSIXct", "POSIXlt"))
+    }, logical(1))
+    is_low_cardinality <- vapply(seq_along(df), function(i) {
+      col <- df[[i]]
+      if (is.numeric(col)) {
+        length(unique(col[is.finite(col)])) <= 10
+      } else {
+        length(unique(col)) <= 10
+      }
+    }, logical(1))
+    names(is_low_cardinality) <- names(df)
+
+    is_dimension <- (!is_numeric & !is_date) |
+      (is_numeric & is_low_cardinality)
+    is_range_dim <- is_numeric & !is_low_cardinality
+    is_date_dim <- is_date
+
+    key_col <- crossfilter_key_column(info, tbl_name)
+    fk_rows <- info$fks[info$fks$child_table == tbl_name, ]
+    all_fk_cols <- if (nrow(fk_rows) > 0) {
+      unique(unlist(fk_rows$child_fk_cols))
+    } else {
+      character()
+    }
+    for (ec in unique(c(key_col, all_fk_cols))) {
+      if (ec %in% names(is_dimension)) {
+        is_dimension[ec] <- FALSE
+        is_range_dim[ec] <- FALSE
+        is_date_dim[ec] <- FALSE
+      }
+    }
+
+    col_labels <- vapply(names(df), function(cn) {
+      lbl <- attr(df[[cn]], "label")
+      if (is.null(lbl)) "" else lbl
+    }, character(1))
+
+    # as.list(): the client indexes these as keyed objects and arrays
+    result[[tbl_name]] <- list(
+      dimensions = as.list(names(df)[is_dimension]),
+      range_dimensions = as.list(names(df)[is_range_dim]),
+      date_dimensions = as.list(names(df)[is_date_dim]),
+      measures = as.list(names(df)[is_numeric & !is_low_cardinality]),
+      labels = as.list(col_labels)
+    )
+  }
+  result
+}
+
+# The featured columns, which of them may be pinned, and the pin and subgroup
+# as the data allows them. A pin naming a column that is not (or no longer)
+# pinnable is dropped, so a saved board whose study lost the column opens
+# without one. The subgroup takes the same columns as the group, never the
+# group's own.
+crossfilter_pin_info <- function(featured, pinned, subgroup, col_info, info) {
+  parent <- crossfilter_parent_table(info)
+  feat <- crossfilter_featured_dims(featured, col_info, parent)
+  pinnable <- crossfilter_pinnable(feat, parent)
+  pin <- intersect(pinned, pinnable)
+  pin_tbl <- NULL
+  if (length(pin)) {
+    for (f in feat) {
+      if (identical(f$dim, pin[[1L]])) {
+        pin_tbl <- f$table
+        break
+      }
+    }
+  }
+  sub <- intersect(subgroup, setdiff(pinnable, pin))
+  list(
+    featured = unname(feat),
+    pinnable = as.list(pinnable),
+    pinned = if (length(pin)) pin[[1L]] else NULL,
+    pinned_table = pin_tbl,
+    subgroup = if (length(pin) && length(sub)) sub[[1L]] else NULL
+  )
+}
+
+# A column's levels and row counts, read from the unfiltered input: on
+# `tbl_name` if given, else the parent table, then the rest.
+crossfilter_column_levels <- function(info, column, tbl_name = NULL) {
+  search <- unique(c(
+    tbl_name, crossfilter_parent_table(info), info$table_names
+  ))
+  for (tbl in search) {
+    df <- info$tables[[tbl]]
+    if (is.data.frame(df) && column %in% names(df)) {
+      return(crossfilter_levels_with_n(df, column))
+    }
+  }
+  list()
+}
+
+cf_chr <- function(x) as.character(unlist(x, use.names = FALSE))
+
+#' Data the crossfilter block draws from
+#'
+#' The answer to the crossfilter block's `payload` request: the lookup rows
+#' the browser crossfilters (dictionary-encoded, compressed unless
+#' `options(blockr.dm.crossfilter_gzip = FALSE)`), the column catalogue, and
+#' the featured, pinned and subgroup columns resolved against the data, with
+#' the levels of the latter two. A function of the input and the parts of the
+#' state that shape it (`active_dims`, `measure`, `agg_func`, `featured`,
+#' `pinned`, `subgroup`); the filters and groups travel with the state. blockx
+#' answers the same request with its own DuckDB code.
+#'
+#' @param data The block's input, a data frame or a dm.
+#' @param state The block state, as a list.
+#' @param subject_unit What the header counts the parent table's keys in
+#'   ("patients"), or `NULL` to count rows.
+#' @return A list, sent to the client as JSON.
+#' @keywords internal
+#' @export
+crossfilter_payload <- function(data, state, subject_unit = NULL) {
+  dm_obj <- crossfilter_as_dm(data)$dm
+  info <- crossfilter_dm_info(dm_obj)
+  col_info <- crossfilter_column_info(info)
+
+  active <- lapply(state$active_dims %||% list(), cf_chr)
+  active <- active[lengths(active) > 0L]
+  measure <- cf_chr(state$measure)
+  measure <- if (length(measure) && nzchar(measure[[1L]])) measure[[1L]] else ".count"
+  agg_func <- cf_chr(state$agg_func)
+  agg_func <- if (length(agg_func)) agg_func[[1L]] else "sum"
+
+  pin <- crossfilter_pin_info(
+    cf_chr(state$featured), cf_chr(state$pinned), cf_chr(state$subgroup),
+    col_info, info
+  )
+
+  out <- list(
+    lookups = stats::setNames(list(), character()),
+    dim_source = stats::setNames(list(), character()),
+    parent_key = NULL,
+    parent_table = NULL,
+    child_fk_cols = stats::setNames(list(), character()),
+    column_info = col_info,
+    all_columns = col_info,
+    measure = measure,
+    agg_func = agg_func,
+    featured = pin$featured,
+    pinnable = pin$pinnable,
+    pinned = pin$pinned,
+    pinned_levels = if (!is.null(pin$pinned)) {
+      crossfilter_column_levels(info, pin$pinned, pin$pinned_table)
+    } else {
+      list()
+    },
+    subgroup = pin$subgroup,
+    subgroup_levels = if (!is.null(pin$subgroup)) {
+      crossfilter_column_levels(info, pin$subgroup, pin$pinned_table)
+    } else {
+      list()
+    },
+    note = crossfilter_note(dm_obj)
+  )
+
+  if (!length(active)) {
+    return(out)
+  }
+
+  measure_col <- if (measure != ".count") measure else NULL
+  # the star-schema builder, then a flat one for multi-parent schemas, then
+  # independent per-table lookups when there are no keys at all
+  lookup_info <- build_crossfilter_lookups(
+    info$tables, active, info$pks, info$fks, measure_col
+  )
+  if (!is.null(lookup_info) &&
+        !all(unlist(active, use.names = FALSE) %in%
+               names(lookup_info$dim_source))) {
+    lookup_info <- NULL
+  }
+  if (is.null(lookup_info)) {
+    lookup_info <- build_lookups_flat(dm_obj, active, measure_col)
+  }
+  if (is.null(lookup_info)) {
+    lookup_info <- build_lookups_independent(info$tables, active, measure_col)
+  }
+  if (is.null(lookup_info)) {
+    return(out)
+  }
+
+  # Dictionary-encode char/factor columns, serialize as columnar JSON and
+  # gzip it unless a deployment opts out: the websocket never compresses.
+  enc <- encode_crossfilter_payload(lookup_info$lookups)
+  use_gzip <- isTRUE(getOption("blockr.dm.crossfilter_gzip", TRUE))
+
+  out$lookups <- if (use_gzip) {
+    compress_crossfilter_lookups(enc$lookups)
+  } else {
+    enc$lookups
+  }
+  # "deflate" is the Compression Streams API name for the zlib framing
+  # memCompress(type = "gzip") writes
+  out$compression <- if (use_gzip) "deflate"
+  out$levels <- enc$levels
+  out$dim_source <- lookup_info$dim_source
+  out$parent_key <- lookup_info$parent_key
+  out$parent_table <- lookup_info$parent_table
+  out$child_fk_cols <- lookup_info$child_fk_cols
+  # only when the block names what its subjects are: the header then counts
+  # them, otherwise rows
+  if (!is.null(subject_unit)) {
+    out$parent_n <- lookup_info$parent_n
+    out$subject_unit <- subject_unit
+  }
+  out
+}
+
+# The expression: nothing selected is identity(data), else dm::dm_filter()
+# per table (dplyr::filter() for a single table), with a filter-trail clause.
+# It reads the data for the column types the literals are cast to.
+crossfilter_expr <- function(state, data) {
+  cat_filters <- state$filters %||% list()
+  rng_filters <- state$range_filters %||% list()
+
+  if (length(cat_filters) == 0 && length(rng_filters) == 0) {
+    return(quote(identity(data)))
+  }
+
+  input <- crossfilter_as_dm(data$data)
+  info <- crossfilter_dm_info(input$dm)
+  table_conditions <- list()
+
+  for (tbl in unique(c(names(cat_filters), names(rng_filters)))) {
+    conditions <- list()
+    tbl_df <- info$tables[[tbl]]
+    col_of <- function(dim) {
+      if (is.data.frame(tbl_df) && dim %in% names(tbl_df)) {
+        tbl_df[[dim]]
+      }
+    }
+
+    tbl_cat <- cat_filters[[tbl]]
+    for (dim in names(tbl_cat)) {
+      cond <- crossfilter_cat_condition(dim, tbl_cat[[dim]], col_of(dim))
+      if (!is.null(cond)) {
+        conditions <- c(conditions, list(cond))
+      }
+    }
+
+    tbl_rng <- rng_filters[[tbl]]
+    for (dim in names(tbl_rng)) {
+      rng <- as.numeric(unlist(tbl_rng[[dim]]))
+      if (length(rng) == 2) {
+        is_date_col <- dim %in% names(tbl_df) &&
+          inherits(tbl_df[[dim]], c("Date", "POSIXct", "POSIXlt"))
+        if (is_date_col) {
+          lo_val <- call(
+            "as.Date",
+            as.character(as.Date(rng[1], origin = "1970-01-01"))
+          )
+          hi_val <- call(
+            "as.Date",
+            as.character(as.Date(rng[2], origin = "1970-01-01"))
+          )
+        } else {
+          lo_val <- rng[1]
+          hi_val <- rng[2]
+        }
+        lo <- call(">=", as.name(dim), lo_val)
+        hi <- call("<=", as.name(dim), hi_val)
+        conditions <- c(conditions, list(call("&", lo, hi)))
+      }
+    }
+
+    if (length(conditions) > 0) {
+      table_conditions[[tbl]] <- Reduce(
+        function(a, b) call("&", a, b),
+        conditions
+      )
+    }
+  }
+
+  if (length(table_conditions) == 0) {
+    return(quote(identity(data)))
+  }
+
+  # What this block contributes to the filter trail (see `?filter_trail`).
+  # The `identity(data)` returns above are not wrapped: identity() hands the
+  # object back, so an incoming trail passes through them.
+  clause <- crossfilter_clause(cat_filters, rng_filters)
+
+  if (input$is_df) {
+    combined <- Reduce(
+      function(a, b) call("&", a, b),
+      unname(table_conditions)
+    )
+    return(
+      trail_expr(
+        as.call(list(quote(dplyr::filter), quote(data), combined)),
+        trail_key(),
+        clause
+      )
+    )
+  }
+
+  expr <- call("dm_filter", quote(data))
+  for (tbl in names(table_conditions)) {
+    expr[[tbl]] <- table_conditions[[tbl]]
+  }
+  expr[[1]] <- quote(dm::dm_filter)
+  trail_expr(expr, trail_key(), clause)
 }
 
 
@@ -1484,41 +1049,3 @@ crossfilter_note <- function(dm_obj) {
     note
   }
 }
-
-crossfilter_ui <- function(id) {
-  ns <- shiny::NS(id)
-  shiny::tagList(
-    crossfilter_deps(),
-    shiny::div(
-      id = ns("crossfilter_input"),
-      class = "js-crossfilter-container"
-    )
-  )
-}
-
-crossfilter_deps <- memoise0(function() {
-  htmltools::tagList(
-    # The design system's controls (Select, the gear tray, the segmented
-    # control, the tooltip) and the tokens, from blockr.ui: a block's
-    # controls are the design system's or they drift from it.
-    blockr.ui::controls_dep(),
-    htmltools::htmlDependency(
-      name = "crossfilter2",
-      version = "1.5.4",
-      src = system.file("js", package = "blockr.dm"),
-      script = "crossfilter2.min.js"
-    ),
-    htmltools::htmlDependency(
-      name = "crossfilter-block-js",
-      version = utils::packageVersion("blockr.dm"),
-      src = system.file("js", package = "blockr.dm"),
-      script = "crossfilter-block.js"
-    ),
-    htmltools::htmlDependency(
-      name = "crossfilter-block-css",
-      version = utils::packageVersion("blockr.dm"),
-      src = system.file("css", package = "blockr.dm"),
-      stylesheet = "crossfilter-block.css"
-    )
-  )
-})

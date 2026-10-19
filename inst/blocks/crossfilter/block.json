@@ -1,0 +1,62 @@
+{
+  "name": "crossfilter",
+  "title": "Crossfilter",
+  "inputs": ["data"],
+  "state": {
+    "type": "object",
+    "properties": {
+      "active_dims": {
+        "type": "object",
+        "additionalProperties": { "type": "array", "items": { "type": "string" } },
+        "default": {}
+      },
+      "filters": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "object",
+          "additionalProperties": { "type": "array", "items": { "type": "string" } }
+        },
+        "default": {}
+      },
+      "range_filters": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "object",
+          "additionalProperties": { "type": "array", "items": { "type": "number" } }
+        },
+        "default": {}
+      },
+      "measure": {},
+      "agg_func": {},
+      "featured": { "type": "array", "items": { "type": "string" }, "default": [] },
+      "pinned": {},
+      "groups": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "object",
+          "properties": {
+            "columns": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": { "type": "string" },
+                  "members": { "type": "array", "items": { "type": "string" } },
+                  "custom": { "type": "boolean" }
+                }
+              }
+            }
+          }
+        },
+        "default": {}
+      },
+      "subgroup": {}
+    }
+  },
+  "options": { "subject_unit": null },
+  "requests": [
+    { "name": "payload", "r": "blockr.dm::crossfilter_payload", "data": true }
+  ],
+  "js": ["crossfilter2.min.js", "crossfilter.js"],
+  "css": ["crossfilter.css"]
+}

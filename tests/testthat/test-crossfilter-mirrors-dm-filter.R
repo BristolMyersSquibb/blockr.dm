@@ -36,17 +36,17 @@ test_that("crossfilter JS state mirrors dm::dm_filter row counts", {
   )
 
   ui <- shiny::fluidPage(
-    blockr.dm:::crossfilter_ui("xf"),
+    cf_app_ui("xf"),
     # Machine-readable diag outputs: JSON-encoded row counts and ARM table
     # so the test can parse them via jsonlite::fromJSON.
     shiny::verbatimTextOutput("diag_counts"),
     shiny::verbatimTextOutput("diag_arm"),
-    # Expose `el._block` as window.__cfDebug for `app$get_js()` access.
+    # Expose the block object as window.__cfDebug for `app$get_js()` access.
     shiny::tags$script(shiny::HTML("
       const tick = setInterval(() => {
-        const el = document.querySelector('.js-crossfilter-container');
-        if (el && el._block) {
-          window.__cfDebug = el._block;
+        const el = document.querySelector('.blockr-block[data-block=crossfilter]');
+        if (el && el._blockr && el._blockr.instance) {
+          window.__cfDebug = el._blockr.instance.block;
           clearInterval(tick);
         }
       }, 100);
@@ -55,10 +55,11 @@ test_that("crossfilter JS state mirrors dm::dm_filter row counts", {
 
   server <- function(input, output, session) {
     data_r <- shiny::reactive(build_dm())
-    res <- blockr.dm:::crossfilter_server(
+    res <- cf_app_server(
       active_dims = active_dims, filters = list(),
-      range_filters = list(), measure = NULL, agg_func = NULL
-    )("xf", data_r)
+      range_filters = list(), measure = NULL, agg_func = NULL,
+      id = "xf", data = data_r
+    )
 
     filtered_dm <- shiny::reactive({
       eval(res$expr(), envir = list(data = data_r(), . = identity))

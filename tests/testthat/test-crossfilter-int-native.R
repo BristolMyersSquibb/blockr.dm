@@ -45,12 +45,12 @@ test_that("int-native payload: codes inside, labels at every edge", {
   })
 
   ui <- shiny::fluidPage(
-    blockr.dm:::crossfilter_ui("xf"),
+    cf_app_ui("xf"),
     shiny::verbatimTextOutput("diag_filters"),
     shiny::tags$script(shiny::HTML("
       const tick = setInterval(() => {
-        const el = document.querySelector('.js-crossfilter-container');
-        if (el && el._block) { window.__cfDebug = el._block; clearInterval(tick); }
+        const el = document.querySelector('.blockr-block[data-block=crossfilter]');
+        if (el && el._blockr && el._blockr.instance) { window.__cfDebug = el._blockr.instance.block; clearInterval(tick); }
       }, 100);
     "))
   )
@@ -59,11 +59,12 @@ test_that("int-native payload: codes inside, labels at every edge", {
     data_r <- shiny::reactive(build_dm())
     # Restore-shaped: constructor filters preset, exactly what a saved board
     # loads -- including the NA sentinel as a STRING.
-    res <- blockr.dm:::crossfilter_server(
+    res <- cf_app_server(
       active_dims = list(parent = "GRP", child = "SEV"),
       filters = list(parent = list(GRP = list("A", "__NA__"))),
-      range_filters = list(), measure = NULL, agg_func = NULL
-    )("xf", data_r)
+      range_filters = list(), measure = NULL, agg_func = NULL,
+      id = "xf", data = data_r
+    )
 
     output$diag_filters <- shiny::renderText({
       jsonlite::toJSON(res$state$filters())
@@ -134,7 +135,8 @@ test_that("int-native payload: codes inside, labels at every edge", {
   expect_identical(as.character(unlist(r_filters$child$SEV)), "SEVERE")
   expect_type(unlist(r_filters$child$SEV), "character")
 
-  # -- 5. `_ready` re-ship of the cached payload is idempotent --------------
+  # -- 5. a repeated `ready` changes nothing --------------------------------
+  # R answers with the same state and context, so the block keeps its data
   before <- app$get_js("(() => {
     const b = window.__cfDebug;
     b.__setDataCalls = 0;
@@ -143,8 +145,8 @@ test_that("int-native payload: codes inside, labels at every edge", {
     return { filters: b.filters, rows: b.instances.parent.allFiltered().length };
   })()")
   app$run_js("
-    const el = document.querySelector('.js-crossfilter-container');
-    Shiny.setInputValue(el.id + '_ready', 999, {priority: 'event'});
+    const el = document.querySelector('.blockr-block[data-block=crossfilter]');
+    Shiny.setInputValue(el.id, {messages: [{type: 'ready'}]}, {priority: 'event'});
   ")
   Sys.sleep(1)
   app$wait_for_idle(timeout = 10000)
@@ -156,7 +158,7 @@ test_that("int-native payload: codes inside, labels at every edge", {
     naRow: !!document.querySelector(
       '.dm-cf-filter-card[data-dim=\"GRP\"] .dm-cf-tw-row[data-value=\"__NA__\"]')
   })")
-  expect_equal(after$calls, 1)
+  expect_equal(after$calls, 0)
   expect_equal(after$rows, before$rows)
   expect_identical(after$filters, before$filters)
   expect_true(after$grpIsNumber)

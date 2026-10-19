@@ -1,8 +1,13 @@
+// crossfilter.js — blockr.dm's crossfilter block, on blockr.ui's block
+// contract (Blockr.defineBlock(), new_js_block()). The browser builds a
+// crossfilter from lookup rows and does all counting; the rows come from the
+// host as the answer to the `payload` request (R: crossfilter_payload(),
+// blockx: its DuckDB builder). Every change the user makes is a new state,
+// submitted through the host; see the reducers at the end.
+//
+// Depends on: blockr-block.js, blockr-select.js, crossfilter2.min.js
 (() => {
   'use strict';
-
-  // Monotonic id for the re-init handshake (see the binding's initialize).
-  let readyCounter = 0;
 
   // =========================================================================
   // SVG icons (blockr design system)
@@ -228,8 +233,14 @@
   // =========================================================================
 
   class CrossfilterBlock {
-    constructor(root) {
+    /**
+     * @param {HTMLElement} root
+     * @param {(name: string, value?: unknown) => void} input what the block
+     *   reports: a change by name, which the mount turns into a new state
+     */
+    constructor(root, input) {
       this.el = root;
+      this._input = input;
       this.instances = {};
       this.dimensions = {};
       this.groups = {};
@@ -703,21 +714,15 @@
     }
 
     _setFeatured(dims) {
-      const id = this.el.id;
-      const nsBase = id.replace(/-crossfilter_input$/, '');
-      Shiny.setInputValue(nsBase + '-set_featured', dims, { priority: 'event' });
+      this._input('set_featured', dims);
     }
 
     _setMeasure(val) {
-      const id = this.el.id;
-      const nsBase = id.replace(/-crossfilter_input$/, '');
-      Shiny.setInputValue(nsBase + '-measure_switch', val, { priority: 'event' });
+      this._input('measure_switch', val);
     }
 
     _setAggFunc(val) {
-      const id = this.el.id;
-      const nsBase = id.replace(/-crossfilter_input$/, '');
-      Shiny.setInputValue(nsBase + '-agg_func_switch', val, { priority: 'event' });
+      this._input('agg_func_switch', val);
     }
 
     _updateMeasureUI() {
@@ -755,29 +760,19 @@
     }
 
     _addDimension(tbl, dim) {
-      // Tell R to add this dimension
-      const id = this.el.id;
-      const nsBase = id.replace(/-crossfilter_input$/, '');
-      Shiny.setInputValue(nsBase + '-add_filter', { table: tbl, dim: dim },
-        { priority: 'event' });
+      this._input('add_filter', { table: tbl, dim: dim });
     }
 
     _removeDimension(tbl, dim) {
-      const id = this.el.id;
-      const nsBase = id.replace(/-crossfilter_input$/, '');
-      Shiny.setInputValue(nsBase + '-remove_filter', { table: tbl, dim: dim },
-        { priority: 'event' });
+      this._input('remove_filter', { table: tbl, dim: dim });
     }
 
     _setSubgroup(dim) {
-      const nsBase = this.el.id.replace(/-crossfilter_input$/, '');
-      Shiny.setInputValue(nsBase + '-set_subgroup', dim, { priority: 'event' });
+      this._input('set_subgroup', dim);
     }
 
     _setPinned(dim) {
-      const id = this.el.id;
-      const nsBase = id.replace(/-crossfilter_input$/, '');
-      Shiny.setInputValue(nsBase + '-set_pinned', dim, { priority: 'event' });
+      this._input('set_pinned', dim);
     }
 
     // -- Featured pill row --------------------------------------------------
@@ -1042,8 +1037,7 @@
 
     _swapSplit() {
       if (!this.pinned || !this.subgroup) return;
-      const nsBase = this.el.id.replace(/-crossfilter_input$/, '');
-      Shiny.setInputValue(nsBase + '-swap_split', Date.now(), { priority: 'event' });
+      this._input('swap_split');
     }
 
     // -- Pools bands --------------------------------------------------------
@@ -1157,9 +1151,7 @@
       if (this._isDefaultGroupDef(s, def)) delete this.groupDefs[s.col];
       else this.groupDefs[s.col] = out;
       this._syncOverlap(s);
-      const nsBase = this.el.id.replace(/-crossfilter_input$/, '');
-      Shiny.setInputValue(nsBase + '-set_groups',
-        Object.assign({ column: s.col }, out), { priority: 'event' });
+      this._input('set_groups', Object.assign({ column: s.col }, out));
     }
 
     // A split keeps at least one column: an edit that would leave none is
@@ -3484,97 +3476,190 @@
       if (this._suppressSubmit) return;
       if (this._submitTimer) clearTimeout(this._submitTimer);
       this._submitTimer = setTimeout(() => {
-        $(this.el).trigger('change');
+        this._input('filters', this.getValue());
       }, 100);
     }
   }
 
   // =========================================================================
-  // Shiny InputBinding
+  // The block on blockr.ui's contract
   // =========================================================================
 
-  const binding = new Shiny.InputBinding();
-  Object.assign(binding, {
-    find: (scope) => $(scope).find('.js-crossfilter-container'),
-    getValue: (el) => el._block ? el._block.getValue() : null,
-    subscribe: (el, callback) => { $(el).on('change.jscf', () => callback()); },
-    unsubscribe: (el) => { $(el).off('.jscf'); },
-    initialize: (el) => {
-      el._block = new CrossfilterBlock(el);
+  const isObj = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
+  const obj = (x) => (isObj(x) ? x : {});
+  const strs = (x) => (x == null ? [] : [].concat(x).flat(Infinity))
+    .filter(v => v != null).map(String);
+  const str1 = (x) => {
+    const v = strs(x)[0];
+    return v === undefined || v === '' ? null : v;
+  };
 
-      const announce = () => {
-        if (!window.Shiny || !Shiny.setInputValue) return;
-        readyCounter += 1;
-        Shiny.setInputValue(el.id + '_ready', readyCounter, { priority: 'event' });
+  // The parts of the state the payload depends on. The filters and the
+  // groups travel with the state and never cost a new payload.
+  const SHAPING = ['active_dims', 'measure', 'agg_func', 'featured', 'pinned',
+    'subgroup'];
+
+  // What each change the block reports does to the state; null is no change.
+  // blockx's shared/crossfilter.ts holds the same, from when these were R
+  // observers.
+  const REDUCERS = {
+    add_filter(s, v) {
+      const table = v && v.table;
+      const dim = v && v.dim;
+      if (typeof table !== 'string' || typeof dim !== 'string') return null;
+      const active = obj(s.active_dims);
+      const cur = strs(active[table]);
+      if (cur.includes(dim)) return null;
+      return Object.assign({}, s, {
+        active_dims: Object.assign({}, active, { [table]: cur.concat(dim) })
+      });
+    },
+    remove_filter(s, v) {
+      const table = v && v.table;
+      const dim = v && v.dim;
+      if (typeof table !== 'string' || typeof dim !== 'string') return null;
+      const next = Object.assign({}, s);
+      const active = Object.assign({}, obj(s.active_dims));
+      const rest = strs(active[table]).filter(d => d !== dim);
+      if (rest.length) active[table] = rest; else delete active[table];
+      next.active_dims = active;
+      // the card's filter goes with it
+      for (const key of ['filters', 'range_filters']) {
+        const f = Object.assign({}, obj(s[key]));
+        if (!(table in f)) continue;
+        const t = Object.assign({}, obj(f[table]));
+        delete t[dim];
+        if (Object.keys(t).length) f[table] = t; else delete f[table];
+        next[key] = f;
+      }
+      return next;
+    },
+    measure_switch: (s, v) => (v == null ? null
+      : Object.assign({}, s, { measure: String(v) })),
+    agg_func_switch: (s, v) => (v == null ? null
+      : Object.assign({}, s, { agg_func: String(v) })),
+    // an empty string unpins
+    set_pinned: (s, v) => (v == null ? null
+      : Object.assign({}, s, { pinned: str1(v) })),
+    set_subgroup: (s, v) => Object.assign({}, s, { subgroup: str1(v) }),
+    // the group and subgroup as the payload resolved them
+    swap_split: (s, v, block) => (block.pinned && block.subgroup
+      ? Object.assign({}, s, { pinned: block.subgroup, subgroup: block.pinned })
+      : null),
+    set_featured: (s, v) => Object.assign({}, s, {
+      featured: Array.from(new Set(strs(v).filter(x => x !== '')))
+    }),
+    // the block keeps its definitions in groupDefs, a column's dropped when it
+    // is the default one
+    set_groups(s, v, block) {
+      const column = str1(v && v.column);
+      if (!column) return null;
+      const groups = Object.assign({}, obj(s.groups));
+      const def = block.groupDefs[column];
+      if (def) groups[column] = def; else delete groups[column];
+      return Object.assign({}, s, { groups });
+    },
+    // the selections, as getValue() reports them
+    filters: (s, v) => (v ? Object.assign({}, s, {
+      filters: obj(v.cat_filters),
+      range_filters: obj(v.rng_filters)
+    }) : null)
+  };
+
+  Blockr.defineBlock({
+    name: 'crossfilter',
+    // for tests, and for a host that wants to apply a change itself
+    reducers: REDUCERS,
+    mount(el, host) {
+      let state = host.state;
+      let context = host.context;
+      // the key of the payload the block has or has asked for, and the last
+      // payload
+      let shaped = '';
+      let payload = null;
+      let asked = 0;
+
+      const key = (x) => Blockr.stateKey(x);
+      const shapeKey = () => {
+        const input = context.inputs && context.inputs.data;
+        return key([input ? input.rev : null, SHAPING.map(f => state[f])]);
       };
 
-      window._blockrCfBound = window._blockrCfBound || {};
-      const rebind = !!window._blockrCfBound[el.id];
-      window._blockrCfBound[el.id] = true;
+      // a payload with the state it is shown with
+      const withState = (p) => Object.assign({}, p, {
+        active_dims: obj(state.active_dims),
+        cat_filters: obj(state.filters),
+        rng_filters: obj(state.range_filters),
+        groups: obj(state.groups)
+      });
 
-      // Re-bind: an id this page has bound before means the element was
-      // recreated and its JS state (el._block data) is gone, so ask R to
-      // re-ship its CACHED payload (no lookup rebuild) right away. A full page
-      // reload resets this registry AND starts a fresh Shiny session, whose
-      // normal push path applies again.
-      if (rebind) {
-        announce();
-        return;
-      }
+      let block = null;
 
-      // First bind. R's regular data push normally covers the initial ship,
-      // and announcing here would double-ship the payload at boot -- so this
-      // is a RESCUE that cancels itself once that push lands.
-      //
-      // It has to exist because of the deferred dock panel: this script ships
-      // WITH the panel, so a block whose view is not active at startup has no
-      // registered handler when R pushes at boot, and Shiny drops such
-      // messages silently. No client-side queue can catch a message that
-      // arrived before the queue's own script, so the block stayed blank for
-      // the rest of the session -- even after the user switched to its view.
-      // In that case nothing ever arrives here, the timer fires, and R
-      // re-ships. Cost when the push is merely slow: none, because R only
-      // answers the announce if it already has a payload cached.
-      setTimeout(() => {
-        if (el._block && !el._block._dataSeen && document.contains(el)) {
-          announce();
+      const load = () => {
+        const k = shapeKey();
+        if (k === shaped) return;
+        shaped = k;
+        if (!context.inputs || !context.inputs.data) return;
+        const n = ++asked;
+        const shaping = {};
+        for (const f of SHAPING) shaping[f] = state[f];
+        const options = obj(context.options);
+        host.request('payload', {
+          state: shaping,
+          subject_unit: options.subject_unit == null ? null : options.subject_unit
+        }).then(
+          (p) => {
+            if (n !== asked || !block) return;
+            payload = p;
+            block.setData(withState(p));
+          },
+          (e) => console.error('[crossfilter] payload failed:', e)
+        );
+      };
+
+      // a change the block made: the next state, submitted, and a new
+      // payload when it shapes one
+      const input = (name, value) => {
+        const reduce = REDUCERS[name];
+        const next = reduce && reduce(state, value, block);
+        if (!next || key(next) === key(state)) return;
+        state = next;
+        host.submit(next);
+        load();
+      };
+
+      block = new CrossfilterBlock(el, input);
+      load();
+
+      return {
+        block,
+        setState(next) {
+          const prev = state;
+          state = next;
+          if (shapeKey() !== shaped) {
+            load();
+            return;
+          }
+          if (!payload) return;
+          const shown = block.getValue();
+          const wanted = { cat_filters: obj(next.filters), rng_filters: obj(next.range_filters) };
+          if (shown && key(shown) !== key(wanted)) {
+            block.setExternalFilters(wanted.cat_filters, wanted.rng_filters);
+          }
+          if (key(next.groups) !== key(prev.groups)) {
+            block._ingestGroups(withState(payload));
+          }
+        },
+        setContext(next) {
+          context = next;
+          load();
+        },
+        destroy() {
+          asked++;
+          block._teardown();
+          block = null;
         }
-      }, 1000);
+      };
     }
   });
-
-  Shiny.inputBindings.register(binding, 'blockr.jscrossfilter');
-
-  // =========================================================================
-  // Custom message handler
-  // =========================================================================
-
-  Shiny.addCustomMessageHandler('js-crossfilter-data', (msg) => {
-    const el = document.getElementById(msg.id);
-    if (el && el._block) {
-      el._block.setData(msg);
-    } else {
-      // Element not bound yet: wait for it briefly. Past the give-up the
-      // binding's own rescue announce takes over, and R answers that one with
-      // the filter state refreshed from its live reactives.
-      let attempts = 0;
-      const t = setInterval(() => {
-        attempts++;
-        const el2 = document.getElementById(msg.id);
-        if (el2 && el2._block) { el2._block.setData(msg); clearInterval(t); }
-        if (attempts > 50) clearInterval(t);
-      }, 100);
-    }
-  });
-
-  // Filter-only update — emitted when R-side state (r_filters /
-  // r_range_filters) changes WITHOUT a lookup rebuild (the common
-  // AI-assistant case: writes to a state reactiveVal directly).
-  Shiny.addCustomMessageHandler('js-crossfilter-filters', (msg) => {
-    const el = document.getElementById(msg.id);
-    if (el && el._block && el._block._ready) {
-      el._block.setExternalFilters(msg.cat_filters, msg.rng_filters);
-    }
-  });
-
 })();

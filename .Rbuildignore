@@ -10,3 +10,5 @@
 ^pkgdown$
 ^_pkgdown\.yml$
 ^cran-comments\.md$
+^package\.json$
+^node_modules$

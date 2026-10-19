@@ -8,10 +8,6 @@ sub_df <- function() {
   )
 }
 
-last_data_msg <- function(sent) {
-  msgs <- Filter(function(m) m$type == "js-crossfilter-data", sent)
-  msgs[[length(msgs)]]$message
-}
 
 test_that("subgroup round-trips through block state", {
   state <- blockr.core:::initial_block_state(
@@ -24,123 +20,40 @@ test_that("subgroup round-trips through block state", {
 })
 
 test_that("the payload carries the subgroup, never the pinned column", {
-  blk <- new_crossfilter_block(
-    featured = c("TRT", "SEX"), pinned = "TRT", subgroup = "SEX"
-  )
-
-  testServer(
-    blockr.core:::get_s3_method("block_server", blk),
-    args = list(x = blk, data = list(data = function() sub_df())),
-    {
-      sent <- list()
-      root <- session$rootScope()
-      root$sendCustomMessage <- function(type, message) {
-        sent[[length(sent) + 1L]] <<- list(type = type, message = message)
-        invisible()
-      }
-
-      session$flushReact()
-      expect_equal(last_data_msg(sent)$subgroup, "SEX")
-
-      # The group moving onto the subgroup's column takes the subgroup away.
-      session$setInputs(`expr-set_pinned` = "SEX")
-      session$flushReact()
-      expect_null(last_data_msg(sent)$subgroup)
-
-      session$setInputs(`expr-set_pinned` = "TRT")
-      session$flushReact()
-      expect_equal(last_data_msg(sent)$subgroup, "SEX")
-
-      # An empty string clears it, and the state says so.
-      session$setInputs(`expr-set_subgroup` = "")
-      session$flushReact()
-      expect_equal(session$returned$state$subgroup(), character())
-      expect_null(last_data_msg(sent)$subgroup)
-    }
-  )
+  pay <- function(pinned, subgroup) {
+    cf_payload(new_crossfilter_block(
+      featured = c("TRT", "SEX"), pinned = pinned, subgroup = subgroup
+    ), sub_df())
+  }
+  expect_equal(pay("TRT", "SEX")$subgroup, "SEX")
+  expect_null(pay("SEX", "SEX")$subgroup)
+  expect_null(pay("TRT", NULL)$subgroup)
 })
 
 test_that("a subgroup that is not an eligible column is not reported", {
   blk <- new_crossfilter_block(
     featured = c("TRT", "SEX"), pinned = "TRT", subgroup = "AGE"
   )
-  testServer(
-    blockr.core:::get_s3_method("block_server", blk),
-    args = list(x = blk, data = list(data = function() sub_df())),
-    {
-      sent <- list()
-      root <- session$rootScope()
-      root$sendCustomMessage <- function(type, message) {
-        sent[[length(sent) + 1L]] <<- list(type = type, message = message)
-        invisible()
-      }
-      session$flushReact()
-      expect_null(last_data_msg(sent)$subgroup)
-    }
-  )
+  expect_null(cf_payload(blk, sub_df())$subgroup)
 })
 
-test_that("the payload carries the subgroup's levels, and swap trades the two", {
+test_that("the payload carries the subgroup's levels", {
   blk <- new_crossfilter_block(
-    featured = c("TRT", "SEX"), pinned = "TRT", subgroup = "SEX",
-    groups = list(SEX = list(show = list("F"), pools = list()))
+    featured = c("TRT", "SEX"), pinned = "TRT", subgroup = "SEX"
   )
-  testServer(
-    blockr.core:::get_s3_method("block_server", blk),
-    args = list(x = blk, data = list(data = function() sub_df())),
-    {
-      sent <- list()
-      root <- session$rootScope()
-      root$sendCustomMessage <- function(type, message) {
-        sent[[length(sent) + 1L]] <<- list(type = type, message = message)
-        invisible()
-      }
-      session$flushReact()
-      msg <- last_data_msg(sent)
-      expect_equal(
-        vapply(msg$subgroup_levels, `[[`, character(1), "value"), c("F", "M")
-      )
-      expect_equal(names(msg$groups), "SEX")
-
-      session$setInputs(`expr-swap_split` = 1)
-      session$flushReact()
-      msg <- last_data_msg(sent)
-      expect_equal(msg$pinned, "SEX")
-      expect_equal(msg$subgroup, "TRT")
-      expect_equal(
-        vapply(msg$subgroup_levels, `[[`, character(1), "value"),
-        c("Active", "Placebo")
-      )
-      expect_equal(session$returned$state$pinned(), "SEX")
-      expect_equal(session$returned$state$subgroup(), "TRT")
-      # The definition stays with its column.
-      expect_equal(session$returned$state$groups()$SEX$columns[[1]]$members, "F")
-
-      # A subgroup's pools are set like the group's, keyed by its column.
-      session$setInputs(`expr-set_groups` = list(
-        column = "TRT", show = list("Placebo"),
-        pools = list(list(name = "", members = list("Active", "Placebo"),
-                          custom = FALSE))
-      ))
-      session$flushReact()
-      # The older show/pools shape is still read: levels first, then pools.
-      expect_equal(session$returned$state$groups()$TRT$columns[[2]]$name,
-                   "All patients")
-    }
+  msg <- cf_payload(blk, sub_df())
+  expect_equal(
+    vapply(msg$subgroup_levels, `[[`, character(1), "value"), c("F", "M")
+  )
+  swapped <- cf_payload(new_crossfilter_block(
+    featured = c("TRT", "SEX"), pinned = "SEX", subgroup = "TRT"
+  ), sub_df())
+  expect_equal(swapped$pinned, "SEX")
+  expect_equal(
+    vapply(swapped$subgroup_levels, `[[`, character(1), "value"),
+    c("Active", "Placebo")
   )
 })
 
-test_that("swap does nothing without a subgroup", {
-  blk <- new_crossfilter_block(featured = c("TRT", "SEX"), pinned = "TRT")
-  testServer(
-    blockr.core:::get_s3_method("block_server", blk),
-    args = list(x = blk, data = list(data = function() sub_df())),
-    {
-      session$flushReact()
-      session$setInputs(`expr-swap_split` = 1)
-      session$flushReact()
-      expect_equal(session$returned$state$pinned(), "TRT")
-      expect_equal(session$returned$state$subgroup(), character())
-    }
-  )
-})
+
+

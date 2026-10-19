@@ -14,7 +14,7 @@ test_that("new_crossfilter_block stores initial state", {
   )
   state <- blockr.core:::initial_block_state(blk)
   expect_equal(state$active_dims, list(adsl = c("SEX", "AGE")))
-  expect_equal(state$filters, list(adsl = list(SEX = list("F"))))
+  expect_equal(state$filters, list(adsl = list(SEX = "F")))
   expect_equal(state$range_filters, list(adsl = list(AGE = c(40, 60))))
   expect_equal(state$measure, "adsl.AGE")
   expect_equal(state$agg_func, "mean")
@@ -131,13 +131,10 @@ test_that("the NA sentinel filters missings, not a literal __NA__", {
   )
 })
 
-test_that("a client announcing itself gets the cached payload re-shipped", {
-  # Deferred dock panels ship crossfilter-block.js WITH the panel, so the boot
-  # push reaches a client with no registered handler and Shiny drops it
-  # silently -- the block then sat blank for the whole session, even after the
-  # user switched to its view. The binding announces itself on bind and R
-  # answers with its cached payload (filters refreshed from the live
-  # reactives, no lookup rebuild).
+test_that("ready gets the state, and the payload request the lookups", {
+  # The client binds, says ready, and gets state and context in one message;
+  # it then asks for the payload. A deferred dock panel binds later and does
+  # the same, so nothing it needs can have been sent before its script loaded.
   blk <- new_crossfilter_block(
     active_dims = list(.tbl = "Species"),
     filters = list(.tbl = list(Species = "setosa"))
@@ -147,32 +144,36 @@ test_that("a client announcing itself gets the cached payload re-shipped", {
     blockr.core:::get_s3_method("block_server", blk),
     args = list(x = blk, data = list(data = function() iris)),
     {
-      # Proxy sessions forbid assignment; the root MockShinySession allows it.
       sent <- list()
       root <- session$rootScope()
-      root$sendCustomMessage <- function(type, message) {
-        sent[[length(sent) + 1L]] <<- list(type = type, message = message)
+      root$sendInputMessage <- function(inputId, message) {
+        sent[[length(sent) + 1L]] <<- message
         invisible()
       }
-
       session$flushReact()
-      n_boot <- length(sent)
-      expect_gte(n_boot, 1L)
+      expect_length(sent, 0L)
 
-      # The block's own inputs live one module level down (`expr_server()`).
-      session$setInputs(`expr-crossfilter_input_ready` = 1)
-      session$flushReact()
-
-      expect_gt(length(sent), n_boot)
-      re_ship <- sent[[length(sent)]]
-      expect_identical(re_ship$type, "js-crossfilter-data")
-      expect_true(length(re_ship$message$lookups) > 0)
-      # The re-ship carries the CURRENT filter state, not the boot-time one.
+      send <- function(...) {
+        session$setInputs(`expr-block` = list(messages = list(...)))
+        session$flushReact()
+      }
+      send(list(type = "ready"))
+      expect_length(sent, 1L)
+      # arrays stay arrays on the wire
       expect_identical(
-        re_ship$message$cat_filters,
-        list(.tbl = list(Species = list("setosa")))
+        sent[[1L]]$state$filters, list(.tbl = list(Species = list("setosa")))
       )
-      expect_identical(re_ship$message$active_dims, list(.tbl = list("Species")))
+      expect_identical(sent[[1L]]$context$inputs$data$rev, 1L)
+
+      ask <- function(seq) {
+        send(list(type = "request", seq = seq, name = "payload",
+                  args = list(state = list(active_dims = list(.tbl = "Species")))))
+        sent[[length(sent)]]
+      }
+      first <- ask(1)
+      expect_true(length(first$result$lookups) > 0)
+      # asked again with the same data and state: the kept answer
+      expect_identical(ask(2)$result, first$result)
     }
   )
 })
