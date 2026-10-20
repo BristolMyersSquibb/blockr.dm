@@ -810,12 +810,11 @@
   border-bottom: 1px solid var(--blockr-color-border-default);
 }
 
-/* The optional sections under Group by, Pools and Subgroup by: a label row
-   with its own remove, then the section. At rest neither is on the block and
-   the "+" links in .jscf-split-add stand in for them. */
-.jscf-subgroup-field {
-  margin-top: 16px;
-}
+/* Under the select, each split's columns and pools (_renderBand in the JS):
+   the Columns multi-select with tags, the pools as add-and-reorder rows
+   (blockr.ui's .blockr-row), "Add pool". The subgroup has its own field
+   under it, or one quiet "Add subgroup" button. The controls are
+   blockr.ui's; what is here only lays them out. */
 .jscf-section-head {
   display: flex;
   align-items: center;
@@ -829,52 +828,26 @@
   opacity: 1;
   margin-left: 0;
 }
-/* "Edit": a quiet button, xs. */
-.jscf-section-edit {
-  height: var(--blockr-control-h-xs);
-  padding: 0 8px;
-  border: 0;
-  border-radius: var(--blockr-radius-sm);
-  background: none;
-  font: inherit;
-  font-size: var(--blockr-font-size-xs);
-  font-weight: var(--blockr-font-weight-medium);
-  color: var(--blockr-color-text-muted);
-  cursor: pointer;
-  transition: background-color var(--blockr-transition),
-    color var(--blockr-transition);
+.jscf-section-tools {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
-.jscf-section-edit:hover {
-  color: var(--blockr-color-text-default);
-  background: var(--blockr-color-bg-hover);
+.jscf-groups,
+.jscf-subgroup-field {
+  margin-top: 16px;
 }
-.jscf-section-edit:focus-visible {
-  outline: var(--blockr-focus-outline);
-  outline-offset: var(--blockr-focus-offset);
+.jscf-groups-field + .jscf-groups-field {
+  margin-top: 16px;
 }
 .jscf-split-add {
-  justify-content: flex-start;
-  gap: 8px;
-  margin-top: 6px;
-}
-/* The add link pulls itself 8px left so its text lines up with a row's
-   content. Nothing here is inset, so the pull-back would put the hover box
-   outside the field's left edge. Flush, like "+ More filters". */
-.jscf-split-add .blockr-add-link,
-.jscf-groups .blockr-add-link {
-  margin-left: 0;
-}
-
-/* The pools of a split column, folded under its select (_renderPoolsBand in
-   the JS). The controls are Blockr.Select and the shared row pieces
-   (.blockr-add-link, .blockr-row-remove, .blockr-select__tag); what is here
-   only lays them out. */
-.jscf-groups {
   margin-top: 8px;
 }
-/* The fold and the subgroup's swap are 26px tools: bare, icon muted, the
-   hover wash. */
-.jscf-groups-fold,
+/* A quiet button's text lines up with the label above it. */
+.jscf-quiet-add {
+  margin-left: -8px;
+}
+/* The subgroup's swap is a 26px tool: bare, icon muted, the hover wash. */
 .jscf-section-swap {
   display: inline-flex;
   align-items: center;
@@ -891,266 +864,91 @@
   transition: color var(--blockr-transition),
     background var(--blockr-transition);
 }
-.jscf-groups-fold:hover,
 .jscf-section-swap:hover {
   color: var(--blockr-color-text-default);
   background: var(--blockr-color-bg-hover);
 }
-.jscf-groups-fold:focus-visible,
 .jscf-section-swap:focus-visible {
   outline: var(--blockr-focus-outline);
   outline-offset: var(--blockr-focus-offset);
 }
-.jscf-groups-fold svg {
-  transition: transform var(--blockr-transition);
+
+/* A pool is a field: its name where a label goes, "pool" and its count as
+   meta, the remove tool at the end; its levels in a bordered multi-select
+   below. The name renames in place like a block title: the hover wash,
+   pulled back by its padding so the text does not move, and a field at its
+   own size while editing. */
+.jscf-pool-field {
+  margin-top: 16px;
 }
-.jscf-groups-fold--open svg {
-  transform: rotate(180deg);
+.jscf-pool-head {
+  gap: 8px;
+  margin-bottom: 4px;
 }
-/* Folded and changed: the resulting columns, read only. The tag without its
-   remove button, so the right padding matches the left. */
-.jscf-groups-summary {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  margin-top: 2px;
+.jscf-pool-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 2px 6px;
+  margin: -2px -6px;
+  border-radius: var(--blockr-radius-md);
+  font-size: var(--blockr-font-size-sm);
+  font-weight: var(--blockr-font-weight-semibold);
+  color: var(--blockr-color-text-default);
+  transition: background-color var(--blockr-transition);
 }
-.jscf-groups-summary .jscf-groups-tag {
-  padding-right: 8px;
+.jscf-pool-label:hover {
+  background-color: var(--blockr-color-bg-hover);
 }
-/* The pool's name is renamed in place: plain text at rest, the hover wash
-   (radius 6, pulled back by its padding so the text does not move), and a
-   field at its own size while editing. */
+.jscf-pool-meta {
+  flex-shrink: 0;
+  font-size: var(--blockr-font-size-xs);
+  color: var(--blockr-color-text-muted);
+  white-space: nowrap;
+}
 .jscf-pool-name {
   flex: 1;
   min-width: 0;
-  padding: 2px 8px;
-  margin-left: -8px;
+  padding: 2px 6px;
+  margin: -3px -7px;
   font: inherit;
   font-size: var(--blockr-font-size-sm);
+  font-weight: var(--blockr-font-weight-semibold);
   color: var(--blockr-color-text-default);
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: var(--blockr-radius-md);
-  outline: none;
-  transition: border-color var(--blockr-transition),
-    background var(--blockr-transition), box-shadow var(--blockr-transition);
-}
-.jscf-pool-name:hover {
-  background: var(--blockr-color-bg-hover);
-}
-.jscf-pool-name:focus {
   background: var(--blockr-color-bg-surface);
-  border-color: var(--blockr-color-border-accent);
+  border: 1px solid var(--blockr-color-border-accent);
+  border-radius: var(--blockr-radius-md);
   box-shadow: var(--blockr-focus-ring);
+  outline: none;
 }
 .jscf-pool-name.jscf-pool-name--invalid,
 .jscf-pool-name.jscf-pool-name--invalid:focus {
   border-color: var(--blockr-color-border-danger);
 }
 .jscf-pool-error {
-  margin: -2px 0 4px;
+  margin-top: 4px;
   font-size: var(--blockr-font-size-xs);
   color: var(--blockr-color-text-danger);
 }
-/* The subgroup's pools while they overlap: the amber cue on its fields and
-   one line saying why (_syncOverlap). */
+.jscf-groups > .jscf-quiet-add {
+  margin-top: 8px;
+}
+/* The subgroup's columns while they overlap: the amber cue on its fields,
+   and one line saying why (_syncOverlap). */
 .jscf-groups-warning:empty {
   display: none;
 }
 .jscf-groups-warning {
-  margin: 2px 0 8px;
+  margin: 0 0 8px;
   font-size: var(--blockr-font-size-xs);
   line-height: 1.4;
   color: var(--blockr-color-text-warning);
 }
-.jscf-groups--overlap .jscf-cols,
-.jscf-groups--overlap .jscf-groups-summary .jscf-groups-tag {
+.jscf-groups--overlap .jscf-pool-levels .blockr-select__control,
+.jscf-groups--overlap .jscf-columns-select .blockr-select__control {
   border-color: var(--blockr-color-border-warning);
   background-color: var(--blockr-color-bg-warning);
-}
-
-/* The columns of a split, one list in table order (_renderPoolsBand). Rows
-   are the design system's block-list rows: 34px, radius 6, 8px between their
-   parts, no space between rows, the hover wash and a "…" tool under the
-   pointer, the whole row drags. A pool is a stack: a tinted band (neutral,
-   since a pool has no colour of its own), its header a row with the name at
-   600, then its members. Past 8 rows the list scrolls. */
-.jscf-cols {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  max-height: 272px;
-  overflow-y: auto;
-  /* Pulled out by the rows' padding, so a name starts on the label's edge
-     and the hover wash reaches past it. */
-  margin: 2px -8px 0;
-  border: 1px solid transparent;
-  border-radius: var(--blockr-radius-lg);
-}
-.jscf-col-row {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex: none;
-  height: 34px;
-  padding: 0 8px;
-  border-radius: var(--blockr-radius-md);
-  font-size: var(--blockr-font-size-base);
-  color: var(--blockr-color-text-default);
-  cursor: grab;
-  outline: none;
-}
-.jscf-col-row:hover,
-.jscf-col-row:focus-visible {
-  background: var(--blockr-color-bg-hover);
-}
-.jscf-col-row:focus-visible {
-  box-shadow: inset 0 0 0 2px var(--blockr-color-border-accent);
-}
-.jscf-col-name {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.jscf-col-meta,
-.jscf-col-n {
-  flex-shrink: 0;
-  font-size: var(--blockr-font-size-sm);
-  color: var(--blockr-color-text-muted);
-  white-space: nowrap;
-}
-.jscf-col-n {
-  min-width: 24px;
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
-/* Meta text gives way to the "…" (and the x on a level of its own); a tool
-   never covers the name. */
-.jscf-col-dots {
-  display: none;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  width: 24px;
-  height: 24px;
-  padding: 0;
-  color: var(--blockr-color-text-muted);
-  background: transparent;
-  border: none;
-  border-radius: var(--blockr-radius-sm);
-  cursor: pointer;
-}
-.jscf-col-dots:hover {
-  color: var(--blockr-color-text-default);
-  background: var(--blockr-color-bg-hover);
-}
-.jscf-col-hide svg {
-  width: 12px;
-  height: 12px;
-}
-.jscf-col-row:hover > .jscf-col-dots,
-.jscf-col-row:focus-visible > .jscf-col-dots,
-.jscf-col-row--menu > .jscf-col-dots {
-  display: inline-flex;
-}
-.jscf-col-row:hover > .jscf-col-n,
-.jscf-col-row:focus-visible > .jscf-col-n,
-.jscf-col-row--menu > .jscf-col-n {
-  display: none;
-}
-/* Read-only state: a neutral badge (design system, Badges). */
-.jscf-col-badge {
-  display: inline-flex;
-  align-items: center;
-  flex-shrink: 0;
-  height: 18px;
-  padding: 0 7px;
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--blockr-color-text-muted);
-  background: var(--blockr-color-bg-subtle);
-  border: 1px solid var(--blockr-color-border-default);
-  border-radius: var(--blockr-radius-pill);
-}
-.jscf-col-stack {
-  flex: none;
-  margin: 1px 0;
-  padding: 2px;
-  border-radius: var(--blockr-radius-lg);
-  background: color-mix(in srgb, var(--blockr-color-text-default) 5%, transparent);
-}
-.jscf-col-row--head .jscf-col-name {
-  flex: 0 1 auto;
-  font-weight: 600;
-}
-.jscf-col-row--head .jscf-col-meta {
-  flex: 1;
-}
-.jscf-col-row--member {
-  padding-left: 22px;
-}
-.jscf-col-chev {
-  display: inline-flex;
-  flex-shrink: 0;
-  color: var(--blockr-color-text-muted);
-}
-.jscf-col-chev svg {
-  width: 10px;
-  height: 10px;
-  transition: transform var(--blockr-transition);
-}
-.jscf-col-stack--folded .jscf-col-chev svg {
-  transform: rotate(-90deg);
-}
-.jscf-col-row--head .jscf-pool-name {
-  flex: 1;
-  margin-left: -8px;
-  font-size: var(--blockr-font-size-base);
-  font-weight: 600;
-}
-/* Drag: the row or band it would land on takes the accent tint (as the
-   outline's link drop), a 2px accent line marks a place between rows (as in
-   block lists). */
-.jscf-col--dragging {
-  opacity: 0.45;
-}
-.jscf-col--target,
-.jscf-col--target.jscf-col-row:hover {
-  background: var(--blockr-color-bg-accent-subtle);
-  box-shadow: inset 0 0 0 1px var(--blockr-color-border-accent-subtle);
-}
-.jscf-col-dropline {
-  position: absolute;
-  left: 4px;
-  right: 4px;
-  height: 2px;
-  border-radius: 1px;
-  background: var(--blockr-color-border-accent);
-  pointer-events: none;
-  z-index: 1;
-}
-.jscf-cols-hidden {
-  margin: 4px 0 0;
-  font-size: var(--blockr-font-size-xs);
-  color: var(--blockr-color-text-muted);
-}
-.jscf-cols-hidden-level {
-  padding: 0;
-  font: inherit;
-  color: var(--blockr-color-text-accent);
-  background: none;
-  border: none;
-  cursor: pointer;
-}
-.jscf-cols-hidden-level:hover {
-  text-decoration: underline;
-}
-.jscf-cols-add {
-  margin: 4px 0 0 -8px;
 }
 
 /* ============================================================
@@ -1254,9 +1052,4 @@
   font-size: var(--blockr-font-size-xs);
   color: var(--blockr-color-text-muted);
   font-variant-numeric: tabular-nums;
-}
-.jscf-cols-count {
-  margin-left: 8px;
-  font-size: var(--blockr-font-size-xs);
-  color: var(--blockr-color-text-muted);
 }
