@@ -26,12 +26,13 @@
 #'   dropping a column from it also takes it out of `Group by`, for every
 #'   reader of the board, which is a setting and not a filter.
 #' @param pinned The single column the block reports as the board's group,
-#'   chosen in the `By` select of the `Groups` section. Only `featured`
+#'   chosen in the `Group by` select at the top of the block. Only `featured`
 #'   columns on the parent table qualify. Grouping is independent of filtering: a pinned
 #'   column need not have a card, and a card does not make a column the group.
 #'   `NULL` (the default) means no group.
 #' @param groups Group definitions for the pinned column and the subgroup,
-#'   edited in the `Groups`, `Pools` and `Subgroups` sections of the block.
+#'   edited under the `Group by` and `Subgroup by` selects: `Columns` picks
+#'   the levels and pools shown, in order, and each pool is a field of its own.
 #'   A named list keyed by column, so switching the group column and back, or
 #'   swapping group and subgroup, keeps each definition. An entry is
 #'   `list(columns = list(list(name = , members = , custom = ), ...))`, the
@@ -40,14 +41,15 @@
 #'   meaning the name follows the members. A level may be in two columns
 #'   (shown on its own and pooled). A level in no column is not shown. A pool
 #'   that is defined but not shown sits in `hidden_pools`, same shape as
-#'   `columns`, so that it is kept without being a column. A column with no
+#'   `columns` plus `at`, its place in the list, so that it is kept without
+#'   being a column. A column with no
 #'   entry shows every level in [crossfilter_level_order()], one column
 #'   each. The older shape, `list(show = <levels>, pools = <list>)`, is still
 #'   read: its levels come first, then its pools. The block only records the
 #'   definition; a package building on it (blockr.pharma's population filter)
 #'   applies it.
 #' @param subgroup A second column the board is split by, under `pinned`,
-#'   chosen in the `By` select of the `Subgroups` section. Same eligible
+#'   chosen in the `Subgroup by` select below the groups. Same eligible
 #'   columns as `pinned`, minus the pinned one. `NULL` (the default) means no
 #'   subgroup. Its levels are pooled like the group's, through its entry in
 #'   `groups`, and a button in its field swaps it with `pinned`. Like
@@ -461,11 +463,14 @@ crossfilter_clean_group_def <- function(def, levels = character()) {
   })
   hidden <- lapply(unname(def$hidden_pools %||% list()), function(p) {
     name <- chr(p$name)
-    list(
+    at <- suppressWarnings(as.integer(unlist(p$at))[1L])
+    out <- list(
       name = if (length(name)) trimws(name[[1L]]) else "",
       members = unique(chr(p$members)),
       custom = isTRUE(as.logical(unlist(p$custom))[1L])
     )
+    if (length(at) && !is.na(at) && at >= 0L) out$at <- at
+    out
   })
   hidden <- Filter(function(p) nzchar(p$name) && length(p$members), hidden)
   out <- list(columns = cols)
@@ -498,11 +503,13 @@ crossfilter_clean_groups <- function(groups) {
 # as.list() keeps a one-level vector an array.
 crossfilter_groups_payload <- function(groups) {
   col <- function(p) {
-    list(
+    out <- list(
       name = as.character(p$name),
       members = as.list(as.character(p$members)),
       custom = isTRUE(p$custom)
     )
+    if (!is.null(p$at)) out$at <- as.integer(p$at)
+    out
   }
   lapply(groups, function(def) {
     out <- list(columns = lapply(unname(def$columns), col))

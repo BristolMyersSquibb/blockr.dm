@@ -323,3 +323,18 @@ test_that("groups survive board serialization", {
     }
   )
 })
+
+test_that("an unticked pool keeps its place in the list", {
+  def <- crossfilter_clean_group_def(list(
+    columns = list(list(name = "", members = list("A"), custom = FALSE)),
+    hidden_pools = list(
+      list(name = "P", members = list("A", "B"), custom = TRUE, at = 0L),
+      list(name = "Q", members = list("B"), custom = TRUE, at = "x")
+    )
+  ))
+  expect_equal(def$hidden_pools[[1]]$at, 0L)
+  expect_null(def$hidden_pools[[2]]$at)
+  out <- crossfilter_groups_payload(list(TRT = def))
+  expect_equal(out$TRT$hidden_pools[[1]]$at, 0L)
+  expect_null(out$TRT$hidden_pools[[2]]$at)
+})
