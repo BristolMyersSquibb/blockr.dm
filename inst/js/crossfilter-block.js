@@ -726,7 +726,10 @@
       const keyOf = { Count: '.count' };
       for (const [tbl, info] of Object.entries(this.allColumns)) {
         for (const m of asArray(info.measures)) {
-          keyOf[multiTable ? tbl + '.' + m : m] = tbl + '.' + m;
+          // A column named "Count" must not replace the row count.
+          let name = multiTable ? tbl + '.' + m : m;
+          while (name in keyOf) name += ' (column)';
+          keyOf[name] = tbl + '.' + m;
         }
       }
       const names = Object.keys(keyOf);
