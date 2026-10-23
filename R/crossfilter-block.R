@@ -825,6 +825,10 @@ crossfilter_server <- function(active_dims, filters, range_filters,
       # The group definition for one column, sent whole by the client on every
       # edit. Nothing is sent back: the client owns the definition while it
       # is being edited, and an echo would redraw the band under the user.
+      # `client_groups` is `groups` as of the client's last edit; the push
+      # observer below sends any other value of `groups`.
+      client_groups <- new.env(parent = emptyenv())
+      client_groups$value <- shiny::isolate(r_groups())
       shiny::observeEvent(input$set_groups, {
         req <- input$set_groups
         column <- as.character(unlist(req$column))
@@ -849,8 +853,24 @@ crossfilter_server <- function(active_dims, filters, range_filters,
           nxt[[column]] <- def
         }
         if (!length(nxt)) nxt <- list()
+        client_groups$value <- nxt
         if (!identical(nxt, cur)) r_groups(nxt)
       }, ignoreInit = TRUE)
+
+      # R -> JS: a write to `groups` from outside the block (external
+      # control, an assistant) reaches the pools editor. The client's own
+      # edit is not echoed.
+      shiny::observeEvent(r_groups(), {
+        cur <- r_groups()
+        if (identical(cur, client_groups$value)) {
+          return()
+        }
+        client_groups$value <- cur
+        session$sendCustomMessage("js-crossfilter-groups", list(
+          id = ns("crossfilter_input"),
+          groups = crossfilter_groups_payload(crossfilter_clean_groups(cur))
+        ))
+      }, ignoreInit = TRUE, ignoreNULL = FALSE)
 
       shiny::observeEvent(input$set_featured, {
         vals <- as.character(unlist(input$set_featured))

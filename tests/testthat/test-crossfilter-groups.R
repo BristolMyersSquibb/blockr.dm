@@ -264,6 +264,64 @@ test_that("the data payload carries pinned_levels and groups", {
   )
 })
 
+test_that("an outside write to groups reaches the client, an edit does not", {
+  df <- cf_groups_df()
+  blk <- new_crossfilter_block(featured = c("TRT", "SEX"), pinned = "TRT")
+
+  testServer(
+    blockr.core:::get_s3_method("block_server", blk),
+    args = list(x = blk, data = list(data = function() df)),
+    {
+      sent <- list()
+      root <- session$rootScope()
+      root$sendCustomMessage <- function(type, message) {
+        sent[[length(sent) + 1L]] <<- list(type = type, message = message)
+        invisible()
+      }
+      groups_msgs <- function() {
+        Filter(function(m) m$type == "js-crossfilter-groups", sent)
+      }
+      session$flushReact()
+      expect_length(groups_msgs(), 0L)
+
+      # The client's own edit is not echoed.
+      session$setInputs(`expr-set_groups` = list(
+        column = "TRT",
+        columns = list(list(name = "", members = list("High"), custom = FALSE))
+      ))
+      session$flushReact()
+      expect_equal(
+        session$returned$state$groups()$TRT$columns[[1]]$members, "High"
+      )
+      expect_length(groups_msgs(), 0L)
+
+      # A write from outside (external control) is sent, in the older shape
+      # too.
+      session$returned$state$groups(
+        list(TRT = list(show = "Placebo", pools = list()))
+      )
+      session$flushReact()
+      msgs <- groups_msgs()
+      expect_length(msgs, 1L)
+      data_msg <- Filter(function(m) m$type == "js-crossfilter-data", sent)
+      expect_identical(msgs[[1]]$message$id, data_msg[[1]]$message$id)
+      expect_equal(
+        msgs[[1]]$message$groups,
+        list(TRT = list(columns = list(
+          list(name = "", members = list("Placebo"), custom = FALSE)
+        )))
+      )
+
+      # Clearing from outside is sent as well.
+      session$returned$state$groups(list())
+      session$flushReact()
+      msgs <- groups_msgs()
+      expect_length(msgs, 2L)
+      expect_equal(msgs[[2]]$message$groups, list())
+    }
+  )
+})
+
 test_that("with no active dims the payload still carries pinned_levels", {
   df <- cf_groups_df()
   blk <- new_crossfilter_block(featured = "TRT", pinned = "TRT")

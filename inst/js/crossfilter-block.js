@@ -1032,7 +1032,8 @@
     // The client owns the definition while it is being edited. R never
     // answers `set_groups`, and a data payload for the same column does not
     // overwrite a local edit: R handing the client its own edit back redrew
-    // the band under the user and dropped the edit in progress.
+    // the band under the user and dropped the edit in progress. A write from
+    // outside the block comes on its own message, setExternalGroups().
 
     _ingestGroups(msg) {
       let defs = msg.groups;
@@ -1069,6 +1070,19 @@
         this._renderBand(s);
       }
       this._renderSplitAdd();
+    }
+
+    // `groups` written from outside the block (R only sends it then). It
+    // replaces the client's copy, local edits included.
+    setExternalGroups(defs) {
+      if (!defs || Array.isArray(defs) || typeof defs !== 'object') defs = {};
+      this.groupDefs = Object.assign({}, defs);
+      for (const s of [this._splits.group, this._splits.subgroup]) {
+        s.local = false;
+        if (!s.col) continue;
+        s.edit = this._groupDefFor(s);
+        this._renderBand(s);
+      }
     }
 
     // The working copy for a split's column, from R's entry or the untouched
@@ -3144,6 +3158,14 @@
         if (el2 && el2._block) { el2._block.setData(msg); clearInterval(t); }
         if (attempts > 50) clearInterval(t);
       }, 100);
+    }
+  });
+
+  // Groups written from outside the block, see setExternalGroups().
+  Shiny.addCustomMessageHandler('js-crossfilter-groups', (msg) => {
+    const el = document.getElementById(msg.id);
+    if (el && el._block && el._block._ready) {
+      el._block.setExternalGroups(msg.groups);
     }
   });
 
