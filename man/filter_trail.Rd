@@ -3,158 +3,69 @@
 \name{filter_trail}
 \alias{filter_trail}
 \alias{add_filter_trail}
-\alias{provenance}
-\alias{dataset_name}
-\alias{filter_trail_counts}
-\alias{trail_key}
-\alias{trail_expr}
 \title{Filter trail}
 \usage{
-filter_trail(x)
+filter_trail(x, tables = NULL)
 
-add_filter_trail(
-  out,
-  input = NULL,
-  key = NULL,
-  clause = NULL,
-  table = NULL,
-  tables = NULL,
-  count = FALSE
-)
-
-provenance(x)
-
-dataset_name(x)
-
-filter_trail_counts(x)
-
-trail_key(session = shiny::getDefaultReactiveDomain())
-
-trail_expr(
-  inner,
-  key = NULL,
-  clause = NULL,
-  data = quote(data),
-  table = NULL,
-  tables = NULL,
-  count = FALSE
-)
+add_filter_trail(x, key, clause, tables = NULL)
 }
 \arguments{
-\item{x}{Object to read a trail from (a \code{dm}, a data frame, or anything
-else, in which case \code{NULL} is returned).}
+\item{x}{A data frame or a \code{dm}.}
 
-\item{out}{The block's result: the object the trail is written onto.}
+\item{tables}{For a \code{dm}: the tables to write the clause on
+(\code{add_filter_trail()}) or read the trail from (\code{filter_trail()}). \code{NULL},
+the default, means every table. Ignored for a data frame.}
 
-\item{input}{The block's input, read for the incoming trail. \code{NULL} starts
-a fresh trail.}
+\item{key}{Name the clause is stored under, unique to the block that writes
+it.}
 
-\item{key}{Block id under which this block's clause is stored. \code{NULL} (the
-default) carries the incoming trail without adding to it, which is what a
-block that reshapes rather than filters wants.}
-
-\item{clause}{Human-readable description of what this block filtered, e.g.
-\code{"SEX = F; AGE 18 to 64"}. An empty or missing clause adds nothing, so a
-filter block with nothing selected leaves no trace.}
-
-\item{table}{Name of the one table \code{clause} narrowed, for a block that
-filters a single table of a dm without cascading. \code{NULL} (the default)
-records an unscoped clause, which every branch carries.}
-
-\item{tables}{The tables the output was built from, passed by a block that
-turns a dm into a data frame. Entries scoped to a table outside this set
-are dropped, and the rest lose their scope. \code{NULL} (the default) drops
-nothing.}
-
-\item{count}{Also record how many subjects the filter kept: the rows of
-the dm's subject table (its first primary-key table) in \code{input} and in
-\code{out}. Only for a dm held in memory; skipped on remote tables. Read back
-with \code{filter_trail_counts()}.}
-
-\item{session}{The block server's Shiny session, used to derive the key.}
-
-\item{inner}{The expression the block would otherwise return.}
-
-\item{data}{How the block's expression refers to its input. The default,
-the bare symbol \code{data}, is what a plain block expression uses; a block
-with \code{expr_type = "bquoted"} must pass its own input slot instead, or the
-generated code carries a bare \code{data} that resolves to \code{\link[utils:data]{utils::data()}}.}
+\item{clause}{What the block filtered, e.g. \code{"SEX = F; AGE 18 to 64"}. An
+empty or missing clause adds nothing, so a filter with nothing selected
+leaves no trace.}
 }
 \value{
-\code{filter_trail()} returns a named character vector or \code{NULL}. An
-entry recorded with \code{table} carries its scope in a \code{tables} attribute on
-the vector, a named list keyed like the trail. \code{add_filter_trail()}
-returns \code{out}, with a \code{blockr_filters} attribute when there is a trail to
-carry and a \code{blockr_provenance} attribute when \code{input} has one.
-\code{filter_trail_counts()} returns a named list keyed like the trail,
-\code{c(before = , after = )} for each entry recorded with \code{count = TRUE}.
-\code{provenance()} returns the list or \code{NULL}, \code{dataset_name()} a string or
-\code{NULL}.
+\code{filter_trail()} returns a named character vector, or \code{NULL} when
+nothing is recorded. On a \code{dm} it is the union of the tables' trails in
+the order the clauses were added. \code{add_filter_trail()} returns \code{x} with
+the clause added.
 }
 \description{
 The record of which filters produced a table, carried on the data itself as
-a \code{blockr_filters} attribute so that any downstream consumer -- a chart
-caption, a composer footnote, a code block script -- can print what was
-applied without knowing anything about the board.
+a \code{blockr_filters} attribute so that any downstream consumer (a chart
+caption, a table footnote, a download) can print what was applied without
+knowing anything about the board.
 }
 \details{
-The trail is a \strong{named character vector, keyed by block id}. The key makes
-three things work without further machinery: a block that re-evaluates
-replaces its own clause rather than appending a second copy, two branches
-meeting at a fan-in collapse to one entry per producing block, and a
-consumer can map a clause back to the block that set it.
+The trail is a \strong{named character vector, keyed by block}. A filter block
+writes its clause under its own key, so two branches meeting at a fan-in
+collapse to one entry per block, and a consumer can map a clause back to
+the block that set it.
 }
-\section{Why every block reads and writes explicitly}{
+\section{Where it lives}{
 
-\code{dm::dm_filter()} drops attributes set on a \code{dm}, and
-\code{dm::dm_flatten_to_tbl()} / \code{dm::pull_tbl()} build a fresh tibble, so a
-trail cannot be left to survive a dm on its own. \code{add_filter_trail()}
-therefore takes both the result and the block's \emph{input}: it reads the
-incoming trail off the input, appends this block's clause if it has one, and
-writes the whole thing onto the output. Nothing depends on an attribute
-surviving an operation.
+On a data frame the attribute sits on the frame. On a \code{dm} it sits on the
+\strong{tables}, not on the dm object: every dm verb (\code{dm::dm_filter()}, zooming,
+key edits) rebuilds the dm and drops attributes set on it, but keeps the
+attributes of its tables, and \code{dm::pull_tbl()} and \code{dm::dm_flatten_to_tbl()}
+hand a table's attributes on to the frame they return (a flatten keeps the
+start table's). So a trail written onto the tables reaches every frame cut
+from the dm with no further code, the way dplyr keeps a data frame's
+attributes through \code{filter()}, \code{mutate()} and joins.
 
-On the data-frame side dplyr does preserve attributes (\code{filter}, \code{mutate},
-\code{select}, \code{arrange}, \code{distinct}, \code{left_join}, \code{bind_rows}), so blocks that
-merely reshape need no wrapping. \code{summarise()} and \code{tidyr::pivot_wider()}
-do not preserve them, and a block that aggregates has to carry the trail
-across with \code{add_filter_trail(out, data)} explicitly.
-}
+Which tables a clause goes on says which tables the filter narrowed.
+\code{dm::dm_filter()} cascades over the keys, so a filter written against \code{ae}
+narrows \code{adsl} and through it every other table: by default the clause goes
+on every table. A filter that narrows one table without cascading passes
+that table as \code{tables}, and a frame pulled from another table does not
+carry the clause.
 
-\section{Table scope}{
-
-A block that narrows ONE table of a dm without cascading over the keys
-(blockr.pharma's flag filter with \code{table} set) records its clause with
-\code{table}, and the entry carries that scope. The crossfilter and the value
-filter do not: \code{dm::dm_filter()} cascades, so a filter written against
-\code{ae} narrows \code{adsl} and through it every table hanging off \code{adsl}, and the
-clause belongs on every branch.
-
-The scope is applied where a branch leaves the dm. The pull and flatten
-blocks pass the tables they read as \code{tables}, and an entry scoped to a
-table outside that set is dropped: a lab chart fed from \code{lb} and \code{adsl}
-does not print the \code{TRTEMFL} filter that only ever touched \code{ae}. The
-entries that survive are carried without their scope, a data frame having
-no tables. A flatten with an empty include list and \code{.recursive = TRUE}
-reads every table reachable from the start table but passes only the
-start table; the boards do not use that form.
-}
-
-\section{Provenance}{
-
-The same carry takes a \code{blockr_provenance} attribute along: a named list
-saying where the data came from, set by the reader on a table of its dm,
-where dm verbs leave it alone. Two fields are read here: \code{dataset}, a short
-name for what the board read (a study code, a file name), used in download
-file names, and \code{note}, one line the crossfilter prints under its cards.
-Any other field (a path, extract dates) rides along untouched.
-\code{add_filter_trail()} copies the list onto a data frame \code{out} that has none,
-so it reaches every chart and table the trail reaches.
+\code{dplyr::summarise()} and \code{tidyr::pivot_wider()} do not keep attributes, so a
+block that aggregates has to copy the trail across itself.
 }
 
 \examples{
 d <- data.frame(x = 1:3)
-d <- add_filter_trail(d, NULL, "global_filter", "SEX = F")
+d <- add_filter_trail(d, "sex", "SEX = F")
 filter_trail(d)
 
 }
