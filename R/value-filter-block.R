@@ -361,22 +361,16 @@ value_filter_server <- function(state, drill = FALSE) {
             derived$shape,
             operator = op
           )
-          # Stamp the trail (filter-trail.R). `dm::dm_filter()` drops the
-          # attributes on its input, so the incoming trail is re-read off the
-          # input slot and this block's clause appended to it. That is how a
-          # downstream reader -- a chart caption, the patient profile's cohort
-          # pill -- learns what narrowed its data from the data itself, with
-          # no second channel and nothing held in state. The key is this
-          # block's module namespace, which carries its board id, so the
-          # reader can tell the drill filter's clause from the global one.
-          # The drill filter also records how many subjects it kept, for the
-          # profile's "6 of 179 patients".
+          # Stamp the trail (filter-trail.R), on every table of a dm because
+          # `dm::dm_filter()` cascades. That is how a downstream reader (a
+          # chart caption, the patient profile's cohort pill) learns what
+          # narrowed its data from the data itself. The key is this block's
+          # module namespace, which carries its board id, so the reader can
+          # tell the drill filter's clause from the global one.
           trail_expr(
             inner,
             trail_key(session),
-            value_filter_clause(st$columns, op),
-            data = data_slot(),
-            count = isTRUE(drill)
+            value_filter_clause(st$columns, op)
           )
         }),
         state = list(state = r_state)

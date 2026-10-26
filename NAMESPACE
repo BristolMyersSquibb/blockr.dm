@@ -30,10 +30,8 @@ S3method(block_ui,value_filter_block)
 S3method(data_schema,dm)
 export(add_filter_trail)
 export(crossfilter_level_order)
-export(dataset_name)
 export(dm_read_tables)
 export(filter_trail)
-export(filter_trail_counts)
 export(migrate_value_filter_state)
 export(new_cdisc_dm_block)
 export(new_crossfilter_block)
@@ -52,37 +50,42 @@ export(new_drill_filter_block)
 export(new_js_crossfilter_block)
 export(new_temporal_join_block)
 export(new_value_filter_block)
-export(provenance)
 export(register_dm_blocks)
-export(trail_expr)
-export(trail_key)
 importFrom(blockr.ai,data_schema)
-importFrom(blockr.core,arg_array)
-importFrom(blockr.core,arg_boolean)
-importFrom(blockr.core,arg_enum)
-importFrom(blockr.core,arg_integer)
-importFrom(blockr.core,arg_number)
-importFrom(blockr.core,arg_object)
-importFrom(blockr.core,arg_string)
-importFrom(blockr.core,block_output)
-importFrom(blockr.core,block_render_trigger)
-importFrom(blockr.core,block_ui)
-importFrom(blockr.core,new_arg_spec)
-importFrom(blockr.core,new_arg_specs)
-importFrom(blockr.core,register_blocks)
-importFrom(blockr.dplyr,blockr_blocks_css_dep)
-importFrom(blockr.dplyr,blockr_core_js_dep)
-importFrom(blockr.dplyr,blockr_select_dep)
+importFrom(blockr.core,
+  arg_array,
+  arg_boolean,
+  arg_enum,
+  arg_integer,
+  arg_number,
+  arg_object,
+  arg_string,
+  block_output,
+  block_render_trigger,
+  block_ui,
+  new_arg_spec,
+  new_arg_specs,
+  register_blocks
+)
+importFrom(blockr.dplyr,
+  blockr_blocks_css_dep,
+  blockr_core_js_dep,
+  blockr_select_dep
+)
 importFrom(htmltools,htmlDependency)
-importFrom(rlang,":=")
-importFrom(rlang,.data)
-importFrom(shiny,NS)
-importFrom(shiny,div)
-importFrom(shiny,isolate)
-importFrom(shiny,moduleServer)
-importFrom(shiny,observeEvent)
-importFrom(shiny,reactive)
-importFrom(shiny,reactiveVal)
-importFrom(shiny,req)
-importFrom(shiny,tagList)
+importFrom(rlang,
+  ":=",
+  .data
+)
+importFrom(shiny,
+  NS,
+  div,
+  isolate,
+  moduleServer,
+  observeEvent,
+  reactive,
+  reactiveVal,
+  req,
+  tagList
+)
 importFrom(shinyjs,useShinyjs)

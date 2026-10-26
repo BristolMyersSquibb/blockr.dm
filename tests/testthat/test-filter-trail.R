@@ -1,22 +1,25 @@
-test_that("the trail is a named character vector keyed by block id", {
+test_that("the trail is a named character vector keyed by block", {
 
-  d <- add_filter_trail(data.frame(x = 1:3), NULL, "ae_flags", "SAFFL = Y")
+  d <- add_filter_trail(data.frame(x = 1:3), "ae_flags", "SAFFL = Y")
   expect_identical(filter_trail(d), c(ae_flags = "SAFFL = Y"))
 
-  d2 <- add_filter_trail(d, d, "global_filter", "SEX = F")
+  d2 <- add_filter_trail(d, "global_filter", "SEX = F")
   expect_identical(
     filter_trail(d2),
     c(ae_flags = "SAFFL = Y", global_filter = "SEX = F")
   )
 
-  # Re-evaluating a block replaces its own clause rather than appending a
-  # second copy, which is the whole reason the trail is keyed.
-  d3 <- add_filter_trail(d2, d2, "global_filter", "SEX = F, M")
-  expect_length(filter_trail(d3), 2L)
-  expect_identical(unname(filter_trail(d3)[["global_filter"]]), "SEX = F, M")
+  # Writing the same key again replaces the clause in place.
+  d3 <- add_filter_trail(d2, "ae_flags", "SAFFL = N")
+  expect_identical(
+    filter_trail(d3),
+    c(ae_flags = "SAFFL = N", global_filter = "SEX = F")
+  )
 
   # A filter with nothing selected leaves no trace.
-  expect_null(filter_trail(add_filter_trail(data.frame(x = 1), NULL, "k", "")))
+  expect_null(filter_trail(add_filter_trail(data.frame(x = 1), "k", "")))
+  expect_null(filter_trail(add_filter_trail(data.frame(x = 1), "k", NULL)))
+  expect_null(filter_trail(add_filter_trail(data.frame(x = 1), "k", NA)))
   expect_null(filter_trail(data.frame(x = 1)))
 })
 
@@ -48,82 +51,93 @@ test_that("a clause reads as a sentence, and names the table only when it must",
   )
 })
 
-test_that("the trail crosses dm_filter and the dm-to-data-frame boundary", {
-
-  skip_if_not_installed("dm")
-
+trail_dm <- function() {
   adsl <- data.frame(
-    USUBJID = paste0("S", 1:6),
-    SEX = c("F", "F", "M", "M", "F", "M"),
+    USUBJID = paste0("S", 1:3),
+    SEX = c("F", "M", "F"),
+    stringsAsFactors = FALSE
+  )
+  ae <- data.frame(
+    AEID = 1:3,
+    USUBJID = c("S1", "S1", "S2"),
+    TRTEMFL = c("Y", "N", "Y"),
     stringsAsFactors = FALSE
   )
   lb <- data.frame(
-    USUBJID = paste0("S", 1:6),
-    LBSTRESN = c(10, 99, 99, 10, 10, 99),
+    LBID = 1:3,
+    USUBJID = c("S1", "S2", "S3"),
+    LBSTRESN = c(10, 20, 30),
     stringsAsFactors = FALSE
   )
+  dm::dm(adsl = adsl, ae = ae, lb = lb) |>
+    dm::dm_add_pk(adsl, USUBJID) |>
+    dm::dm_add_fk(ae, USUBJID, adsl) |>
+    dm::dm_add_fk(lb, USUBJID, adsl)
+}
 
-  d <- dm::dm_add_fk(
-    dm::dm_add_pk(dm::dm(adsl = adsl, lb = lb), adsl, USUBJID),
-    lb, USUBJID, adsl
-  )
+test_that("on a dm the trail sits on the tables", {
 
-  # What the crossfilter block emits: the dm_filter call, wrapped so the
-  # result records what it did. `dm_filter()` drops attributes set on a dm,
-  # which is exactly why the wrapper re-reads from the input.
+  d <- add_filter_trail(trail_dm(), "global_filter", "SEX = F")
+
+  # Not on the dm object, which every dm verb rebuilds.
+  expect_null(attr(d, "blockr_filters", exact = TRUE))
+  for (tbl in dm::dm_get_tables(d)) {
+    expect_identical(attr(tbl, "blockr_filters"), c(global_filter = "SEX = F"))
+  }
+  expect_identical(filter_trail(d), c(global_filter = "SEX = F"))
+
+  # `tables` writes on those only, and an unknown table is skipped.
+  d2 <- add_filter_trail(trail_dm(), "ae_flags", "TRTEMFL",
+                         tables = c("ae", "nope"))
+  expect_identical(filter_trail(d2), c(ae_flags = "TRTEMFL"))
+  expect_identical(filter_trail(d2, tables = "ae"), c(ae_flags = "TRTEMFL"))
+  expect_null(filter_trail(d2, tables = c("adsl", "lb")))
+  d3 <- trail_dm()
+  expect_identical(add_filter_trail(d3, "k", "x", tables = "nope"), d3)
+})
+
+test_that("the trail survives dm verbs and the dm-to-data-frame boundary", {
+
+  # What the crossfilter block emits.
   filtered <- eval(
     trail_expr(
-      quote(dm::dm_filter(data, adsl = SEX == "F", lb = LBSTRESN > 50)),
+      quote(dm::dm_filter(data, adsl = SEX == "F", lb = LBSTRESN > 15)),
       "global_filter",
-      "adsl.SEX = F; lb.LBSTRESN 50 to 99"
+      "adsl.SEX = F; lb.LBSTRESN 15 to 30"
     ),
-    list(data = d)
+    list(data = trail_dm())
   )
+  want <- c(global_filter = "adsl.SEX = F; lb.LBSTRESN 15 to 30")
+  expect_identical(filter_trail(filtered), want)
 
-  expect_identical(
-    filter_trail(filtered),
-    c(global_filter = "adsl.SEX = F; lb.LBSTRESN 50 to 99")
-  )
+  # A later dm verb rebuilds the dm and keeps the tables' attributes.
+  expect_identical(filter_trail(dm::dm_filter(filtered, ae = TRUE)), want)
+  expect_identical(filter_trail(dm::dm_select_tbl(filtered, adsl, lb)), want)
 
-  # ...and what dm_flatten_block emits: a carry with no clause of its own.
-  flat <- eval(
-    trail_expr(
-      quote(dm::dm_flatten_to_tbl(data, lb, adsl, .recursive = TRUE))
-    ),
-    list(data = filtered)
-  )
+  # What the pull and flatten blocks emit: plain dm calls.
+  flat <- dm::dm_flatten_to_tbl(filtered, lb, adsl)
+  expect_identical(filter_trail(flat), want)
+  expect_identical(flat$USUBJID, "S3")
+  expect_identical(filter_trail(dm::pull_tbl(filtered, ae)), want)
 
-  expect_identical(
-    filter_trail(flat),
-    c(global_filter = "adsl.SEX = F; lb.LBSTRESN 50 to 99")
-  )
-
-  # The filter really did cascade: only S2 is female with a lab value over 50.
-  expect_identical(flat$USUBJID, "S2")
-
-  # Ordinary dplyr verbs carry it on from there without help.
-  expect_identical(
-    filter_trail(dplyr::filter(flat, LBSTRESN > 0)),
-    filter_trail(flat)
-  )
+  # Ordinary dplyr verbs carry it on from there.
+  expect_identical(filter_trail(dplyr::filter(flat, LBSTRESN > 0)), want)
 })
 
 test_that("two filter blocks on one path do not overwrite each other", {
 
-  # The regression this guards. `expr_server.block()` calls EVERY block's own
-  # server with `id = "expr"`, so keying the trail on that id filed every
-  # clause under one name and each filter downstream erased the one before it:
-  # a board with a flag filter above the global filter showed only the global
-  # filter's clause. The key has to come from the module namespace, which
-  # carries the board's block id.
+  # `expr_server.block()` calls EVERY block's own server with `id = "expr"`,
+  # so keying the trail on that id filed every clause under one name and each
+  # filter downstream erased the one before it. The key has to come from the
+  # module namespace, which carries the board's block id.
   ns_of <- function(prefix) list(ns = function(x) paste0(prefix, "-expr-"))
 
   expect_false(identical(trail_key(ns_of("ae_flags")),
                          trail_key(ns_of("global_filter"))))
 
   d <- data.frame(x = 1:3)
-  d <- add_filter_trail(d, NULL, trail_key(ns_of("ae_flags")), "TRTEMFL")
-  d <- add_filter_trail(d, d, trail_key(ns_of("global_filter")), "SEX = F")
+  d <- add_filter_trail(d, trail_key(ns_of("ae_flags")), "TRTEMFL")
+  d <- add_filter_trail(d, trail_key(ns_of("global_filter")), "SEX = F")
 
   expect_equal(unname(filter_trail(d)), c("TRTEMFL", "SEX = F"))
 
@@ -172,87 +186,42 @@ test_that("a subject-id claim reads as the clause that was clicked", {
   expect_identical(value_filter_clause(list(ids)), "USUBJID = 01, 02, 03")
 })
 
-test_that("a clause scoped to one table leaves with that table", {
-
-  # Frame level first: the scope rides on the trail vector, and `tables`
-  # drops what is out of scope and strips the scope from what survives.
-  f <- add_filter_trail(data.frame(x = 1), NULL, "ae_flags", "TRTEMFL",
-                        table = "ae")
-  f <- add_filter_trail(f, f, "global_filter", "SEX = F")
-  expect_identical(attr(filter_trail(f), "tables"), list(ae_flags = "ae"))
-
-  lab <- add_filter_trail(data.frame(x = 1), f, tables = c("lb", "adsl"))
-  expect_identical(filter_trail(lab), c(global_filter = "SEX = F"))
-  expect_null(attr(filter_trail(lab), "tables"))
-
-  aes <- add_filter_trail(data.frame(x = 1), f, tables = "ae")
-  expect_identical(unname(filter_trail(aes)), c("TRTEMFL", "SEX = F"))
-  expect_null(attr(filter_trail(aes), "tables"))
-
-  # Re-evaluating the same block without a table drops the old scope along
-  # with the old clause.
-  g <- add_filter_trail(f, f, "ae_flags", "TRTEMFL")
-  expect_null(attr(filter_trail(g), "tables"))
-
-  # The generated call names the arguments only when they are given, so the
-  # common carry is unchanged.
+test_that("trail_expr wraps only when there is a clause", {
   expect_identical(
-    trail_expr(quote(dm::pull_tbl(data, lb))),
-    quote(blockr.dm::add_filter_trail(dm::pull_tbl(data, lb), data))
+    trail_expr(quote(f(data)), "k", NULL),
+    quote(f(data))
   )
   expect_identical(
-    trail_expr(quote(dm::pull_tbl(data, lb)), tables = "lb"),
-    quote(blockr.dm::add_filter_trail(dm::pull_tbl(data, lb), data,
-                                      tables = "lb"))
+    trail_expr(quote(f(data)), "k", ""),
+    quote(f(data))
   )
   expect_identical(
-    trail_expr(quote(f(data)), "k", "TRTEMFL", table = "ae"),
-    quote(blockr.dm::add_filter_trail(f(data), data, "k", "TRTEMFL",
-                                      table = "ae"))
+    trail_expr(quote(f(data)), "k", "SEX = F"),
+    quote(blockr.dm::add_filter_trail(f(data), "k", "SEX = F"))
+  )
+  expect_identical(
+    trail_expr(quote(f(data)), "k", "TRTEMFL", tables = "ae"),
+    quote(blockr.dm::add_filter_trail(f(data), "k", "TRTEMFL", tables = "ae"))
   )
 })
 
 test_that("the devmaster shape: an AE-only flag leaves the lab branch alone", {
 
-  skip_if_not_installed("dm")
-
-  adsl <- data.frame(
-    USUBJID = paste0("S", 1:3),
-    SEX = c("F", "M", "F"),
-    stringsAsFactors = FALSE
-  )
-  ae <- data.frame(
-    USUBJID = c("S1", "S1", "S2"),
-    TRTEMFL = c("Y", "N", "Y"),
-    stringsAsFactors = FALSE
-  )
-  lb <- data.frame(
-    USUBJID = c("S1", "S2", "S3"),
-    LBSTRESN = c(10, 20, 30),
-    stringsAsFactors = FALSE
-  )
-  d <- dm::dm(adsl = adsl, ae = ae, lb = lb) |>
-    dm::dm_add_pk(adsl, USUBJID) |>
-    dm::dm_add_fk(ae, USUBJID, adsl) |>
-    dm::dm_add_fk(lb, USUBJID, adsl)
-
   # What the flag filter emits in dm mode: one table narrowed without a
-  # cascade, the clause scoped to it.
+  # cascade, the clause on that table only.
   flagged <- eval(
     trail_expr(
       quote(dm::dm_update_zoomed(
         dplyr::filter(dm::dm_zoom_to(data, ae), TRTEMFL == "Y")
       )),
-      "ae_flags", "TRTEMFL", table = "ae"
+      "ae_flags", "TRTEMFL", tables = "ae"
     ),
-    list(data = d)
+    list(data = trail_dm())
   )
-  # as.vector(): the scope rides on the vector, and unname() keeps it.
-  expect_identical(as.vector(filter_trail(flagged)), "TRTEMFL")
-  expect_identical(attr(filter_trail(flagged), "tables"), list(ae_flags = "ae"))
+  expect_identical(filter_trail(flagged), c(ae_flags = "TRTEMFL"))
   expect_equal(nrow(dm::pull_tbl(flagged, adsl)), 3L)
 
-  # The crossfilter on top: unscoped, because dm_filter cascades.
+  # The crossfilter on top, on every table, because dm_filter cascades.
   both <- eval(
     trail_expr(
       quote(dm::dm_filter(data, adsl = SEX == "F")),
@@ -260,100 +229,75 @@ test_that("the devmaster shape: an AE-only flag leaves the lab branch alone", {
     ),
     list(data = flagged)
   )
+  # The union keeps the order the filters ran in, although adsl, the first
+  # table, has only the second clause.
   expect_identical(names(filter_trail(both)), c("ae_flags", "global_filter"))
-  expect_identical(attr(filter_trail(both), "tables"), list(ae_flags = "ae"))
 
-  # Leaving the dm through lb + adsl, as the Lab flatten does: the AE clause
-  # stays behind and the global one comes along.
-  lab <- eval(
-    trail_expr(
-      quote(dm::dm_flatten_to_tbl(data, lb, adsl)),
-      tables = c("lb", "adsl")
-    ),
-    list(data = both)
-  )
+  # Leaving the dm through lb, as the Lab flatten does: the AE clause stays
+  # behind and the global one comes along.
+  lab <- dm::dm_flatten_to_tbl(both, lb, adsl)
   expect_identical(filter_trail(lab), c(global_filter = "SEX = F"))
   expect_identical(sort(lab$USUBJID), c("S1", "S3"))
 
-  # Leaving through ae keeps it, in the order the filters applied.
-  aes <- eval(
-    trail_expr(
-      quote(dm::dm_flatten_to_tbl(data, ae, adsl)),
-      tables = c("ae", "adsl")
-    ),
-    list(data = both)
-  )
+  # Leaving through ae keeps both, in order.
+  aes <- dm::dm_flatten_to_tbl(both, ae, adsl)
   expect_identical(unname(filter_trail(aes)), c("TRTEMFL", "SEX = F"))
   expect_identical(aes$USUBJID, "S1")
 
   # And a pull of adsl alone, as the Population view does.
-  pop <- eval(
-    trail_expr(quote(dm::pull_tbl(data, adsl)), tables = "adsl"),
-    list(data = both)
+  expect_identical(filter_trail(dm::pull_tbl(both, adsl)),
+                   c(global_filter = "SEX = F"))
+})
+
+test_that("merge_trails keeps the order the clauses were added", {
+  expect_identical(merge_trails(list()), character())
+  expect_identical(
+    merge_trails(list(
+      adsl = c(b = "2", d = "4"),
+      ae = c(a = "1", b = "2", c = "3", d = "4"),
+      lb = c(b = "2", e = "5")
+    )),
+    c(a = "1", b = "2", e = "5", c = "3", d = "4")
   )
-  expect_identical(filter_trail(pop), c(global_filter = "SEX = F"))
 })
 
-test_that("a counted filter records the subjects it kept", {
-  adsl <- data.frame(USUBJID = c("a", "b", "c"), SEX = c("F", "F", "M"))
-  adae <- data.frame(USUBJID = c("a", "c"), AETERM = c("x", "y"))
-  d <- dm::dm(adsl = adsl, adae = adae) |>
-    dm::dm_add_pk(adsl, USUBJID) |>
-    dm::dm_add_fk(adae, USUBJID, adsl)
-  out <- dm::dm_filter(d, adsl = SEX == "F")
-  res <- add_filter_trail(out, d, "drill", "SEX = F", count = TRUE)
-  expect_identical(filter_trail_counts(res)$drill, c(before = 3L, after = 2L))
-  # the count rides along a later filter's entry, and stays with its key
-  res2 <- add_filter_trail(res, res, "other", "AETERM = x")
-  expect_identical(filter_trail_counts(res2)$drill, c(before = 3L, after = 2L))
-  expect_null(filter_trail_counts(res2)$other)
-  # and survives leaving the dm
-  flat <- add_filter_trail(as.data.frame(res2$adsl), res2, tables = "adsl")
-  expect_identical(filter_trail_counts(flat)$drill, c(before = 3L, after = 2L))
+test_that("dm keeps table attributes through the verbs the trail relies on", {
+  # The trail depends on this; if dm ever stops doing it, this fails first.
+  d <- trail_dm()
+  tbls <- dm::dm_get_tables(d)
+  d <- do.call(dm::dm_mutate_tbl, c(list(d), lapply(tbls, function(t) {
+    attr(t, "probe") <- "yes"
+    t
+  })))
+  probe <- function(x) {
+    if (inherits(x, "dm")) {
+      unname(vapply(dm::dm_get_tables(x), attr, "", "probe"))
+    } else {
+      attr(x, "probe")
+    }
+  }
+  expect_identical(probe(dm::dm_filter(d, adsl = SEX == "F")), rep("yes", 3))
+  expect_identical(probe(dm::dm_filter(d, ae = TRTEMFL == "Y")), rep("yes", 3))
+  zoomed <- dm::dm_update_zoomed(
+    dplyr::filter(dm::dm_zoom_to(d, ae), TRTEMFL == "Y")
+  )
+  expect_identical(probe(zoomed), rep("yes", 3))
+  expect_identical(probe(dm::pull_tbl(d, lb)), "yes")
+  expect_identical(probe(dm::dm_flatten_to_tbl(d, lb, adsl)), "yes")
+  expect_identical(
+    probe(dm::dm_flatten_to_tbl(d, ae, adsl, .join = dplyr::inner_join)),
+    "yes"
+  )
 })
 
-test_that("an uncounted filter records no count", {
-  d <- data.frame(x = 1:3)
-  res <- add_filter_trail(d, NULL, "f", "x > 1")
-  expect_identical(filter_trail_counts(res), list())
-  expect_null(attr(filter_trail(res), "counts"))
-})
-
-test_that("the counted expression asks for the count", {
-  e <- trail_expr(quote(f(data)), "k", "SEX = F", count = TRUE)
-  expect_true(isTRUE(as.list(e)$count))
-})
-
-test_that("the provenance rides from a dm table onto the pulled frame", {
-  adsl <- data.frame(USUBJID = c("a", "b"), SEX = c("F", "M"))
+test_that("provenance is read off the first table that has one", {
+  d <- trail_dm()
+  adsl <- dm::pull_tbl(d, adsl)
   attr(adsl, "blockr_provenance") <- list(dataset = "AQ-001", path = "/d/aq")
-  adae <- data.frame(USUBJID = c("a", "b"), AETERM = c("x", "y"))
-  d <- dm::dm(adsl = adsl, adae = adae) |>
-    dm::dm_add_pk(adsl, USUBJID) |>
-    dm::dm_add_fk(adae, USUBJID, adsl)
-  expect_identical(dataset_name(d), "AQ-001")
-
+  d <- dm::dm_mutate_tbl(d, adsl = adsl)
+  expect_identical(provenance(d)$dataset, "AQ-001")
   # a filter rebuilds the dm, the table keeps it
-  f <- dm::dm_filter(d, adsl = SEX == "F")
-  expect_identical(dataset_name(f), "AQ-001")
-
-  # a table that never carried it gets it at the pull, trail or not
-  ae <- eval(
-    trail_expr(quote(dm::pull_tbl(data, adae)), tables = "adae"),
-    list(data = f)
-  )
-  expect_identical(dataset_name(ae), "AQ-001")
-  expect_identical(provenance(ae)$path, "/d/aq")
-  expect_null(filter_trail(ae))
-
-  # an aggregate that carries the trail carries the name
-  s <- add_filter_trail(data.frame(n = 1L), ae)
-  expect_identical(dataset_name(s), "AQ-001")
-})
-
-test_that("no provenance, no attribute", {
-  d <- add_filter_trail(data.frame(x = 1), data.frame(x = 1), "k", "x = 1")
-  expect_null(dataset_name(d))
-  expect_null(provenance(d))
-  expect_null(attr(d, "blockr_provenance"))
+  expect_identical(provenance(dm::dm_filter(d, adsl = SEX == "F"))$path,
+                   "/d/aq")
+  expect_null(provenance(data.frame(x = 1)))
 })

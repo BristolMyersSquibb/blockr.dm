@@ -1289,9 +1289,9 @@ crossfilter_server <- function(active_dims, filters, range_filters,
           # What this block contributes to the filter trail (see
           # `?filter_trail`). Rendered from the live state, so it says what a
           # reader needs ("SEX = F; lb.LBSTRESN 50 to 99") rather than the
-          # deparsed condition. The two `identity(data)` returns above are not
-          # wrapped: `identity()` hands the object back unchanged, so an
-          # incoming trail passes through them untouched.
+          # deparsed condition. `dm_filter()` cascades, so on a dm the clause
+          # goes on every table. The two `identity(data)` returns above add
+          # nothing: the trail upstream rides on the tables untouched.
           clause <- crossfilter_clause(cat_filters, rng_filters)
 
           # Single-table input (data.frame or 1-table dm): use dplyr::filter
@@ -1522,7 +1522,7 @@ build_lookups_independent <- function(
 
 # The one line of text a data source can put under the cards, e.g. which
 # study and extract the board is looking at. It is the `note` field of the
-# `blockr_provenance` list (`?provenance`), which rides on a TABLE rather
+# `blockr_provenance` list (`provenance()`), which rides on a TABLE rather
 # than on the dm: every dm verb (filter, key edits, dm_mutate_tbl) rebuilds
 # the dm and drops its attributes, while a table's attributes come through,
 # the way `blockr_kinds` does.

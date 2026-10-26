@@ -1,164 +1,180 @@
 #' Filter trail
 #'
 #' The record of which filters produced a table, carried on the data itself as
-#' a `blockr_filters` attribute so that any downstream consumer -- a chart
-#' caption, a composer footnote, a code block script -- can print what was
-#' applied without knowing anything about the board.
+#' a `blockr_filters` attribute so that any downstream consumer (a chart
+#' caption, a table footnote, a download) can print what was applied without
+#' knowing anything about the board.
 #'
-#' The trail is a **named character vector, keyed by block id**. The key makes
-#' three things work without further machinery: a block that re-evaluates
-#' replaces its own clause rather than appending a second copy, two branches
-#' meeting at a fan-in collapse to one entry per producing block, and a
-#' consumer can map a clause back to the block that set it.
+#' The trail is a **named character vector, keyed by block**. A filter block
+#' writes its clause under its own key, so two branches meeting at a fan-in
+#' collapse to one entry per block, and a consumer can map a clause back to
+#' the block that set it.
 #'
-#' @section Why every block reads and writes explicitly:
-#' `dm::dm_filter()` drops attributes set on a `dm`, and
-#' `dm::dm_flatten_to_tbl()` / `dm::pull_tbl()` build a fresh tibble, so a
-#' trail cannot be left to survive a dm on its own. `add_filter_trail()`
-#' therefore takes both the result and the block's *input*: it reads the
-#' incoming trail off the input, appends this block's clause if it has one, and
-#' writes the whole thing onto the output. Nothing depends on an attribute
-#' surviving an operation.
+#' @section Where it lives:
+#' On a data frame the attribute sits on the frame. On a `dm` it sits on the
+#' **tables**, not on the dm object: every dm verb (`dm::dm_filter()`, zooming,
+#' key edits) rebuilds the dm and drops attributes set on it, but keeps the
+#' attributes of its tables, and `dm::pull_tbl()` and `dm::dm_flatten_to_tbl()`
+#' hand a table's attributes on to the frame they return (a flatten keeps the
+#' start table's). So a trail written onto the tables reaches every frame cut
+#' from the dm with no further code, the way dplyr keeps a data frame's
+#' attributes through `filter()`, `mutate()` and joins.
 #'
-#' On the data-frame side dplyr does preserve attributes (`filter`, `mutate`,
-#' `select`, `arrange`, `distinct`, `left_join`, `bind_rows`), so blocks that
-#' merely reshape need no wrapping. `summarise()` and `tidyr::pivot_wider()`
-#' do not preserve them, and a block that aggregates has to carry the trail
-#' across with `add_filter_trail(out, data)` explicitly.
+#' Which tables a clause goes on says which tables the filter narrowed.
+#' `dm::dm_filter()` cascades over the keys, so a filter written against `ae`
+#' narrows `adsl` and through it every other table: by default the clause goes
+#' on every table. A filter that narrows one table without cascading passes
+#' that table as `tables`, and a frame pulled from another table does not
+#' carry the clause.
 #'
-#' @section Table scope:
-#' A block that narrows ONE table of a dm without cascading over the keys
-#' (blockr.pharma's flag filter with `table` set) records its clause with
-#' `table`, and the entry carries that scope. The crossfilter and the value
-#' filter do not: `dm::dm_filter()` cascades, so a filter written against
-#' `ae` narrows `adsl` and through it every table hanging off `adsl`, and the
-#' clause belongs on every branch.
+#' `dplyr::summarise()` and `tidyr::pivot_wider()` do not keep attributes, so a
+#' block that aggregates has to copy the trail across itself.
 #'
-#' The scope is applied where a branch leaves the dm. The pull and flatten
-#' blocks pass the tables they read as `tables`, and an entry scoped to a
-#' table outside that set is dropped: a lab chart fed from `lb` and `adsl`
-#' does not print the `TRTEMFL` filter that only ever touched `ae`. The
-#' entries that survive are carried without their scope, a data frame having
-#' no tables. A flatten with an empty include list and `.recursive = TRUE`
-#' reads every table reachable from the start table but passes only the
-#' start table; the boards do not use that form.
+#' @param x A data frame or a `dm`.
+#' @param key Name the clause is stored under, unique to the block that writes
+#'   it.
+#' @param clause What the block filtered, e.g. `"SEX = F; AGE 18 to 64"`. An
+#'   empty or missing clause adds nothing, so a filter with nothing selected
+#'   leaves no trace.
+#' @param tables For a `dm`: the tables to write the clause on
+#'   (`add_filter_trail()`) or read the trail from (`filter_trail()`). `NULL`,
+#'   the default, means every table. Ignored for a data frame.
 #'
-#' @param x Object to read a trail from (a `dm`, a data frame, or anything
-#'   else, in which case `NULL` is returned).
-#' @param out The block's result: the object the trail is written onto.
-#' @param input The block's input, read for the incoming trail. `NULL` starts
-#'   a fresh trail.
-#' @param key Block id under which this block's clause is stored. `NULL` (the
-#'   default) carries the incoming trail without adding to it, which is what a
-#'   block that reshapes rather than filters wants.
-#' @param clause Human-readable description of what this block filtered, e.g.
-#'   `"SEX = F; AGE 18 to 64"`. An empty or missing clause adds nothing, so a
-#'   filter block with nothing selected leaves no trace.
-#' @param table Name of the one table `clause` narrowed, for a block that
-#'   filters a single table of a dm without cascading. `NULL` (the default)
-#'   records an unscoped clause, which every branch carries.
-#' @param tables The tables the output was built from, passed by a block that
-#'   turns a dm into a data frame. Entries scoped to a table outside this set
-#'   are dropped, and the rest lose their scope. `NULL` (the default) drops
-#'   nothing.
-#' @param count Also record how many subjects the filter kept: the rows of
-#'   the dm's subject table (its first primary-key table) in `input` and in
-#'   `out`. Only for a dm held in memory; skipped on remote tables. Read back
-#'   with `filter_trail_counts()`.
-#'
-#' @section Provenance:
-#' The same carry takes a `blockr_provenance` attribute along: a named list
-#' saying where the data came from, set by the reader on a table of its dm,
-#' where dm verbs leave it alone. Two fields are read here: `dataset`, a short
-#' name for what the board read (a study code, a file name), used in download
-#' file names, and `note`, one line the crossfilter prints under its cards.
-#' Any other field (a path, extract dates) rides along untouched.
-#' `add_filter_trail()` copies the list onto a data frame `out` that has none,
-#' so it reaches every chart and table the trail reaches.
-#'
-#' @return `filter_trail()` returns a named character vector or `NULL`. An
-#'   entry recorded with `table` carries its scope in a `tables` attribute on
-#'   the vector, a named list keyed like the trail. `add_filter_trail()`
-#'   returns `out`, with a `blockr_filters` attribute when there is a trail to
-#'   carry and a `blockr_provenance` attribute when `input` has one.
-#'   `filter_trail_counts()` returns a named list keyed like the trail,
-#'   `c(before = , after = )` for each entry recorded with `count = TRUE`.
-#'   `provenance()` returns the list or `NULL`, `dataset_name()` a string or
-#'   `NULL`.
+#' @return `filter_trail()` returns a named character vector, or `NULL` when
+#'   nothing is recorded. On a `dm` it is the union of the tables' trails in
+#'   the order the clauses were added. `add_filter_trail()` returns `x` with
+#'   the clause added.
 #'
 #' @examples
 #' d <- data.frame(x = 1:3)
-#' d <- add_filter_trail(d, NULL, "global_filter", "SEX = F")
+#' d <- add_filter_trail(d, "sex", "SEX = F")
 #' filter_trail(d)
 #'
 #' @export
-filter_trail <- function(x) {
-  trail <- attr(x, "blockr_filters", exact = TRUE)
+filter_trail <- function(x, tables = NULL) {
+
+  trail <- if (inherits(x, "dm")) {
+    tbls <- dm::dm_get_tables(x)
+    if (!is.null(tables)) {
+      tbls <- tbls[intersect(names(tbls), tables)]
+    }
+    merge_trails(lapply(tbls, trail_attr))
+  } else {
+    trail_attr(x)
+  }
+
   if (!length(trail)) {
     return(NULL)
   }
+
   trail
 }
 
 #' @rdname filter_trail
 #' @export
-add_filter_trail <- function(out, input = NULL, key = NULL, clause = NULL,
-                             table = NULL, tables = NULL, count = FALSE) {
+add_filter_trail <- function(x, key, clause, tables = NULL) {
 
-  # A dm keeps it on its table; only a data frame needs it written.
-  prov <- provenance(input)
-  if (!is.null(prov) && !inherits(out, "dm") &&
-        is.null(attr(out, "blockr_provenance", exact = TRUE))) {
-    attr(out, "blockr_provenance") <- prov
+  if (!is.character(key) || length(key) != 1L || is.na(key) || !nzchar(key) ||
+        !length(clause) || is.na(clause[[1L]]) || !nzchar(clause[[1L]])) {
+    return(x)
   }
 
-  trail <- filter_trail(input)
-  scope <- trail_scope(trail)
-  counts <- trail_counts(trail)
+  clause <- as.character(clause[[1L]])
 
-  # Start from `character()`, not `NULL`: `NULL[["key"]] <- value` builds a
-  # LIST, and consumers paste the trail into a caption expecting a character
-  # vector.
-  if (!is.character(trail)) {
-    trail <- character()
+  stamp <- function(t) {
+    trail <- trail_attr(t)
+    trail[[key]] <- clause
+    attr(t, "blockr_filters") <- trail
+    t
   }
 
-  if (!is.null(key) && length(clause) && !is.na(clause[[1L]]) &&
-        nzchar(clause[[1L]])) {
-    trail[[key]] <- clause[[1L]]
-    # Assigning NULL removes the entry, which is what an unscoped clause
-    # wants: a block re-evaluated without `table` after having had one must
-    # not keep the old scope.
-    scope[[key]] <- if (length(table)) as.character(table) else NULL
-    counts[[key]] <- if (isTRUE(count)) trail_subject_counts(input, out)
+  if (!inherits(x, "dm")) {
+    return(stamp(x))
   }
 
-  if (!is.null(tables) && length(trail)) {
-    keep <- vapply(
-      names(trail),
-      function(k) is.null(scope[[k]]) || any(scope[[k]] %in% tables),
-      logical(1L)
-    )
-    trail <- trail[keep]
-    scope <- list()
-    # Counts are subjects, not tables: they survive leaving the dm.
-    counts <- counts[intersect(names(counts), names(trail))]
+  tbls <- dm::dm_get_tables(x)
+  nms <- if (is.null(tables)) names(tbls) else intersect(tables, names(tbls))
+
+  if (!length(nms)) {
+    return(x)
   }
 
-  if (!length(trail)) {
-    return(out)
+  do.call(dm::dm_mutate_tbl, c(list(x), lapply(tbls[nms], stamp)))
+}
+
+# The trail on one object, as a named character vector (empty if none).
+# Started from `character()`, not `NULL`: `NULL[["key"]] <- value` builds a
+# list, and consumers paste the trail into a caption.
+trail_attr <- function(x) {
+  trail <- attr(x, "blockr_filters", exact = TRUE)
+  if (!is.character(trail) || is.null(names(trail))) {
+    return(character())
+  }
+  trail
+}
+
+# Several tables' trails as one. Each table's trail is in the order its
+# clauses were added, but a table may lack some (a clause written on `ae`
+# alone). The longest goes first and every other key is inserted after the
+# last key that precedes it in its own table, so the result keeps the order
+# the filters ran in.
+merge_trails <- function(trails) {
+
+  trails <- Filter(length, trails)
+  trails <- trails[order(-lengths(trails))]
+  out <- character()
+
+  for (trail in trails) {
+    keys <- names(trail)
+    for (i in seq_along(trail)) {
+      if (keys[[i]] %in% names(out)) {
+        next
+      }
+      pos <- match(keys[seq_len(i - 1L)], names(out))
+      after <- if (any(!is.na(pos))) max(pos, na.rm = TRUE) else 0L
+      out <- append(out, trail[i], after = after)
+    }
   }
 
-  # Rebuilt rather than inherited: `[[<-` keeps the input's attribute and
-  # `[` drops it, so neither path can be trusted to reflect `scope`.
-  attr(trail, "tables") <- if (length(scope)) scope else NULL
-  attr(trail, "counts") <- if (length(counts)) counts else NULL
-  attr(out, "blockr_filters") <- trail
   out
 }
 
-#' @rdname filter_trail
-#' @export
+# The key a block writes its clause under: its module namespace, which
+# carries the board's block id and is unique per block per session.
+#
+# NOT the `id` a block server receives. `expr_server.block()` calls every
+# block's server with `id = "expr"` (blockr.core/R/block-server.R), so using
+# it would file every block's clause under one key and each filter would
+# overwrite the one before it.
+trail_key <- function(session = shiny::getDefaultReactiveDomain()) {
+  ns <- tryCatch(session$ns(""), error = function(e) NULL)
+  if (is.null(ns) || !length(ns) || !nzchar(ns)) "block" else ns
+}
+
+# Wrap a block's expression so it writes its clause. With no clause the
+# expression is returned as it is: the trail upstream rides through on the
+# tables. Self-qualified, because block expressions are deparsed into the
+# exported script.
+trail_expr <- function(inner, key, clause, tables = NULL) {
+
+  if (is.null(key) || !length(clause) || is.na(clause[[1L]]) ||
+        !nzchar(clause[[1L]])) {
+    return(inner)
+  }
+
+  args <- list(quote(blockr.dm::add_filter_trail), inner, key, clause[[1L]])
+
+  if (length(tables)) {
+    args <- c(args, list(tables = as.character(tables)))
+  }
+
+  as.call(args)
+}
+
+# Where the data came from: a named list a reader sets as a
+# `blockr_provenance` attribute on a table of its dm. `note` is the line the
+# crossfilter prints under its cards; blockr.viz reads `dataset` for
+# download file names. The first table that has one wins.
 provenance <- function(x) {
   cands <- if (inherits(x, "dm")) {
     lapply(dm::dm_get_tables(x), attr, "blockr_provenance", exact = TRUE)
@@ -171,106 +187,6 @@ provenance <- function(x) {
     }
   }
   NULL
-}
-
-#' @rdname filter_trail
-#' @export
-dataset_name <- function(x) {
-  ds <- provenance(x)$dataset
-  if (is.character(ds) && length(ds) == 1L && !is.na(ds) && nzchar(ds)) ds
-}
-
-#' @rdname filter_trail
-#' @export
-filter_trail_counts <- function(x) {
-  trail_counts(filter_trail(x))
-}
-
-# The per-entry subject counts, a named list keyed like the trail, each
-# `c(before = , after = )`; empty when no entry was counted.
-trail_counts <- function(trail) {
-  s <- attr(trail, "counts", exact = TRUE)
-  if (is.list(s)) s else list()
-}
-
-# How many subjects a filter kept: the rows of the dm's subject table (the
-# first table with a primary key, the one every other table keys to) in its
-# input and in its output. Only for tables held in memory: on a remote dm the
-# count is a query each time the filter runs, and nothing reads it yet.
-trail_subject_counts <- function(input, out) {
-  if (!inherits(input, "dm") || !inherits(out, "dm")) {
-    return(NULL)
-  }
-  pks <- dm::dm_get_all_pks(input)
-  if (!nrow(pks)) {
-    return(NULL)
-  }
-  tbl <- as.character(pks$table[[1L]])
-  before <- input[[tbl]]
-  after <- out[[tbl]]
-  if (!is.data.frame(before) || inherits(before, "tbl_lazy") ||
-        !is.data.frame(after) || inherits(after, "tbl_lazy")) {
-    return(NULL)
-  }
-  c(before = nrow(before), after = nrow(after))
-}
-
-# The per-entry table scope, a named list keyed like the trail; empty when
-# no entry is scoped.
-trail_scope <- function(trail) {
-  s <- attr(trail, "tables", exact = TRUE)
-  if (is.list(s)) s else list()
-}
-
-#' @param session The block server's Shiny session, used to derive the key.
-#'
-#' @rdname filter_trail
-#' @export
-trail_key <- function(session = shiny::getDefaultReactiveDomain()) {
-
-  # NOT the `id` a block server receives. `expr_server.block()` calls every
-  # block's server with `id = "expr"` (blockr.core/R/block-server.R), so using
-  # it would file every block's clause under one key and each filter would
-  # overwrite the one before it -- the global filter erasing the flag filter's
-  # entry, which is how this was found. The module namespace carries the
-  # board's block id and is unique per block per session.
-  ns <- tryCatch(session$ns(""), error = function(e) NULL)
-
-  if (is.null(ns) || !length(ns) || !nzchar(ns)) "block" else ns
-}
-
-#' @param inner The expression the block would otherwise return.
-#' @param data How the block's expression refers to its input. The default,
-#'   the bare symbol `data`, is what a plain block expression uses; a block
-#'   with `expr_type = "bquoted"` must pass its own input slot instead, or the
-#'   generated code carries a bare `data` that resolves to [utils::data()].
-#'
-#' @rdname filter_trail
-#' @export
-trail_expr <- function(inner, key = NULL, clause = NULL,
-                       data = quote(data), table = NULL, tables = NULL,
-                       count = FALSE) {
-
-  # Self-qualified: block expressions are deparsed into the exported script.
-  # Named arguments only when given, so the common carry stays the two-line
-  # call it was.
-  args <- list(quote(blockr.dm::add_filter_trail), inner, data)
-
-  if (!is.null(key) && length(clause) && nzchar(clause[[1L]])) {
-    args <- c(args, list(key, clause[[1L]]))
-    if (length(table)) {
-      args <- c(args, list(table = as.character(table)))
-    }
-    if (isTRUE(count)) {
-      args <- c(args, list(count = TRUE))
-    }
-  }
-
-  if (length(tables)) {
-    args <- c(args, list(tables = as.character(tables)))
-  }
-
-  as.call(args)
 }
 
 # How many values a categorical clause spells out before eliding. Keeps a
