@@ -29,7 +29,7 @@ backend cannot translate it at all.
 \details{
 The sentinels get the same treatment: \code{CROSSFILTER_NA} means "the missings",
 which is \code{is.na(col)}, not a literal \code{"__NA__"} that matches nothing — the
-same reading \code{\link[=apply_crossfilter_filters]{apply_crossfilter_filters()}} uses for the bar counts, so the
-expression mirrors the numbers the UI shows.
+same reading the browser uses for the bar counts, so the expression mirrors
+the numbers the UI shows.
 }
 \keyword{internal}
