@@ -8,7 +8,7 @@
 #
 #   1. rows really hold ints and levels really arrived (no silent regression
 #      to strings, which would hide a broken encode behind working display)
-#   2. the DOM shows LABELS, never codes, and sentinels render as (NA)
+#   2. the DOM shows LABELS, never codes, and sentinels render as NA
 #   3. a real bar click round-trips to R as the label STRING -- including
 #      the __NA__ sentinel -- never a code (codes reaching r_filters would
 #      corrupt saved board state)
@@ -109,7 +109,7 @@ test_that("int-native payload: codes inside, labels at every edge", {
     };
   })()")
   expect_setequal(unlist(dom$values), c("A", "B", "__NA__", "__EMPTY__"))
-  expect_true(all(c("(NA)", "(empty)") %in% unlist(dom$texts)))
+  expect_true(all(c("NA", "(empty)") %in% unlist(dom$texts)))
   # No bar row ever shows a bare code
   expect_false(any(grepl("^[0-9]+$", unlist(dom$texts))))
 

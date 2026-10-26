@@ -2976,7 +2976,7 @@
       for (const [dim, v] of Object.entries(this.filters)) {
         if (Array.isArray(v)) {
           if (!v.length) continue;
-          const shown = v.map(x => x === '__NA__' ? '(NA)'
+          const shown = v.map(x => x === '__NA__' ? 'NA'
             : x === '__EMPTY__' ? '(empty)' : x);
           parts.push(`${dim} = ${shown.join(', ')}`);
         } else if (v && v.min !== undefined) {
