@@ -1,0 +1,16 @@
+blockr.dm bundles the following third-party JavaScript library.
+
+crossfilter2 1.5.4
+  File:      inst/js/crossfilter2.min.js (minified)
+  Source:    https://github.com/crossfilter/crossfilter
+             https://www.npmjs.com/package/crossfilter2
+  Copyright: 2012-2016 Square, Inc, and crossfilter contributors
+             (https://github.com/crossfilter/crossfilter/blob/master/AUTHORS)
+             2020 Mike Bostock
+  License:   Apache License 2.0, see inst/js/LICENSE-crossfilter2 and
+             https://www.apache.org/licenses/LICENSE-2.0
+
+  crossfilter2 includes a quicksort implementation based on the one in
+  the Dart project:
+  Copyright: 2012, the Dart project authors
+  License:   BSD 3-clause, see inst/js/NOTICE-crossfilter2

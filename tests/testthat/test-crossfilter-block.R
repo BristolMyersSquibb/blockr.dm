@@ -104,9 +104,9 @@ test_that("JS-shaped filter values become atomic literals, not list()", {
 })
 
 test_that("the NA sentinel filters missings, not a literal __NA__", {
-  # `apply_crossfilter_filters()` reads CROSSFILTER_NA as is.na() when it
-  # counts the bars; the expression has to agree or the block reports a row
-  # count it does not deliver.
+  # The browser reads CROSSFILTER_NA as a missing value when it counts the
+  # bars; the expression has to agree or the block reports a row count it
+  # does not deliver.
   df <- data.frame(
     GRP = c("A", "B", NA, NA, "A"),
     stringsAsFactors = FALSE
