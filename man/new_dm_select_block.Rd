@@ -22,7 +22,7 @@ Uses \code{dm::dm_select_tbl()} to keep only the specified tables.
 \section{External control}{
 
 \code{tables} is externally controllable (see
-\code{\link[blockr.core:block_name]{blockr.core::external_ctrl_vars()}}): a board update or an assistant can
+\code{\link[blockr.core:external_ctrl_vars]{blockr.core::external_ctrl_vars()}}): a board update or an assistant can
 change the kept set with a \code{mod} delta, and the picker follows.
 }
 

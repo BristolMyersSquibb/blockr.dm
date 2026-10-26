@@ -20,15 +20,15 @@
 #' all transitively related tables are included.
 #'
 #' Use `include_tables` to limit which tables are joined - useful when you
-#' want to flatten only specific relationships (e.g., join ADAE with ADSL
-#' but not ADLB).
+#' want to flatten only specific relationships (e.g., join `orders` with
+#' `customers` but not `products`).
 #'
 #' @examples
 #' new_dm_flatten_block(start_table = "flights", recursive = TRUE)
 #'
 #' new_dm_flatten_block(
-#'   start_table = "ADSL",
-#'   include_tables = c("ADAE"),
+#'   start_table = "orders",
+#'   include_tables = c("customers"),
 #'   join_type = "inner"
 #' )
 #'

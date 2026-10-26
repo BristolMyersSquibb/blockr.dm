@@ -24,6 +24,13 @@
 #' @export
 new_dm_example_block <- function(dataset = "bi_star_schema", ...) {
 
+  # Boards saved before the clinical datasets moved to blockr.pharma still
+  # name them here.
+  if (is.character(dataset) && dataset %in% moved_example_datasets) {
+    return(forward_moved_block("new_cdisc_example_block", dataset = dataset,
+                               ...))
+  }
+
   # Resolve the initial value once so the UI can use a plain string even when
   # `dataset` is already a reactiveVal (injected by external_ctrl).
   init_dataset <- if (inherits(dataset, "reactiveVal")) {
@@ -113,6 +120,10 @@ block_render_trigger.dm_example_block <- function(
 
 # -- Choices & dispatch -------------------------------------------------------
 
+# Dataset ids that blockr.pharma::new_cdisc_example_block() serves now.
+moved_example_datasets <- c("pharmaverseadam", "pharmaversesdtm",
+                            "safetydata_adam")
+
 #' List available dm example datasets
 #'
 #' Returns a named character vector (id -> display name) of dm example datasets
@@ -124,15 +135,6 @@ dm_example_choices <- function() {
   # selectInput uses names as display labels, values as what's sent to server
   choices <- c("BI Star Schema" = "bi_star_schema")
 
-  if (requireNamespace("safetyData", quietly = TRUE)) {
-    choices[["Safety ADaM (safetyData)"]] <- "safetydata_adam"
-  }
-  if (requireNamespace("pharmaverseadam", quietly = TRUE)) {
-    choices[["Pharmaverse ADaM (pharmaverseadam)"]] <- "pharmaverseadam"
-  }
-  if (requireNamespace("pharmaversesdtm", quietly = TRUE)) {
-    choices[["Pharmaverse SDTM (pharmaversesdtm)"]] <- "pharmaversesdtm"
-  }
   if (requireNamespace("nycflights13", quietly = TRUE)) {
     choices[["NYC Flights (nycflights13)"]] <- "nycflights13"
   }
@@ -151,9 +153,6 @@ dm_example_choices <- function() {
 dm_example_expr <- function(id) {
   switch(id,
     bi_star_schema = bi_star_schema_expr(),
-    safetydata_adam = safetydata_adam_expr(),
-    pharmaverseadam = pharmaverseadam_expr(),
-    pharmaversesdtm = pharmaversesdtm_expr(),
     nycflights13 = nycflights13_expr(),
     insurancedata = insurancedata_expr(),
     stop("Unknown dm example: ", id)
@@ -224,92 +223,6 @@ bi_star_schema_expr <- function() {
     result <- dm::dm_add_fk(result, products, category_id, categories)
     result <- dm::dm_add_fk(result, orders, customer_id, customers)
     result <- dm::dm_add_fk(result, orders, product_id, products)
-    result
-  }))
-}
-
-safetydata_adam_expr <- function() {
-  quote(local({
-    adsl     <- safetyData::adam_adsl
-    adae     <- safetyData::adam_adae
-    adlbc    <- safetyData::adam_adlbc
-    adlbh    <- safetyData::adam_adlbh
-    adlbhy   <- safetyData::adam_adlbhy
-    adqsadas <- safetyData::adam_adqsadas
-    adqscibc <- safetyData::adam_adqscibc
-    adqsnpix <- safetyData::adam_adqsnpix
-    adtte    <- safetyData::adam_adtte
-    advs     <- safetyData::adam_advs
-
-    result <- dm::dm(
-      adsl = adsl, adae = adae, adlbc = adlbc, adlbh = adlbh,
-      adlbhy = adlbhy, adqsadas = adqsadas, adqscibc = adqscibc,
-      adqsnpix = adqsnpix, adtte = adtte, advs = advs
-    )
-    result <- dm::dm_add_pk(result, adsl, USUBJID)
-    result <- dm::dm_add_fk(result, adae, USUBJID, adsl)
-    result <- dm::dm_add_fk(result, adlbc, USUBJID, adsl)
-    result <- dm::dm_add_fk(result, adlbh, USUBJID, adsl)
-    result <- dm::dm_add_fk(result, adlbhy, USUBJID, adsl)
-    result <- dm::dm_add_fk(result, adqsadas, USUBJID, adsl)
-    result <- dm::dm_add_fk(result, adqscibc, USUBJID, adsl)
-    result <- dm::dm_add_fk(result, adqsnpix, USUBJID, adsl)
-    result <- dm::dm_add_fk(result, adtte, USUBJID, adsl)
-    result <- dm::dm_add_fk(result, advs, USUBJID, adsl)
-    result
-  }))
-}
-
-pharmaverseadam_expr <- function() {
-  quote(local({
-    adsl <- pharmaverseadam::adsl
-    adae <- pharmaverseadam::adae
-    adlb <- pharmaverseadam::adlb
-    advs <- pharmaverseadam::advs
-    adcm <- pharmaverseadam::adcm
-    adeg <- pharmaverseadam::adeg
-    adex <- pharmaverseadam::adex
-
-    result <- dm::dm(
-      adsl = adsl, adae = adae, adlb = adlb, advs = advs,
-      adcm = adcm, adeg = adeg, adex = adex
-    )
-    result <- dm::dm_add_pk(result, adsl, USUBJID)
-    result <- dm::dm_add_fk(result, adae, USUBJID, adsl)
-    result <- dm::dm_add_fk(result, adlb, USUBJID, adsl)
-    result <- dm::dm_add_fk(result, advs, USUBJID, adsl)
-    result <- dm::dm_add_fk(result, adcm, USUBJID, adsl)
-    result <- dm::dm_add_fk(result, adeg, USUBJID, adsl)
-    result <- dm::dm_add_fk(result, adex, USUBJID, adsl)
-    result
-  }))
-}
-
-# Raw SDTM domains (not ADaM): domain table names (dm/ae/vs/lb/cm) and SDTM
-# column spellings (AESTDTC, VSTESTCD, LBSTRESN, ...). Consumers that
-# declare against ADaM names reconcile via their own normalization (e.g.
-# blockr.pharma's patient profile); this block hands over the study as
-# shipped.
-pharmaversesdtm_expr <- function() {
-  quote(local({
-    dm <- pharmaversesdtm::dm
-    ae <- pharmaversesdtm::ae
-    vs <- pharmaversesdtm::vs
-    lb <- pharmaversesdtm::lb
-    cm <- pharmaversesdtm::cm
-    eg <- pharmaversesdtm::eg
-    ex <- pharmaversesdtm::ex
-
-    result <- dm::dm(
-      dm = dm, ae = ae, vs = vs, lb = lb, cm = cm, eg = eg, ex = ex
-    )
-    result <- dm::dm_add_pk(result, dm, USUBJID)
-    result <- dm::dm_add_fk(result, ae, USUBJID, dm)
-    result <- dm::dm_add_fk(result, vs, USUBJID, dm)
-    result <- dm::dm_add_fk(result, lb, USUBJID, dm)
-    result <- dm::dm_add_fk(result, cm, USUBJID, dm)
-    result <- dm::dm_add_fk(result, eg, USUBJID, dm)
-    result <- dm::dm_add_fk(result, ex, USUBJID, dm)
     result
   }))
 }

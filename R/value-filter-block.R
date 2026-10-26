@@ -2,7 +2,7 @@
 #
 # NA (and the empty string "") are surfaced as selectable options in the value
 # picker, the same way Excel shows a "(Blanks)" entry. This lets a user pick,
-# for a flag like TRTEMFL: "Y" only, missing only, or both (multi-select).
+# for a flag column: "Y" only, missing only, or both (multi-select).
 #
 # DESIGN NOTE — why tokens, not a data sentinel.
 # The values are carried as the literal UI tokens "<NA>" / "<empty>" (mirroring
@@ -61,8 +61,7 @@ VALUE_FILTER_EMPTY <- "<empty>"  # nolint: object_name_linter.
 #'   blockr.dplyr filter block. (Legacy saved states with a logical
 #'   single-select value of "FALSE" still evaluate as `!(col %in% TRUE)`.)
 #'   Old-style state (`list(columns=character, modes=list, values=list)`)
-#'   is auto-migrated via [migrate_value_filter_state()] for backward
-#'   compatibility.
+#'   is migrated to the current shape.
 #' @param ... Additional arguments forwarded to [blockr.core::new_transform_block()].
 #'
 #' @examples
@@ -151,7 +150,7 @@ value_filter_server <- function(state, drill = FALSE) {
       # SKIPS any entry whose table is empty, which means an unresolved claim is
       # dropped without a word. Resolve it here, where the dm is, and say so
       # when it cannot be resolved -- the derived-column case, e.g. a composer
-      # table claiming `DEATH` against a dm that only carries `DTHFL`.
+      # table claiming `order_year` against a dm that only carries `order_date`.
       r_drill_note <- shiny::reactiveVal(character())
 
       # Send column metadata (names/labels/table) on data change. The
@@ -347,7 +346,7 @@ value_filter_server <- function(state, drill = FALSE) {
           # lands untabled, the state mod rebuilds this expression at once, and
           # make_dm_filter_expr() skips untabled entries -- so the first
           # evaluation filtered NOTHING and the whole dm went downstream. The
-          # cohort showed every patient for one board evaluation until the
+          # selection showed every customer for one board evaluation until the
           # observer's resolution pass caught up and narrowed it again: drill,
           # flash to everyone, snap back, on every re-aim of a dm-backed drill.
           # Resolving inline makes the first evaluation the right one; the
@@ -363,7 +362,7 @@ value_filter_server <- function(state, drill = FALSE) {
           )
           # Stamp the trail (filter-trail.R), on every table of a dm because
           # `dm::dm_filter()` cascades. That is how a downstream reader (a
-          # chart caption, the patient profile's cohort pill) learns what
+          # chart caption, a downstream profile's filter pill) learns what
           # narrowed its data from the data itself. The key is this block's
           # module namespace, which carries its board id, so the reader can
           # tell the drill filter's clause from the global one.
@@ -415,15 +414,7 @@ value_filter_ui <- function(drill = FALSE) {
 #'
 #' @param state Filter state (old or new shape).
 #' @return Filter state in the new column-object shape.
-#'
-#' @examples
-#' migrate_value_filter_state(
-#'   list(columns = "Species",
-#'        modes   = list(Species = "single"),
-#'        values  = list(Species = "setosa"))
-#' )
-#'
-#' @export
+#' @noRd
 migrate_value_filter_state <- function(state) {
   if (is.null(state)) {
     return(list(columns = list(), operator = "&"))
@@ -690,7 +681,7 @@ first_value <- function(src) {
 #' available, the claim was parked untabled, and the FIRST thing to run when
 #' the panel came back was this data observer, which deleted it before the
 #' resolution pass ever saw it. The drill reached a state nobody read, the
-#' sender's status line said "Filtered: SEX = F", and the profile showed
+#' sender's status line said "Filtered: segment = Consumer", and the profile showed
 #' everyone. Resolving first makes the entry findable, so only genuinely
 #' stale entries are dropped.
 #'

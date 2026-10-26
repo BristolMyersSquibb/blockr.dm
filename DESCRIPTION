@@ -20,39 +20,30 @@ Authors@R:
              role = "cph",
              comment = "quicksort implementation in crossfilter2"))
 Maintainer: Christoph Sax <christoph@cynkra.com>
-Description: Extends 'blockr.core' with interactive blocks for visual management
-    of relational data using the 'dm' package. Users can combine multiple data
-    frames into data models, define primary and foreign key relationships,
-    filter across related tables with automatic cascading, and flatten to single
-    tables. Includes interactive diagrams showing table relationships.
-    Particularly useful for pharmaceutical data like ADaM datasets where tables
-    share subject identifiers (USUBJID).
+Description: Blocks for working with relational data in 'blockr.core'
+    boards, built on the 'dm' package. Combine data frames into a data model,
+    set primary and foreign keys, select, pull and flatten tables, and filter
+    across linked tables with cascading through foreign keys. A crossfilter
+    block shows linked counts for any column of any table and filters them
+    in the browser.
 License: GPL (>= 3)
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
 URL: https://bristolmyerssquibb.github.io/blockr.dm/
 BugReports: https://github.com/BristolMyersSquibb/blockr.dm/issues
 Imports:
-    blockr.ai,
     blockr.core,
     blockr.dplyr,
-    blockr.io (>= 0.1.0.9014),
     blockr.ui,
     dm,
     dplyr,
     htmltools,
-    readr,
-    readxl,
     rlang,
     shiny,
-    shinyjs,
     stats,
-    utils,
-    writexl,
-    zip
+    utils
 Suggests:
-    arrow,
-    blockr,
+    blockr.ai,
     blockr.dag,
     blockr.dock,
     bslib,
@@ -60,16 +51,10 @@ Suggests:
     DBI,
     dbplyr,
     DT,
-    haven,
     insuranceData,
     jsonlite,
-    nanoparquet,
     nycflights13,
-    pharmaverseadam,
-    pharmaversesdtm,
-    pins,
     reactives,
-    rio,
     RSQLite,
     rvest,
     safetyData,
@@ -85,9 +70,7 @@ Remotes:
     BristolMyersSquibb/blockr.ai,
     BristolMyersSquibb/blockr.core,
     BristolMyersSquibb/blockr.dplyr,
-    BristolMyersSquibb/blockr.io,
     BristolMyersSquibb/blockr.ui,
-    BristolMyersSquibb/blockr,
     BristolMyersSquibb/blockr.dag,
     BristolMyersSquibb/blockr.dock,
     nbenn/reactives

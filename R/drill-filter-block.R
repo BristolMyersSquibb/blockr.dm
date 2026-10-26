@@ -3,7 +3,7 @@
 # blockr.viz's bridge extension (`new_ctrl_bridge_extension()`) opens the
 # channel; a drilling block (a chart, a table, a tile, or a composer table
 # drawn straight in a function block) pushes a CLAIM down it -- "the user
-# clicked SEX = F". This block is what the claim lands in.
+# clicked segment = Consumer". This block is what the claim lands in.
 #
 # It is a value filter with two differences, and both exist because the sender
 # does not hold the data model:
@@ -12,9 +12,9 @@
 #    returns the one block on the board that is the drill's destination, so a
 #    sender needs no configured target. That is the whole reason this is a
 #    separate class rather than an argument on the value filter: a board
-#    typically carries many value filters (a large clinical board has eight),
-#    and a sender scanning for them cannot tell which one means "the cohort the
-#    user just drilled into". blockr.viz's senders fall back to the value
+#    typically carries many value filters (a large board can have eight),
+#    and a sender scanning for them cannot tell which one means "the
+#    selection the user just drilled into". blockr.viz's senders fall back to the value
 #    filter when no drill filter is present, so existing boards are unaffected.
 #
 # 2. IT RESOLVES THE TABLE ITSELF. A claim names a column. On a `dm` a
@@ -27,9 +27,9 @@
 #    answer is, and `ctrl_table` becomes optional.
 #
 # A claim that resolves to no table at all is REPORTED, not swallowed. That is
-# the derived-column case: a composer table that builds `DEATH` out of `DTHFL`
-# claims `DEATH`, and no table in the dm has that column. Before this block the
-# claim went out, the sender's status line said "Filtered: DEATH = Died", and
+# the derived-column case: a composer table that builds `order_year` out of `order_date`
+# claims `order_year`, and no table in the dm has that column. Before this block the
+# claim went out, the sender's status line said "Filtered: order_year = 2024", and
 # nothing moved. The fix for that stays the author's (stamp `source_data` so
 # the click resolves to subject ids instead), but the board now says which
 # claim it could not place instead of leaving it to be discovered by eye.
@@ -58,7 +58,7 @@
 #' `table` as well, and this block fills it in:
 #'
 #' * exactly one table carries the column: that table.
-#' * several carry it (a subject id is in every ADaM table): the table where it
+#' * several carry it (an id such as `customer_id` is in several tables): the table where it
 #'   is the PRIMARY KEY, because `dm::dm_filter()` cascades along foreign keys,
 #'   so restricting the parent restricts the children too.
 #' * no table carries it: nothing is filtered and the block says which column
@@ -159,8 +159,8 @@ resolve_claim_tables <- function(state, shape) {
 #' `NULL` when no table carries it. With several candidates the PRIMARY KEY
 #' table wins: `dm::dm_filter()` cascades along foreign keys, so restricting the
 #' parent restricts every child, whereas restricting one child leaves its
-#' siblings untouched. A subject id claimed off an AE table should narrow the
-#' whole data model, not just the AEs.
+#' siblings untouched. A customer id claimed off an orders table should narrow the
+#' whole data model, not just the orders.
 #' @noRd
 claim_table_for <- function(col, tbls, pks) {
 

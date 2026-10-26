@@ -10,7 +10,7 @@ test_that("crossfilter_level_order follows factor levels, else sorts", {
 test_that("a pool's default name follows its members", {
   lv <- c("Placebo", "Xanomeline High Dose", "Xanomeline Low Dose")
   expect_equal(crossfilter_pool_default_name(character(), lv), "New pool")
-  expect_equal(crossfilter_pool_default_name(rev(lv), lv), "All patients")
+  expect_equal(crossfilter_pool_default_name(rev(lv), lv), "All")
   expect_equal(
     crossfilter_pool_default_name(
       c("Xanomeline Low Dose", "Xanomeline High Dose"), lv

@@ -127,10 +127,10 @@ compress_crossfilter_lookups <- function(encoded_lookups) {
 #'
 #' The JS UI publishes selected levels as label STRINGS inside a JSON array,
 #' and Shiny decodes incoming messages with `simplifyVector = FALSE`, so
-#' `["F"]` reaches R as `list("F")` — never an atomic vector. Pasting that
-#' straight into a call produced `SEX == list("F")`: base R coerces the list
-#' when the condition is evaluated on a plain data frame, so it looked like it
-#' worked, but the generated code is wrong to read and a lazy (DuckDB/dbplyr)
+#' `["Consumer"]` reaches R as `list("Consumer")`, never as an atomic vector.
+#' Pasting that straight into a call produced `segment == list("Consumer")`:
+#' base R coerces the list when the condition is evaluated on a plain data
+#' frame, so it looked like it worked, but the generated code is wrong to read and a lazy (DuckDB/dbplyr)
 #' backend cannot translate it at all.
 #'
 #' The sentinels get the same treatment: `CROSSFILTER_NA` means "the missings",
@@ -306,10 +306,11 @@ build_crossfilter_lookups <- function(
 
   if (length(lookups) == 0) return(NULL)
 
-  # Emit a parent-keyed lookup so parent-dim cards (e.g. ARM, SEX) count over
-  # the full set of parent records rather than getting hosted on a child
+  # Emit a parent-keyed lookup so parent-dim cards (e.g. segment, city) count
+  # over the full set of parent records rather than getting hosted on a child
   # instance — which would undercount any parent that lacks rows in that
-  # child (e.g. subjects with no AEs missing from an adae-hosted ARM card).
+  # child (e.g. customers with no orders missing from an orders-hosted
+  # segment card).
   if (length(parent_dims) > 0) {
     parent_select <- unique(c(parent_key, parent_dims))
     if (

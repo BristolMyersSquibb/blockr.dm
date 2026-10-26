@@ -21,8 +21,8 @@
 #' attributes through `filter()`, `mutate()` and joins.
 #'
 #' Which tables a clause goes on says which tables the filter narrowed.
-#' `dm::dm_filter()` cascades over the keys, so a filter written against `ae`
-#' narrows `adsl` and through it every other table: by default the clause goes
+#' `dm::dm_filter()` cascades over the keys, so a filter written against `orders`
+#' narrows `customers` and through it every other table: by default the clause goes
 #' on every table. A filter that narrows one table without cascading passes
 #' that table as `tables`, and a frame pulled from another table does not
 #' carry the clause.
@@ -33,7 +33,7 @@
 #' @param x A data frame or a `dm`.
 #' @param key Name the clause is stored under, unique to the block that writes
 #'   it.
-#' @param clause What the block filtered, e.g. `"SEX = F; AGE 18 to 64"`. An
+#' @param clause What the block filtered, e.g. `"segment = Consumer; city = Boston"`. An
 #'   empty or missing clause adds nothing, so a filter with nothing selected
 #'   leaves no trace.
 #' @param tables For a `dm`: the tables to write the clause on
@@ -47,7 +47,7 @@
 #'
 #' @examples
 #' d <- data.frame(x = 1:3)
-#' d <- add_filter_trail(d, "sex", "SEX = F")
+#' d <- add_filter_trail(d, "segment", "segment = Consumer")
 #' filter_trail(d)
 #'
 #' @export
@@ -114,8 +114,8 @@ trail_attr <- function(x) {
 }
 
 # Several tables' trails as one. Each table's trail is in the order its
-# clauses were added, but a table may lack some (a clause written on `ae`
-# alone). The longest goes first and every other key is inserted after the
+# clauses were added, but a table may lack some (a clause written on
+# `orders` alone). The longest goes first and every other key is inserted after the
 # last key that precedes it in its own table, so the result keeps the order
 # the filters ran in.
 merge_trails <- function(trails) {
@@ -232,7 +232,7 @@ value_filter_clause <- function(columns, operator = "&") {
     e <- cols[[i]]
 
     # A drill claim on subject ids carries the clause the user clicked
-    # (blockr.viz `dd_ctrl_claims(subject =)`): "AEBODSYS = Nausea" reads,
+    # (blockr.viz `dd_ctrl_claims(subject =)`): "category_name = Books" reads,
     # sixty-nine ids do not.
     lbl <- e$label
     if (is.character(lbl) && length(lbl) == 1L && !is.na(lbl) && nzchar(lbl)) {
@@ -263,7 +263,7 @@ value_filter_clause <- function(columns, operator = "&") {
 # Render the crossfilter's live state as one clause. The table is named only
 # when more than one is filtered: on a single-table filter the column alone
 # reads better, and on a multi-table one it is the whole point (a filter
-# written against `lb` restricts `ae` through the key graph, so a caption that
+# written against `orders` restricts `customers` through the key graph, so a caption that
 # does not say which table it was written against is misleading).
 crossfilter_clause <- function(cat_filters, range_filters) {
 

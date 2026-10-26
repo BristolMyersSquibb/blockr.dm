@@ -55,37 +55,6 @@ test_that("dm example block returns dm with default (bi_star_schema)", {
   )
 })
 
-test_that("safetydata_adam_expr produces valid dm", {
-  skip_if_not_installed("safetyData")
-  result <- eval(safetydata_adam_expr())
-
-  expect_s3_class(result, "dm")
-  tables <- sort(names(dm::dm_get_tables(result)))
-  expect_equal(length(tables), 10L)
-  expect_true("adsl" %in% tables)
-
-  pks <- dm::dm_get_all_pks(result)
-  expect_true("adsl" %in% pks$table)
-
-  fks <- dm::dm_get_all_fks(result)
-  expect_true(all(fks$parent_table == "adsl"))
-})
-
-test_that("pharmaverseadam_expr produces valid dm", {
-  skip_if_not_installed("pharmaverseadam")
-  result <- eval(pharmaverseadam_expr())
-
-  expect_s3_class(result, "dm")
-  tables <- sort(names(dm::dm_get_tables(result)))
-  expect_equal(
-    tables,
-    c("adae", "adcm", "adeg", "adex", "adlb", "adsl", "advs")
-  )
-
-  pks <- dm::dm_get_all_pks(result)
-  expect_true("adsl" %in% pks$table)
-})
-
 test_that("nycflights13_expr produces valid dm", {
   skip_if_not_installed("nycflights13")
   result <- eval(nycflights13_expr())
@@ -96,4 +65,21 @@ test_that("nycflights13_expr produces valid dm", {
 
 test_that("dm_example_expr errors on unknown id", {
   expect_error(dm_example_expr("nonexistent"), "Unknown dm example")
+})
+
+test_that("blocks that moved to blockr.pharma still construct from here", {
+  skip_if_not_installed("blockr.pharma")
+  pharma <- asNamespace("blockr.pharma")
+  skip_if_not(exists("new_cdisc_example_block", pharma) &&
+                exists("new_cdisc_dm_block", pharma))
+
+  blk <- new_dm_example_block(dataset = "pharmaverseadam")
+  expect_s3_class(blk, "cdisc_example_block")
+  expect_identical(blockr.core::ctor_pkg(attr(blk, "ctor")),
+                   "blockr.pharma")
+
+  blk <- new_cdisc_dm_block(dedup_cols = TRUE)
+  expect_s3_class(blk, "cdisc_dm_block")
+  expect_identical(blockr.core::ctor_pkg(attr(blk, "ctor")),
+                   "blockr.pharma")
 })

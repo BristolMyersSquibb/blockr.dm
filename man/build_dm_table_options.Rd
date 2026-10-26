@@ -15,8 +15,8 @@ A list of lists, each with \code{value} and \code{label} string fields.
 \description{
 Returns a list of \verb{\{value, label\}} entries suitable for
 \code{Blockr.Select} via the \code{dm-table-picker} custom message. The label is
-read from \code{attr(tbl, "label")} when present (common on ADaM and other
-annotated datasets). Unlabelled tables get \code{label = ""} and render as
+read from \code{attr(tbl, "label")} when present (common on annotated
+datasets). Unlabelled tables get \code{label = ""} and render as
 value-only.
 }
 \keyword{internal}

@@ -125,7 +125,7 @@ test_that("the payload carries the subgroup's levels, and swap trades the two", 
       session$flushReact()
       # The older show/pools shape is still read: levels first, then pools.
       expect_equal(session$returned$state$groups()$TRT$columns[[2]]$name,
-                   "All patients")
+                   "All")
     }
   )
 })

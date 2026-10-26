@@ -19,13 +19,13 @@ new_crossfilter_block(
 }
 \arguments{
 \item{active_dims}{Named list of per-table active filter columns.
-E.g., \code{list(adsl = c("SEX", "AGE"), adae = c("AESEV"))}}
+E.g., \code{list(customers = c("segment", "city"), categories = c("category_name"))}}
 
 \item{filters}{Named list of per-table categorical filters.
-E.g., \code{list(adae = list(AESEV = c("SEVERE")))}}
+E.g., \code{list(customers = list(segment = c("Consumer")))}}
 
 \item{range_filters}{Named list of per-table range filters.
-E.g., \code{list(adsl = list(AGE = c(40, 80)))}}
+E.g., \code{list(products = list(unit_price = c(10, 100)))}}
 
 \item{measure}{Measure column as \code{"table.column"} string, or \code{NULL}
 for row counts. E.g., \code{"orders.amount"}.}
@@ -36,7 +36,7 @@ when \code{measure} is set.}
 \item{featured}{Columns worth showing up front: they get a pill each above
 the cards, rank first in the search, and are the columns \code{pinned} may
 name. A pill's one job is to open and close that column's filter card.
-E.g. \code{c("SEX", "RACE", "AGE")}. Empty (the default) means no pills, but
+E.g. \code{c("segment", "city", "category_name")}. Empty (the default) means no pills, but
 the row is still there: it carries \verb{+ More filters}, which opens the
 column search and is the only way in once blockr.dock has hidden the gear
 on a simplified or locked board. The vocabulary itself is edited in the
@@ -66,24 +66,25 @@ being a column. A column with no
 entry shows every level in \code{\link[=crossfilter_level_order]{crossfilter_level_order()}}, one column
 each. The older shape, \verb{list(show = <levels>, pools = <list>)}, is still
 read: its levels come first, then its pools. The block only records the
-definition; a package building on it (blockr.pharma's population filter)
-applies it.}
+definition; a package building on it (blockr.pharma's population filter,
+for one) applies it.}
 
 \item{subgroup}{A second column the board is split by, under \code{pinned},
 chosen in the \verb{Subgroup by} select below the groups. Same eligible
 columns as \code{pinned}, minus the pinned one. \code{NULL} (the default) means no
 subgroup. Its levels are pooled like the group's, through its entry in
 \code{groups}, and a button in its field swaps it with \code{pinned}. Like
-\code{pinned}, the block only records it; blockr.pharma's population filter
-stamps it as \code{Subgroup}.}
+\code{pinned}, the block only records it; a package building on it, such as
+blockr.pharma's population filter, decides what to do with it.}
 
 \item{...}{Forwarded to \code{\link[blockr.core:new_transform_block]{blockr.core::new_transform_block()}}. A package
 building on this block passes its own \code{class} here: the subclass has to be
 set at construction, which is where block metadata is resolved from the
 registry. It is not a formal because every constructor formal has to come
 back out as block state. The same holds for \code{subject_unit}: the word the
-header counts the subject table's keys in ("patients"), set by a package
-that knows what its subjects are. Unset, the header counts rows.}
+header counts the subject table's keys in (for example "customers"), set
+by a package that knows what its subjects are. Unset, the header counts
+rows.}
 }
 \value{
 A blockr transform block with client-side crossfiltering

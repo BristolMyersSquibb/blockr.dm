@@ -8,50 +8,31 @@
 register_dm_blocks <- function() {
   blockr.core::register_blocks(
     c(
-      "new_dm_read_block",
-      "new_dm_write_block",
       "new_dm_block",
-      "new_cdisc_dm_block",
       "new_dm_select_block",
       "new_dm_add_keys_block",
       "new_dm_filter_block",
       "new_dm_pull_block",
       "new_dm_flatten_block",
-      "new_temporal_join_block",
-      "new_dm_temporal_join_block",
       "new_crossfilter_block",
       "new_dm_example_block",
       "new_value_filter_block",
       "new_drill_filter_block"
     ),
     name = c(
-      "Import multiple tables",
-      "Write dm",
       "Create dm",
-      "CDISC dm",
       "Select tables",
       "Add keys",
       "Filter dm",
       "Pull table",
       "Flatten dm",
-      "Temporal join",
-      "dm Temporal join",
       "Crossfilter",
       "Example data model",
       "Value filter",
       "Drill filter"
     ),
     description = c(
-      paste(
-        "Read a whole directory, ZIP archive or Excel workbook at once:",
-        "one table per file or sheet, linked as a dm"
-      ),
-      "Write dm object to Excel, ZIP, or directory",
       "Combine data frames into a dm (data model) object",
-      paste(
-        "Set CDISC keys (USUBJID PK/FK) and",
-        "optionally deduplicate subject columns"
-      ),
       "Select a subset of tables to keep in a dm",
       "Add primary and foreign key relationships to dm",
       paste(
@@ -60,14 +41,6 @@ register_dm_blocks <- function() {
       ),
       "Extract a single table from dm as a data frame",
       "Flatten dm into a single data frame by joining",
-      paste(
-        "Join two tables and filter by time window",
-        "between date columns"
-      ),
-      paste(
-        "Temporal join between two dm tables,",
-        "filtering by time window"
-      ),
       paste(
         "Client-side crossfilter for data frames",
         "and dm objects using crossfilter2.js"
@@ -85,16 +58,9 @@ register_dm_blocks <- function() {
       )
     ),
     category = c(
-      # A block that fetches data is "input", whatever shape it hands back,
-      # and one that writes it is "output": those are the shelves people
-      # look on for "how do I get my files in" and "how do I get them out".
+      # A block that fetches data is "input", whatever shape it hands back.
       # "structured" is where you look for things that reshape a dm you
       # already have.
-      "input",
-      "output",
-      "structured",
-      "structured",
-      "structured",
       "structured",
       "structured",
       "structured",
@@ -107,56 +73,24 @@ register_dm_blocks <- function() {
       "structured"
     ),
     icon = c(
-      "file-earmark-arrow-up",
-      "file-earmark-arrow-down",
       "diagram-3",
-      "patch-check",
       "check2-square",
       "key",
       "funnel",
       "box-arrow-up-right",
       "layers",
-      "clock-history",
-      "clock-history",
       "lightning",
       "database",
       "filter",
       "crosshair"
     ),
     guidance = c(
-      # new_dm_read_block:
-      paste(
-        "Reads tabular data from disk into a dm (data model) object. Use as",
-        "the entry point when working with multi-table datasets from Excel /",
-        "ZIP / directories. Which file formats a directory or ZIP may hold",
-        "comes from blockr.io's format registry, so formats registered by",
-        "other loaded packages work here too, and one folder may mix",
-        "formats. `args` is a named list of reader options applied uniformly",
-        "to every member (each format takes what it understands), e.g.",
-        "`args = list(sep = \";\")` for a folder of semicolon CSVs. The",
-        "output is a dm that downstream dm_* blocks can filter, select,",
-        "join, and flatten."
-      ),
-      # new_dm_write_block:
-      paste(
-        "Write a dm object back to disk in Excel / CSV / Parquet form.",
-        "Use as a terminal block to export a curated dm."
-      ),
       # new_dm_block:
       paste(
         "Wraps a set of data frames into a dm (data model) object. Use when",
         "the upstream already provides multiple data frames \u2014 typically via",
         "bind_cols or multiple file loads \u2014 and you want to treat them as a",
-        "related table collection. For CDISC/ADaM data prefer cdisc_dm_block",
-        "which knows the USUBJID convention."
-      ),
-      # new_cdisc_dm_block:
-      paste(
-        "Turns a plain dm of CDISC/ADaM tables (adsl, adae, adlbc, ...) into",
-        "a keyed dm where USUBJID is the primary key on ADSL and the foreign",
-        "key on every other table. Always place this block immediately after",
-        "loading CDISC data and before any filtering, joining, or crossfilter",
-        "work. Without keys, downstream dm blocks can't cascade filters."
+        "related table collection."
       ),
       # new_dm_select_block:
       paste(
@@ -167,8 +101,7 @@ register_dm_blocks <- function() {
       paste(
         "Explicitly sets a primary/foreign key relationship on a dm. Use when",
         "`dm_block(infer_keys=FALSE)` was used or when the relationships need",
-        "manual correction. For CDISC data, prefer cdisc_dm_block which sets",
-        "these automatically."
+        "manual correction."
       ),
       # new_dm_filter_block:
       paste(
@@ -192,27 +125,6 @@ register_dm_blocks <- function() {
         "Flattens a dm into a single data frame by chained joins starting",
         "from `start_table`. Use when you need a plain wide table for",
         "downstream plotting or modeling."
-      ),
-      # new_temporal_join_block:
-      paste(
-        "Plain two-table temporal join (no dm wrapper). Joins x and y on",
-        "`by` AND filters to rows where y's `right_date` is within",
-        "`window_days` of x's `left_date`. Use this when you have two plain",
-        "data frames. For dm objects, use dm_temporal_join_block."
-      ),
-      # new_dm_temporal_join_block:
-      paste(
-        "Temporal join between two tables within a dm, filtering the right",
-        "table to rows whose date falls within `window_days` of the left",
-        "date. Use for \"AE on treatment\" style windows: which events occur",
-        "within N days of treatment start / end / visit.",
-        "\n\nMap common requests:",
-        "\n- \"AEs within 30 days of treatment start\" ->",
-        "left_table=\"adsl\", left_date=\"TRTSDT\", right_table=\"adae\",",
-        "right_date=\"ASTDT\", window_days=30, direction=\"after\"",
-        "\n- \"concomitant meds within a week before baseline\" ->",
-        "left_date=\"TRTSDT\", right_date=\"CMSTDT\", window_days=7,",
-        "direction=\"before\""
       ),
       # new_crossfilter_block:
       paste(
@@ -245,17 +157,12 @@ register_dm_blocks <- function() {
       )
     ),
     arguments = list(
-      dm_read_arguments(),
-      dm_write_arguments(),
       dm_block_arguments(),
-      cdisc_dm_arguments(),
       dm_select_arguments(),
       dm_add_keys_arguments(),
       dm_filter_arguments(),
       dm_pull_arguments(),
       dm_flatten_arguments(),
-      temporal_join_arguments(),
-      dm_temporal_join_arguments(),
       crossfilter_arguments(),
       dm_example_arguments(),
       NULL,
