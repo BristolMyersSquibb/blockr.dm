@@ -37,13 +37,13 @@ A single table picker above the conditions selects which table in the dm
 the conditions apply to. Changing the table clears existing conditions.
 }
 \examples{
-# Filter the ADAE table for subjects where SEX == "F"
+# Keep the customers in the "Consumer" segment, and the orders that follow
 new_dm_filter_block(
-  table = "ADAE",
+  table = "customers",
   state = list(
     conditions = list(list(
-      type = "values", column = "SEX",
-      values = list("F"), mode = "include"
+      type = "values", column = "segment",
+      values = list("Consumer"), mode = "include"
     )),
     operator = "&"
   )

@@ -20,17 +20,6 @@ test_that("new_crossfilter_block stores initial state", {
   expect_equal(state$agg_func, "mean")
 })
 
-test_that("new_js_crossfilter_block is a deprecated alias for new_crossfilter_block", {
-  expect_warning(
-    blk <- new_js_crossfilter_block(),
-    "deprecated"
-  )
-  # The deprecated alias still produces a crossfilter_block, just tagged with a
-  # legacy subclass so old boards keep dispatching.
-  expect_s3_class(blk, "crossfilter_block")
-  expect_s3_class(blk, "js_crossfilter_block")
-})
-
 test_that("external write to r_filters updates expr and pushes to JS", {
   # External control contract (per blockr.docs/patterns/js-driven-blocks.md):
   # when something outside the JS UI mutates a state reactiveVal

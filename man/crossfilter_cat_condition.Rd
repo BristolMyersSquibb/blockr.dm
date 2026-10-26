@@ -20,10 +20,10 @@ A call, or \code{NULL} when nothing is selected
 \description{
 The JS UI publishes selected levels as label STRINGS inside a JSON array,
 and Shiny decodes incoming messages with \code{simplifyVector = FALSE}, so
-\verb{["F"]} reaches R as \code{list("F")} — never an atomic vector. Pasting that
-straight into a call produced \code{SEX == list("F")}: base R coerces the list
-when the condition is evaluated on a plain data frame, so it looked like it
-worked, but the generated code is wrong to read and a lazy (DuckDB/dbplyr)
+\verb{["Consumer"]} reaches R as \code{list("Consumer")}, never as an atomic vector.
+Pasting that straight into a call produced \code{segment == list("Consumer")}:
+base R coerces the list when the condition is evaluated on a plain data
+frame, so it looked like it worked, but the generated code is wrong to read and a lazy (DuckDB/dbplyr)
 backend cannot translate it at all.
 }
 \details{

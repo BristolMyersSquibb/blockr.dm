@@ -175,7 +175,7 @@
     const picked = new Set(members);
     if (all.length && all.length === picked.size &&
         all.every(v => picked.has(v))) {
-      return 'All patients';
+      return 'All';
     }
     const ordered = all.filter(v => picked.has(v))
       .concat(members.filter(v => !all.includes(v)));

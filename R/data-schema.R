@@ -1,22 +1,17 @@
-# =============================================================================
-# CANONICAL (and ONLY) `data_schema` method for the `dm` type.
-# -----------------------------------------------------------------------------
-# `data_schema` is a generic owned by blockr.ai. The method for `dm` lives HERE,
-# in the package that owns the dm integration, and is registered onto blockr.ai's
-# generic via S3method() (see @method/@export below). It is the ONE describing a
-# dm input to the LLM assistant — its text becomes the "# Input Data" section of
-# the assistant prompt, so it MUST tell the model how to extract a table inside a
-# block's `fn` (a dm is not a data frame; `data$<tbl>` etc.).
+# The only `data_schema` method for the `dm` type.
 #
-# DO NOT add a second `data_schema.dm` anywhere else (it previously also lived in
-# blockr.ai, commit #85 — two registrations of the same generic+class, winner
-# decided by namespace LOAD ORDER, so the blockr.ai copy silently shadowed this
-# one in some configs and edits went nowhere). One generic, one method, one home.
-# =============================================================================
+# `data_schema` is a generic owned by blockr.ai. The method for `dm` lives
+# here, in the package that owns the dm integration. It is registered lazily
+# (@exportS3Method), so blockr.ai can stay in Suggests and the method attaches
+# when blockr.ai loads. Its text becomes the "# Input Data" section of the
+# assistant prompt, so it has to tell the model how to get a table out of a dm
+# inside a block's `fn` (a dm is not a data frame; `data$<tbl>` etc.).
+#
+# Do not add a second `data_schema.dm` elsewhere. It once also lived in
+# blockr.ai (commit #85), and with two registrations namespace load order
+# decided which one won, so edits here sometimes had no effect.
 
-#' @importFrom blockr.ai data_schema
-#' @method data_schema dm
-#' @export
+#' @exportS3Method blockr.ai::data_schema
 data_schema.dm <- function(x, ...) {
   tbl_names <- names(x)
   eg <- tbl_names[1L]

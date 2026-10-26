@@ -6,11 +6,11 @@
 #' a [dm][dm::dm()] object.
 #'
 #' @param active_dims Named list of per-table active filter columns.
-#'   E.g., `list(adsl = c("SEX", "AGE"), adae = c("AESEV"))`
+#'   E.g., `list(customers = c("segment", "city"), categories = c("category_name"))`
 #' @param filters Named list of per-table categorical filters.
-#'   E.g., `list(adae = list(AESEV = c("SEVERE")))`
+#'   E.g., `list(customers = list(segment = c("Consumer")))`
 #' @param range_filters Named list of per-table range filters.
-#'   E.g., `list(adsl = list(AGE = c(40, 80)))`
+#'   E.g., `list(products = list(unit_price = c(10, 100)))`
 #' @param measure Measure column as `"table.column"` string, or `NULL`
 #'   for row counts. E.g., `"orders.amount"`.
 #' @param agg_func Aggregation function: `"sum"` or `"mean"`. Only used
@@ -18,7 +18,7 @@
 #' @param featured Columns worth showing up front: they get a pill each above
 #'   the cards, rank first in the search, and are the columns `pinned` may
 #'   name. A pill's one job is to open and close that column's filter card.
-#'   E.g. `c("SEX", "RACE", "AGE")`. Empty (the default) means no pills, but
+#'   E.g. `c("segment", "city", "category_name")`. Empty (the default) means no pills, but
 #'   the row is still there: it carries `+ More filters`, which opens the
 #'   column search and is the only way in once blockr.dock has hidden the gear
 #'   on a simplified or locked board. The vocabulary itself is edited in the
@@ -46,22 +46,23 @@
 #'   entry shows every level in [crossfilter_level_order()], one column
 #'   each. The older shape, `list(show = <levels>, pools = <list>)`, is still
 #'   read: its levels come first, then its pools. The block only records the
-#'   definition; a package building on it (blockr.pharma's population filter)
-#'   applies it.
+#'   definition; a package building on it (blockr.pharma's population filter,
+#'   for one) applies it.
 #' @param subgroup A second column the board is split by, under `pinned`,
 #'   chosen in the `Subgroup by` select below the groups. Same eligible
 #'   columns as `pinned`, minus the pinned one. `NULL` (the default) means no
 #'   subgroup. Its levels are pooled like the group's, through its entry in
 #'   `groups`, and a button in its field swaps it with `pinned`. Like
-#'   `pinned`, the block only records it; blockr.pharma's population filter
-#'   stamps it as `Subgroup`.
+#'   `pinned`, the block only records it; a package building on it, such as
+#'   blockr.pharma's population filter, decides what to do with it.
 #' @param ... Forwarded to [blockr.core::new_transform_block()]. A package
 #'   building on this block passes its own `class` here: the subclass has to be
 #'   set at construction, which is where block metadata is resolved from the
 #'   registry. It is not a formal because every constructor formal has to come
 #'   back out as block state. The same holds for `subject_unit`: the word the
-#'   header counts the subject table's keys in ("patients"), set by a package
-#'   that knows what its subjects are. Unset, the header counts rows.
+#'   header counts the subject table's keys in (for example "customers"), set
+#'   by a package that knows what its subjects are. Unset, the header counts
+#'   rows.
 #'
 #' @return A blockr transform block with client-side crossfiltering
 #'
@@ -83,7 +84,7 @@ new_crossfilter_block <- function(
   args[["class"]] <- NULL
   # What the header counts. Unset, it counts rows across the tables, which is
   # all a generic dm offers. A block that knows what its subject table holds
-  # (blockr.pharma's population filter: patients) names the unit, and the
+  # (blockr.pharma's population filter, for one) names the unit, and the
   # header then counts the subject table's keys in it.
   subject_unit <- args[["subject_unit"]]
   args[["subject_unit"]] <- NULL
@@ -106,128 +107,6 @@ new_crossfilter_block <- function(
       ),
       args
     )
-  )
-}
-
-# Internal helper that builds the deprecation-banner UI wrapper shared
-# by the legacy js_crossfilter_block and dm_crossfilter_block constructors.
-deprecated_crossfilter_banner <- function(legacy_name) {
-  shiny::div(
-    class = "alert alert-warning blockr-deprecated-banner",
-    role = "alert",
-    style = paste0(
-      "margin: 8px 0; padding: 10px 12px; border-radius: 4px; ",
-      "background-color: #fff3cd; color: #856404; ",
-      "border: 1px solid #ffeeba; font-size: 0.9rem;"
-    ),
-    shiny::tags$strong("Deprecated block: "),
-    "this is the legacy ",
-    shiny::tags$code(legacy_name),
-    ". Use ",
-    shiny::tags$code("crossfilter_block"),
-    " instead \u2014 same functionality, canonical name."
-  )
-}
-
-#' Legacy constructor for the crossfilter block (deprecated)
-#'
-#' `new_js_crossfilter_block()` is the pre-rename alias kept so saved boards
-#' that reference the `js_crossfilter_block` UID continue to deserialize.
-#' All new code should use [new_crossfilter_block()] directly. This wrapper
-#' emits a [.Deprecated()] warning at construction time and tags the
-#' produced block with a `js_crossfilter_block` subclass so the served
-#' Shiny UI renders a visible deprecation banner above the normal block
-#' output.
-#'
-#' @inheritParams new_crossfilter_block
-#' @return A crossfilter block carrying a `js_crossfilter_block` subclass.
-#' @export
-new_js_crossfilter_block <- function(
-  active_dims = list(),
-  filters = list(),
-  range_filters = list(),
-  measure = NULL,
-  agg_func = NULL,
-  ...
-) {
-  .Deprecated(
-    new = "new_crossfilter_block",
-    package = "blockr.dm",
-    msg = paste0(
-      "'new_js_crossfilter_block' is deprecated and will be removed in a ",
-      "future release. Use 'new_crossfilter_block' instead \u2014 it has the ",
-      "same signature and behaviour under the canonical name."
-    )
-  )
-  blk <- new_crossfilter_block(
-    active_dims = active_dims,
-    filters = filters,
-    range_filters = range_filters,
-    measure = measure,
-    agg_func = agg_func,
-    ...
-  )
-  class(blk) <- c("js_crossfilter_block", class(blk))
-  blk
-}
-
-#' @method block_ui js_crossfilter_block
-#' @export
-block_ui.js_crossfilter_block <- function(id, x, ...) {
-  shiny::tagList(
-    deprecated_crossfilter_banner("js_crossfilter_block"),
-    NextMethod()
-  )
-}
-
-#' Legacy dm-only crossfilter constructor (deprecated)
-#'
-#' `new_dm_crossfilter_block()` is the pre-unification alias kept so saved
-#' boards that reference the `dm_crossfilter_block` UID continue to
-#' deserialize. The block now delegates to [new_crossfilter_block()] —
-#' which accepts both data frames and dm objects — and emits a
-#' [.Deprecated()] warning at construction time. Produced blocks carry
-#' a `dm_crossfilter_block` subclass so the served Shiny UI renders a
-#' visible deprecation banner above the normal block output.
-#'
-#' @inheritParams new_crossfilter_block
-#' @return A crossfilter block carrying a `dm_crossfilter_block` subclass.
-#' @export
-new_dm_crossfilter_block <- function(
-  active_dims = list(),
-  filters = list(),
-  range_filters = list(),
-  measure = NULL,
-  agg_func = NULL,
-  ...
-) {
-  .Deprecated(
-    new = "new_crossfilter_block",
-    package = "blockr.dm",
-    msg = paste0(
-      "'new_dm_crossfilter_block' is deprecated and will be removed in a ",
-      "future release. Use 'new_crossfilter_block' instead \u2014 it handles ",
-      "both dm and data.frame inputs under the canonical name."
-    )
-  )
-  blk <- new_crossfilter_block(
-    active_dims = active_dims,
-    filters = filters,
-    range_filters = range_filters,
-    measure = measure,
-    agg_func = agg_func,
-    ...
-  )
-  class(blk) <- c("dm_crossfilter_block", class(blk))
-  blk
-}
-
-#' @method block_ui dm_crossfilter_block
-#' @export
-block_ui.dm_crossfilter_block <- function(id, x, ...) {
-  shiny::tagList(
-    deprecated_crossfilter_banner("dm_crossfilter_block"),
-    NextMethod()
   )
 }
 
@@ -394,7 +273,7 @@ crossfilter_pool_default_name <- function(members, levels) {
     return("New pool")
   }
   if (length(levels) && setequal(members, levels)) {
-    return("All patients")
+    return("All")
   }
   ordered <- c(intersect(levels, members), setdiff(members, levels))
   if (length(ordered) >= 2L) {
@@ -1288,8 +1167,8 @@ crossfilter_server <- function(active_dims, filters, range_filters,
 
           # What this block contributes to the filter trail (see
           # `?filter_trail`). Rendered from the live state, so it says what a
-          # reader needs ("SEX = F; lb.LBSTRESN 50 to 99") rather than the
-          # deparsed condition. `dm_filter()` cascades, so on a dm the clause
+          # reader needs ("segment = Consumer; products.unit_price 10 to 99")
+          # rather than the deparsed condition. `dm_filter()` cascades, so on a dm the clause
           # goes on every table. The two `identity(data)` returns above add
           # nothing: the trail upstream rides on the tables untouched.
           clause <- crossfilter_clause(cat_filters, rng_filters)

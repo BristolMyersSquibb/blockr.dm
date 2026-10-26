@@ -24,8 +24,7 @@ flip the column to Multi (values plus the \verb{<NA>} token) or use the
 blockr.dplyr filter block. (Legacy saved states with a logical
 single-select value of "FALSE" still evaluate as \code{!(col \%in\% TRUE)}.)
 Old-style state (\code{list(columns=character, modes=list, values=list)})
-is auto-migrated via \code{\link[=migrate_value_filter_state]{migrate_value_filter_state()}} for backward
-compatibility.}
+is migrated to the current shape.}
 
 \item{...}{Additional arguments forwarded to \code{\link[blockr.core:new_transform_block]{blockr.core::new_transform_block()}}.}
 }
@@ -59,7 +58,7 @@ block's \code{state} over the control channel. On a \code{dm} input each entry n
 \code{table} as well, and this block fills it in:
 \itemize{
 \item exactly one table carries the column: that table.
-\item several carry it (a subject id is in every ADaM table): the table where it
+\item several carry it (an id such as \code{customer_id} is in several tables): the table where it
 is the PRIMARY KEY, because \code{dm::dm_filter()} cascades along foreign keys,
 so restricting the parent restricts the children too.
 \item no table carries it: nothing is filtered and the block says which column

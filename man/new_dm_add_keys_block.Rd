@@ -36,16 +36,16 @@ optionally link it as a foreign key from one or more other tables.
 Primary keys uniquely identify rows in a table. Foreign keys reference
 the primary key of another table, establishing relationships.
 
-For ADaM datasets, USUBJID is typically the primary key in ADSL
-and a foreign key in other tables (ADAE, ADLB, etc.).
+In a customer and orders model, \code{customer_id} is typically the primary
+key in \code{customers} and a foreign key in \code{orders}.
 }
 \examples{
-# Add USUBJID as key linking ADSL to multiple tables
+# Add customer_id as key linking customers to orders
 new_dm_add_keys_block(
-  pk_table = "adsl",
-  pk_column = "USUBJID",
-  fk_tables = c("adae", "adlb"),
-  fk_column = "USUBJID"
+  pk_table = "customers",
+  pk_column = "customer_id",
+  fk_tables = "orders",
+  fk_column = "customer_id"
 )
 
 }

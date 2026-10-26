@@ -332,7 +332,7 @@ new_dm_block <- function(infer_keys = TRUE, ...) {
           # block and everything downstream. Keyed on a reactiveVal that only
           # changes when the DECISION changes, `expr` is untouched by that
           # churn and hands back its cached object. Same discipline as
-          # new_cdisc_dm_block / new_value_filter_block.
+          # new_value_filter_block.
           #
           # Reading `dot_arg_refs()` / `dot_arg_values()` here registers a
           # dependency on the slot SET (the reactives container's keys are a

@@ -2,8 +2,8 @@
 #'
 #' Returns a list of `{value, label}` entries suitable for
 #' `Blockr.Select` via the `dm-table-picker` custom message. The label is
-#' read from `attr(tbl, "label")` when present (common on ADaM and other
-#' annotated datasets). Unlabelled tables get `label = ""` and render as
+#' read from `attr(tbl, "label")` when present (common on annotated
+#' datasets). Unlabelled tables get `label = ""` and render as
 #' value-only.
 #'
 #' @param dm_obj A `dm` object.

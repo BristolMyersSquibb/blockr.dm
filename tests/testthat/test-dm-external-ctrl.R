@@ -66,35 +66,6 @@ test_that("dm_select_block follows an externally set table set", {
   )
 })
 
-test_that("cdisc_dm_block follows externally set switches", {
-
-  block <- new_cdisc_dm_block(set_keys = TRUE, dedup_cols = TRUE)
-
-  expect_setequal(
-    blockr.core::external_ctrl_vars(block),
-    c("set_keys", "dedup_cols", "block_name")
-  )
-
-  shiny::testServer(
-    blockr.core:::get_s3_method("block_server", block),
-    {
-      session$flushReact()
-      with_keys <- rlang::expr_text(session$returned$expr())
-      expect_match(with_keys, "dm_add_pk")
-
-      session$returned$state$set_keys(FALSE)
-      session$flushReact()
-
-      # The expression is rebuilt from the switch, so the keys step is gone.
-      expect_no_match(
-        rlang::expr_text(session$returned$expr()), "dm_add_pk"
-      )
-      expect_false(session$returned$state$set_keys())
-    },
-    args = list(x = block, data = list(data = function() ctrl_dm()))
-  )
-})
-
 test_that("a board update drives a dm_pull block", {
 
   # The path an assistant's modify_block takes: validated against

@@ -32,17 +32,6 @@ test_that("ser/deser dm_block", {
   }
 })
 
-test_that("ser/deser cdisc_dm_block", {
-  for (keys in c(TRUE, FALSE)) {
-    for (dedup in c(TRUE, FALSE)) {
-      blk <- new_cdisc_dm_block(set_keys = keys, dedup_cols = dedup)
-      restored <- ser_deser(blk)
-      expect_s3_class(restored, class(blk))
-      expect_state_equal(blk, restored)
-    }
-  }
-})
-
 test_that("ser/deser dm_select_block", {
   blk <- new_dm_select_block()
   restored <- ser_deser(blk)
@@ -123,100 +112,9 @@ test_that("ser/deser dm_flatten_block", {
   expect_false(state$recursive)
 })
 
-test_that("ser/deser dm_read_block", {
-  blk <- new_dm_read_block()
-  restored <- ser_deser(blk)
-  expect_s3_class(restored, class(blk))
-
-  blk2 <- new_dm_read_block(path = "/tmp/test.xlsx")
-  restored2 <- ser_deser(blk2)
-  state <- blockr.core:::initial_block_state(restored2)
-  expect_equal(state$path, "/tmp/test.xlsx")
-})
-
-test_that("ser/deser dm_write_block", {
-  blk <- new_dm_write_block()
-  restored <- ser_deser(blk)
-  expect_s3_class(restored, class(blk))
-  expect_state_equal(blk, restored)
-
-  blk2 <- new_dm_write_block(
-    directory = "/tmp",
-    filename = "output",
-    format = "csv",
-    auto_write = TRUE
-  )
-  restored2 <- ser_deser(blk2)
-  state <- blockr.core:::initial_block_state(restored2)
-  expect_equal(state$directory, "/tmp")
-  expect_equal(state$filename, "output")
-  expect_equal(state$format, "csv")
-  expect_true(state$auto_write)
-})
-
-test_that("ser/deser temporal_join_block", {
-  blk <- new_temporal_join_block()
-  restored <- ser_deser(blk)
-  expect_s3_class(restored, class(blk))
-
-  blk2 <- new_temporal_join_block(
-    by = "USUBJID",
-    left_date = "ASTDT",
-    right_date = "AESTDT",
-    window_days = 14,
-    direction = "before"
-  )
-  restored2 <- ser_deser(blk2)
-  state <- blockr.core:::initial_block_state(restored2)
-  expect_equal(state$by, "USUBJID")
-  expect_equal(state$left_date, "ASTDT")
-  expect_equal(state$right_date, "AESTDT")
-  expect_equal(state$window_days, 14)
-  expect_equal(state$direction, "before")
-})
-
-test_that("ser/deser dm_temporal_join_block", {
-  blk <- new_dm_temporal_join_block()
-  restored <- ser_deser(blk)
-  expect_s3_class(restored, class(blk))
-  expect_state_equal(blk, restored)
-
-  blk2 <- new_dm_temporal_join_block(
-    left_table = "adsl",
-    left_date = "TRTSDT",
-    right_table = "adae",
-    right_date = "AESTDT",
-    window_days = 30,
-    direction = "after"
-  )
-  restored2 <- ser_deser(blk2)
-  state <- blockr.core:::initial_block_state(restored2)
-  expect_equal(state$left_table, "adsl")
-  expect_equal(state$left_date, "TRTSDT")
-  expect_equal(state$right_table, "adae")
-  expect_equal(state$right_date, "AESTDT")
-  expect_equal(state$window_days, 30)
-  expect_equal(state$direction, "after")
-})
-
 test_that("ser/deser crossfilter_block", {
   blk <- new_crossfilter_block()
   restored <- ser_deser(blk)
   expect_s3_class(restored, class(blk))
 })
 
-test_that("ser/deser dm_read_block keeps args", {
-  blk <- new_dm_read_block(
-    path = "/tmp/semi",
-    selected_tables = c("sites", "visits_eu"),
-    args = list(sep = ";", skip = 2)
-  )
-  restored <- ser_deser(blk)
-  state <- blockr.core:::initial_block_state(restored)
-  expect_equal(state$args, list(sep = ";", skip = 2))
-  expect_equal(state$selected_tables, c("sites", "visits_eu"))
-
-  # a pristine block stays pristine through the round trip
-  state0 <- blockr.core:::initial_block_state(ser_deser(new_dm_read_block()))
-  expect_equal(state0$args, list())
-})

@@ -24,8 +24,7 @@ flip the column to Multi (values plus the \verb{<NA>} token) or use the
 blockr.dplyr filter block. (Legacy saved states with a logical
 single-select value of "FALSE" still evaluate as \code{!(col \%in\% TRUE)}.)
 Old-style state (\code{list(columns=character, modes=list, values=list)})
-is auto-migrated via \code{\link[=migrate_value_filter_state]{migrate_value_filter_state()}} for backward
-compatibility.}
+is migrated to the current shape.}
 
 \item{...}{Additional arguments forwarded to \code{\link[blockr.core:new_transform_block]{blockr.core::new_transform_block()}}.}
 }

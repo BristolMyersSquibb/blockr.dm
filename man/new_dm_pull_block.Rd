@@ -22,7 +22,7 @@ analysis or visualization.
 \section{External control}{
 
 \code{table} is externally controllable (see
-\code{\link[blockr.core:block_name]{blockr.core::external_ctrl_vars()}}): a board update or an assistant can
+\code{\link[blockr.core:external_ctrl_vars]{blockr.core::external_ctrl_vars()}}): a board update or an assistant can
 switch the pulled table with a \code{mod} delta, and the picker follows.
 }
 

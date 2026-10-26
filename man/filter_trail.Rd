@@ -19,7 +19,7 @@ the default, means every table. Ignored for a data frame.}
 \item{key}{Name the clause is stored under, unique to the block that writes
 it.}
 
-\item{clause}{What the block filtered, e.g. \code{"SEX = F; AGE 18 to 64"}. An
+\item{clause}{What the block filtered, e.g. \code{"segment = Consumer; city = Boston"}. An
 empty or missing clause adds nothing, so a filter with nothing selected
 leaves no trace.}
 }
@@ -53,8 +53,8 @@ from the dm with no further code, the way dplyr keeps a data frame's
 attributes through \code{filter()}, \code{mutate()} and joins.
 
 Which tables a clause goes on says which tables the filter narrowed.
-\code{dm::dm_filter()} cascades over the keys, so a filter written against \code{ae}
-narrows \code{adsl} and through it every other table: by default the clause goes
+\code{dm::dm_filter()} cascades over the keys, so a filter written against \code{orders}
+narrows \code{customers} and through it every other table: by default the clause goes
 on every table. A filter that narrows one table without cascading passes
 that table as \code{tables}, and a frame pulled from another table does not
 carry the clause.
@@ -65,7 +65,7 @@ block that aggregates has to copy the trail across itself.
 
 \examples{
 d <- data.frame(x = 1:3)
-d <- add_filter_trail(d, "sex", "SEX = F")
+d <- add_filter_trail(d, "segment", "segment = Consumer")
 filter_trail(d)
 
 }

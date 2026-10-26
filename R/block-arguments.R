@@ -7,76 +7,6 @@
 # `register_blocks()` call in registry.R.
 
 #' @noRd
-dm_read_arguments <- function() {
-  new_arg_specs(
-    path = new_arg_spec(
-      paste0(
-        "Character. Path to a file or directory to read. Supported: ",
-        ".xlsx / .xls (one sheet per table), .zip of per-table files, or a ",
-        "directory containing per-table CSV / Parquet / Feather files."
-      ),
-      example = "/data/trial-01.xlsx",
-      type = arg_string()
-    ),
-    selected_tables = new_arg_spec(
-      paste0(
-        "Optional character vector restricting which tables to load. null ",
-        "or unset loads every table found at `path`."
-      ),
-      example = list("adsl", "adae", "adlbc"),
-      type = arg_array(arg_string())
-    ),
-    # Arbitrary-key map of reader options (keys depend on the member
-    # formats); the JSON-Schema subset has no open-ended object, so `type`
-    # is left unset and the consumer infers the shape from the example.
-    args = new_arg_spec(
-      paste0(
-        "Named list of reader options applied uniformly to every member of ",
-        "the container; each member's format picks the parameters it ",
-        "understands (e.g. `list(sep = \";\")` reads every CSV in the ",
-        "folder as semicolon-separated and leaves other formats untouched)."
-      ),
-      example = list(sep = ";")
-    )
-  )
-}
-
-#' @noRd
-dm_write_arguments <- function() {
-  new_arg_specs(
-    directory = new_arg_spec(
-      "Character. Output directory path.",
-      example = "/out/",
-      type = arg_string()
-    ),
-    filename = new_arg_spec(
-      paste0(
-        "Character. Base filename (no extension). Extension is derived ",
-        "from `format`. For Excel, one file; for CSV / Parquet, one file per table."
-      ),
-      example = "trial-01-snapshot",
-      type = arg_string()
-    ),
-    format = new_arg_spec(
-      paste0(
-        "Output format. One of \"excel\", \"csv\", or \"parquet\". ",
-        "Default \"excel\"."
-      ),
-      example = "excel",
-      type = arg_enum(c("excel", "csv", "parquet"))
-    ),
-    auto_write = new_arg_spec(
-      paste0(
-        "Logical. TRUE writes on every upstream update; FALSE (default) ",
-        "writes only on explicit action."
-      ),
-      example = FALSE,
-      type = arg_boolean()
-    )
-  )
-}
-
-#' @noRd
 dm_block_arguments <- function() {
   new_arg_specs(
     infer_keys = new_arg_spec(
@@ -92,31 +22,6 @@ dm_block_arguments <- function() {
 }
 
 #' @noRd
-cdisc_dm_arguments <- function() {
-  new_arg_specs(
-    set_keys = new_arg_spec(
-      paste0(
-        "Logical. TRUE (default) sets USUBJID as primary key on ADSL and ",
-        "foreign key on all other tables. Required for any cascading dm ",
-        "filter to work."
-      ),
-      example = TRUE,
-      type = arg_boolean()
-    ),
-    dedup_cols = new_arg_spec(
-      paste0(
-        "Logical. TRUE removes duplicated subject-level columns (AGE, SEX, ",
-        "ARM, etc.) from non-ADSL tables so they live only on ADSL, which ",
-        "avoids column-name collisions in downstream joins. FALSE (the ",
-        "default) leaves every table as it was read."
-      ),
-      example = FALSE,
-      type = arg_boolean()
-    )
-  )
-}
-
-#' @noRd
 dm_select_arguments <- function() {
   new_arg_specs(
     tables = new_arg_spec(
@@ -124,7 +29,7 @@ dm_select_arguments <- function() {
         "Character vector of table names to keep in the dm. Tables not ",
         "listed are dropped. Relationships to dropped tables are removed."
       ),
-      example = list("adsl", "adae"),
+      example = list("customers", "orders"),
       type = arg_array(arg_string())
     )
   )
@@ -135,12 +40,12 @@ dm_add_keys_arguments <- function() {
   new_arg_specs(
     pk_table = new_arg_spec(
       "Character. Name of the table to receive the primary key.",
-      example = "adsl",
+      example = "customers",
       type = arg_string()
     ),
     pk_column = new_arg_spec(
       "Character. Column name on `pk_table` to mark as the primary key.",
-      example = "USUBJID",
+      example = "customer_id",
       type = arg_string()
     ),
     fk_tables = new_arg_spec(
@@ -148,7 +53,7 @@ dm_add_keys_arguments <- function() {
         "Character vector of table names that should get a foreign key ",
         "pointing to `pk_table`."
       ),
-      example = list("adae", "adlbc"),
+      example = list("orders"),
       type = arg_array(arg_string())
     ),
     fk_column = new_arg_spec(
@@ -156,7 +61,7 @@ dm_add_keys_arguments <- function() {
         "Character. Column name on each `fk_tables` entry to mark as the ",
         "foreign key. Must match `pk_column` in meaning, and usually in name."
       ),
-      example = "USUBJID",
+      example = "customer_id",
       type = arg_string()
     )
   )
@@ -171,7 +76,7 @@ dm_filter_arguments <- function() {
         "applied. Rows removed from this table cascade to related tables ",
         "via the dm's FK relationships."
       ),
-      example = "adsl",
+      example = "customers",
       type = arg_string()
     ),
     # `state` is an object wrapping a polymorphic-union conditions array
@@ -186,8 +91,8 @@ dm_filter_arguments <- function() {
       ),
       example = list(
         conditions = list(list(
-          type = "values", column = "ARM",
-          values = list("Drug A"), mode = "include"
+          type = "values", column = "segment",
+          values = list("Consumer"), mode = "include"
         )),
         operator = "&"
       ),
@@ -214,7 +119,7 @@ dm_pull_arguments <- function() {
   new_arg_specs(
     table = new_arg_spec(
       "Character. Name of the table to extract as a data frame.",
-      example = "adsl",
+      example = "customers",
       type = arg_string()
     )
   )
@@ -228,7 +133,7 @@ dm_flatten_arguments <- function() {
         "Character. Table to flatten from \u2014 becomes the left side of every ",
         "join. Output row count equals this table's row count (for left joins)."
       ),
-      example = "adsl",
+      example = "orders",
       type = arg_string()
     ),
     include_tables = new_arg_spec(
@@ -236,7 +141,7 @@ dm_flatten_arguments <- function() {
         "Character vector. Tables to join into `start_table`. Empty vector ",
         "flattens the full dm by following all related tables."
       ),
-      example = list("adae", "adlbc"),
+      example = list("customers", "products"),
       type = arg_array(arg_string())
     ),
     join_type = new_arg_spec(
@@ -259,99 +164,6 @@ dm_flatten_arguments <- function() {
 }
 
 #' @noRd
-dm_temporal_join_arguments <- function() {
-  new_arg_specs(
-    left_table = new_arg_spec(
-      "Character. Name of the \"anchor\" table in the dm.",
-      example = "adsl",
-      type = arg_string()
-    ),
-    left_date = new_arg_spec(
-      paste0(
-        "Character. Date/datetime column on `left_table` that defines the ",
-        "anchor time (e.g. treatment start)."
-      ),
-      example = "TRTSDT",
-      type = arg_string()
-    ),
-    right_table = new_arg_spec(
-      paste0(
-        "Character. Name of the \"event\" table in the dm being joined in."
-      ),
-      example = "adae",
-      type = arg_string()
-    ),
-    right_date = new_arg_spec(
-      paste0(
-        "Character. Date/datetime column on `right_table` whose offset from ",
-        "`left_date` is checked against the window."
-      ),
-      example = "ASTDT",
-      type = arg_string()
-    ),
-    window_days = new_arg_spec(
-      paste0(
-        "Integer. Size of the time window in days (default 7)."
-      ),
-      example = 30,
-      type = arg_integer()
-    ),
-    direction = new_arg_spec(
-      paste0(
-        "Window direction relative to `left_date`. One of \"after\" (default, ",
-        "keep events within window_days AFTER anchor), \"before\", or ",
-        "\"around\" (two-sided window)."
-      ),
-      example = "after",
-      type = arg_enum(c("after", "before", "around"))
-    )
-  )
-}
-
-#' @noRd
-temporal_join_arguments <- function() {
-  new_arg_specs(
-    by = new_arg_spec(
-      paste0(
-        "Character vector of column names to match on as the join key ",
-        "(e.g. subject ID). Rows with matching key AND date-within-window ",
-        "are joined."
-      ),
-      example = list("USUBJID"),
-      type = arg_array(arg_string())
-    ),
-    left_date = new_arg_spec(
-      paste0(
-        "Character. Date column on the LEFT (x) table that defines the ",
-        "anchor time."
-      ),
-      example = "TRTSDT",
-      type = arg_string()
-    ),
-    right_date = new_arg_spec(
-      paste0(
-        "Character. Date column on the RIGHT (y) table whose offset from ",
-        "`left_date` is checked against the window."
-      ),
-      example = "ASTDT",
-      type = arg_string()
-    ),
-    window_days = new_arg_spec(
-      "Integer. Window size in days. Default 7.",
-      example = 30,
-      type = arg_integer()
-    ),
-    direction = new_arg_spec(
-      paste0(
-        "Window direction relative to `left_date`. One of \"after\" (default), ",
-        "\"before\", \"around\"."
-      ),
-      example = "after",
-      type = arg_enum(c("after", "before", "around"))
-    )
-  )
-}
-
 #' @noRd
 crossfilter_arguments <- function() {
   new_arg_specs(
@@ -365,8 +177,8 @@ crossfilter_arguments <- function() {
         "frame input (not a dm), use \".tbl\" as the table name."
       ),
       example = list(
-        adsl = list("SEX", "AGE", "ARM"),
-        adae = list("AESEV")
+        customers = list("segment", "city"),
+        categories = list("category_name")
       )
     ),
     # arbitrary-key nested map (table -> {column -> kept values}); type omitted.
@@ -375,7 +187,7 @@ crossfilter_arguments <- function() {
         "Per-table categorical filters. Object: table name -> {column -> ",
         "array of kept values}. Values not listed are excluded."
       ),
-      example = list(adsl = list(SEX = list("F")))
+      example = list(customers = list(segment = list("Consumer")))
     ),
     # arbitrary-key map (column -> {columns}); type omitted.
     subgroup = new_arg_spec(
@@ -384,7 +196,7 @@ crossfilter_arguments <- function() {
         "it under the group, charts facet by it. Same eligible columns as ",
         "`pinned`, minus the pinned one. Null for none."
       ),
-      example = "SEX"
+      example = "city"
     ),
     groups = new_arg_spec(
       paste0(
@@ -395,15 +207,14 @@ crossfilter_arguments <- function() {
         "be in two columns. A level in no column is not shown. A column with ",
         "no entry shows every level on its own."
       ),
-      example = list(TRT01A = list(columns = list(
-        list(name = "", members = list("Placebo"), custom = FALSE),
+      example = list(segment = list(columns = list(
+        list(name = "", members = list("Consumer"), custom = FALSE),
         list(
-          name = "All Xanomeline",
-          members = list("Xanomeline Low Dose", "Xanomeline High Dose"),
+          name = "Corporate",
+          members = list("Business", "Enterprise"),
           custom = FALSE
         ),
-        list(name = "", members = list("Xanomeline High Dose"),
-             custom = FALSE)
+        list(name = "", members = list("Enterprise"), custom = FALSE)
       )))
     ),
     # arbitrary-key nested map (table -> {column -> [min, max]}); type omitted.
@@ -412,7 +223,7 @@ crossfilter_arguments <- function() {
         "Per-table numeric/date range filters. Object: table name -> ",
         "{column -> [min, max]}."
       ),
-      example = list(adsl = list(AGE = c(40, 60)))
+      example = list(products = list(unit_price = c(10, 100)))
     ),
     # scalar whose type varies (string | null); type omitted per guidance.
     measure = new_arg_spec(
@@ -436,7 +247,7 @@ crossfilter_arguments <- function() {
         "above the filter cards and supply the choices for `pinned`. Array ",
         "of column names, resolved to whichever table carries them."
       ),
-      example = list("SEX", "RACE", "ARM"),
+      example = list("segment", "city", "category_name"),
       type = arg_array(arg_string())
     ),
     pinned = new_arg_spec(
@@ -445,7 +256,7 @@ crossfilter_arguments <- function() {
         "through a select in that card's header. Must be one of `featured` ",
         "and live on the parent table. Null for no pinned card."
       ),
-      example = "ARM"
+      example = "segment"
     )
   )
 }
@@ -459,14 +270,9 @@ dm_example_arguments <- function() {
     dataset = new_arg_spec(
       paste0(
         "Character. ID of the dm example dataset to load. One of: ",
-        "\"bi_star_schema\" (retail star schema), ",
-        "\"safetydata_adam\" / \"pharmaverseadam\" / \"bms_adam\" ",
-        "(CDISC ADaM clinical dm with adsl, adae, ...), ",
-        "\"pharmaversesdtm\" (raw CDISC SDTM domains: dm, ae, vs, lb, cm), ",
-        "\"nycflights13\", \"insurancedata\". For a CDISC ADaM / clinical ",
-        "safety dm use \"safetydata_adam\" (NOT \"cdisc_adam\"). Availability ",
-        "depends on installed data packages; call dm_example_choices() for ",
-        "the live list."
+        "\"bi_star_schema\" (retail star schema), \"nycflights13\", ",
+        "\"insurancedata\". Availability depends on installed data ",
+        "packages; call dm_example_choices() for the live list."
       ),
       example = "bi_star_schema",
       type = arg_string()
