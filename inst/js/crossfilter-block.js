@@ -1285,6 +1285,14 @@
       return Select;
     }
 
+    // The group columns and a pool's levels use Blockr.Pick (blockr.dplyr),
+    // the multi-select on trial: each pick shows once, picks on top, All and
+    // None. Without it they fall back to Blockr.Select.
+    _pick() {
+      const Pick = window.Blockr && window.Blockr.Pick;
+      return Pick || this._select();
+    }
+
     // The whole band: the design system's controls and nothing else. The
     // columns are a multi-select with tags, levels and pools together, in
     // table order; a tag drags to reorder, its x removes it, the list ticks
@@ -1317,10 +1325,11 @@
       colField.appendChild(host);
       s.el.appendChild(colField);
       const { options, selected } = this._columnOptions(s);
-      s.colSelect = this._select().multi(host, {
+      s.colSelect = this._pick().multi(host, {
         options,
         selected,
         bordered: true,
+        reorderable: true,
         label: colLabel,
         placeholder: 'Pick columns',
         onChange: (values) => this._setColumns(s, values)
@@ -1486,7 +1495,7 @@
       const levelsHost = el('div', 'jscf-pool-levels');
       wrap.appendChild(levelsHost);
       wrap.appendChild(err);
-      const levelSelect = this._select().multi(levelsHost, {
+      const levelSelect = this._pick().multi(levelsHost, {
         options: s.levels.map(l => ({ value: l.value, label: String(l.n) })),
         selected: p.members.slice(),
         bordered: true,

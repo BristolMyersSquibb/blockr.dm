@@ -1,6 +1,6 @@
 Package: blockr.dm
 Title: Relational Data Management Blocks for 'blockr'
-Version: 0.0.95
+Version: 0.0.96
 Authors@R:
     c(person(given = "Christoph",
              family = "Sax",
@@ -33,7 +33,7 @@ URL: https://bristolmyerssquibb.github.io/blockr.dm/
 BugReports: https://github.com/BristolMyersSquibb/blockr.dm/issues
 Imports:
     blockr.core,
-    blockr.dplyr,
+    blockr.dplyr (>= 0.2.0.9036),
     blockr.ui,
     dm,
     dplyr,
