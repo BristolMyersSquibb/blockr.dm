@@ -486,7 +486,10 @@
             }
           });
         } else {
-          this._bodySelects[key] = Blockr.Select.multi(wrap, {
+          // Blockr.Pick (blockr.dplyr), the multi-select on trial; Blockr.Select
+          // where it is missing.
+          const Multi = Blockr.Pick || Blockr.Select;
+          this._bodySelects[key] = Multi.multi(wrap, {
             options: opts,
             selected: sel.slice(),
             placeholder: 'Select values…',

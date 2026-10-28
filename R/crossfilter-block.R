@@ -1430,6 +1430,8 @@ crossfilter_deps <- memoise0(function() {
     # control, the tooltip) and the tokens, from blockr.ui: a block's
     # controls are the design system's or they drift from it.
     blockr.ui::controls_dep(),
+    # Blockr.Pick, the multi-select on trial, for the group columns.
+    blockr.dplyr::blockr_pick_dep(),
     htmltools::htmlDependency(
       name = "crossfilter2",
       version = "1.5.4",

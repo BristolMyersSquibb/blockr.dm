@@ -386,6 +386,7 @@ value_filter_ui <- function(drill = FALSE) {
       blockr.dplyr::blockr_core_js_dep(),
       blockr.dplyr::blockr_blocks_css_dep(),
       blockr.dplyr::blockr_select_dep(),
+      blockr.dplyr::blockr_pick_dep(),
       value_filter_block_dep(),
       shiny::div(
         class = "block-container",
