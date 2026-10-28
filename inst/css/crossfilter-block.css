@@ -946,7 +946,8 @@
   color: var(--blockr-color-text-warning);
 }
 .jscf-groups--overlap .jscf-pool-levels .blockr-select__control,
-.jscf-groups--overlap .jscf-columns-select .blockr-select__control {
+.jscf-groups--overlap .jscf-columns-select .blockr-select__control,
+.jscf-groups--overlap .jscf-columns-select .blockr-pick__panel--inline {
   border-color: var(--blockr-color-border-warning);
   background-color: var(--blockr-color-bg-warning);
 }

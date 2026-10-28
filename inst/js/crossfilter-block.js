@@ -1325,11 +1325,16 @@
       colField.appendChild(host);
       s.el.appendChild(colField);
       const { options, selected } = this._columnOptions(s);
-      s.colSelect = this._pick().multi(host, {
+      // In place: the columns are what this section is for, and the list
+      // is short. Blockr.Pick.list where it is loaded, a dropdown otherwise.
+      const Pick = window.Blockr && window.Blockr.Pick;
+      const make = Pick && Pick.list ? Pick.list : this._select().multi;
+      s.colSelect = make(host, {
         options,
         selected,
         bordered: true,
         reorderable: true,
+        countLabel: 'as columns',
         label: colLabel,
         placeholder: 'Pick columns',
         onChange: (values) => this._setColumns(s, values)
