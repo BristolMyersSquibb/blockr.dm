@@ -1337,6 +1337,10 @@
         countLabel: 'as columns',
         label: colLabel,
         placeholder: 'Pick columns',
+        // A split keeps a column (_setColumns): None and the last untick are
+        // held back in the list rather than put back after the report.
+        min: 1,
+        minHint: 'A split keeps at least one column',
         onChange: (values) => this._setColumns(s, values)
       });
       s.selects.push(s.colSelect);
