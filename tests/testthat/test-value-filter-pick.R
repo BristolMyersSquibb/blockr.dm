@@ -24,11 +24,14 @@ test_that("value filter: picks, a burst and None survive the round trip", {
     shiny::textOutput("n")
   )
   server <- function(input, output, session) {
+    # `swap` stands for an upstream change: one column fewer, so the block
+    # redraws its fields.
+    dat <- shiny::reactive(if (isTRUE(input$swap > 0)) iris[, -1] else iris)
     res <- blockr.core:::get_s3_method("block_server", blk)(
-      "vf", x = blk, data = list(data = function() iris)
+      "vf", x = blk, data = list(data = dat)
     )
     output$n <- shiny::renderText({
-      out <- eval(res$expr(), list(data = iris, . = identity))
+      out <- eval(res$expr(), list(data = dat(), . = identity))
       paste(nrow(out), paste(sort(unique(as.character(out$Species))), collapse = ","))
     })
   }
@@ -95,4 +98,12 @@ test_that("value filter: picks, a burst and None survive the round trip", {
   Sys.sleep(2)
   expect_equal(result(), "150 setosa,versicolor,virginica")
   expect_equal(face(), "All 3")
+
+  # Upstream changes while the list is open with a new pick: the block
+  # redraws, the list goes, and the pick is reported rather than lost.
+  open_list()
+  app$run_js("window.__row('setosa').click();")
+  app$run_js("Shiny.setInputValue('swap', 1)")
+  Sys.sleep(3)
+  expect_equal(result(), "100 versicolor,virginica")
 })

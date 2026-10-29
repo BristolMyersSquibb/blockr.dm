@@ -496,8 +496,10 @@
             reorderable: false,
             loading: loading,
             onOpen: () => this._requestColumnValues(key),
+            // The entry itself, not its index: a Pick destroyed open by a
+            // redraw reports late, when the entries may already be new.
             onChange: (vals) => {
-              this.entries[idx].values = vals.map(String);
+              entry.values = vals.map(String);
               this._autoSubmit();
             }
           });
