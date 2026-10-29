@@ -1302,7 +1302,12 @@
     // selects is open: a multi-select reports when its list closes.
     _renderBand(s) {
       if (!s.el) return;
+      // A select destroyed open reports what was picked in it. By now s.col
+      // and s.edit may be a new column's, so those reports are dropped: a
+      // redraw from R replaces local edits (setExternalGroups).
+      s.rebuilding = true;
       for (const sel of s.selects || []) { try { sel.destroy(); } catch (_) {} }
+      s.rebuilding = false;
       s.selects = [];
       s.colSelect = null;
       s.el.innerHTML = '';
@@ -1337,7 +1342,11 @@
         countLabel: 'as columns',
         label: colLabel,
         placeholder: 'Pick columns',
-        onChange: (values) => this._setColumns(s, values)
+        // A split keeps a column (_setColumns): None and the last untick are
+        // held back in the list rather than put back after the report.
+        min: 1,
+        minHint: 'A split keeps at least one column',
+        onChange: (values) => { if (!s.rebuilding) this._setColumns(s, values); }
       });
       s.selects.push(s.colSelect);
 
@@ -1508,6 +1517,7 @@
         label: `Levels of ${p.name}`,
         placeholder: 'Pick levels',
         onChange: (values) => {
+          if (s.rebuilding) return;
           const order = s.levels.map(l => l.value);
           p.members = order.filter(v => values.includes(v))
             .concat(values.filter(v => !order.includes(v)));
