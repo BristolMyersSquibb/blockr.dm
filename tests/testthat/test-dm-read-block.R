@@ -90,12 +90,60 @@ test_that("no selection holds the read back", {
     {
       session$flushReact()
       # Tables were discovered, but pointing at a directory does not read all
-      # of it: the block waits for a selection. `req()` in the expression is
-      # how blockr.core is told "waiting", and it surfaces as shiny's silent
-      # error rather than as data.
-      expect_error(
-        session$returned$result(),
-        class = "shiny.silent.error"
+      # of it: `selected_tables` is a required state value, so core reports
+      # the block as unset. Reading its result or status does not error.
+      expect_false(session$returned$state_ready())
+      expect_identical(session$returned$status(), "unset")
+      expect_null(session$returned$result())
+
+      # Choosing a table is all it takes to read.
+      session$returned$state$selected_tables("adsl")
+      session$flushReact()
+
+      expect_identical(session$returned$status(), "ready")
+      expect_identical(
+        names(dm::dm_get_tables(session$returned$result())), "adsl"
+      )
+    },
+    args = list(x = block, data = list())
+  )
+})
+
+test_that("no path holds the read back", {
+
+  block <- new_dm_read_block()
+
+  shiny::testServer(
+    blockr.core:::get_s3_method("block_server", block),
+    {
+      session$flushReact()
+      expect_identical(session$returned$status(), "unset")
+      expect_null(session$returned$result())
+    },
+    args = list(x = block, data = list())
+  )
+})
+
+test_that("setting path then tables from outside reads", {
+
+  dir <- make_study_dir(list(adsl = data.frame(x = 1:2),
+                             adae = data.frame(y = 3:4)))
+
+  block <- new_dm_read_block()
+
+  shiny::testServer(
+    blockr.core:::get_s3_method("block_server", block),
+    {
+      session$flushReact()
+
+      session$returned$state$path(dir)
+      session$flushReact()
+      expect_identical(session$returned$status(), "unset")
+
+      session$returned$state$selected_tables("adae")
+      session$flushReact()
+      expect_identical(
+        names(dm::dm_get_tables(session$returned$result())), "adae"
       )
     },
     args = list(x = block, data = list())
