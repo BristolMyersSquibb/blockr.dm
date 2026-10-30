@@ -398,8 +398,11 @@ new_dm_read_block <- function(
 
             # What still exists at the new path stays selected, the rest
             # drops (and with it, the read of it).
-            keep <- intersect(shiny::isolate(r_selected_tables()),
-                              tbl_info$name)
+            keep <- intersect(
+              match_table_names(shiny::isolate(r_selected_tables()),
+                                tbl_info$name),
+              tbl_info$name
+            )
 
             push_picker(keep)
             set_selected(keep)
@@ -427,9 +430,19 @@ new_dm_read_block <- function(
 
             shiny::req(nrow(available_tables()) > 0)
 
-            push_picker(
-              intersect(r_selected_tables(), available_tables()$name)
-            )
+            # A caller that only knows the source asks for sheet or file
+            # names ("2024"), not the table names they became ("X2024").
+            # The state is rewritten to the table names, which re-runs this
+            # observer to move the picker.
+            tbl_names <- available_tables()$name
+            selected <- match_table_names(r_selected_tables(), tbl_names)
+
+            if (!identical(selected, r_selected_tables())) {
+              r_selected_tables(selected)
+              return()
+            }
+
+            push_picker(intersect(selected, tbl_names))
           }, ignoreInit = TRUE, ignoreNULL = FALSE)
 
           # JS -> R. The picker reports only what a user did to it: it is
@@ -541,7 +554,24 @@ new_dm_read_block <- function(
                 return(bquote(stop(.(msg), call. = FALSE)))
               }
 
-              dm_read_expr(resolved, r_selected_tables(), args = r_args())
+              tbl_names <- available_tables()$name
+              selected <- match_table_names(r_selected_tables(), tbl_names)
+
+              if (length(tbl_names) && !any(selected %in% tbl_names)) {
+                msg <- no_table_match_msg(selected, tbl_names)
+                return(bquote(stop(.(msg), call. = FALSE)))
+              }
+
+              # Building the expression reads the source's index (sheet
+              # names, archive members), which can fail. An error thrown
+              # here escapes core's error boundary and ends the session, so
+              # it goes into the expression like the failures above.
+              tryCatch(
+                dm_read_expr(resolved, selected, args = r_args()),
+                error = function(e) {
+                  bquote(stop(.(conditionMessage(e)), call. = FALSE))
+                }
+              )
             }),
             state = list(
               path = r_path,
@@ -678,6 +708,43 @@ new_dm_read_block <- function(
     allow_empty_state = "args",
     external_ctrl = c("path", "selected_tables", "args"),
     ...
+  )
+}
+
+
+#' Map sheet or file names to the table names they became
+#'
+#' Discovery turns sheet and file names into syntactic table names, so a
+#' sheet called "2024" is the table "X2024". A selected name that is not a
+#' table name but whose syntactic form is one is replaced by that form.
+#' Everything else is left as it is.
+#'
+#' @param selected Character vector of selected names, or `NULL`.
+#' @param available Character vector of discovered table names.
+#' @return `selected`, with matched names replaced.
+#' @noRd
+match_table_names <- function(selected, available) {
+  if (!length(selected) || !length(available)) {
+    return(selected)
+  }
+
+  syntactic <- make.names(selected)
+  hit <- !selected %in% available & syntactic %in% available
+  selected[hit] <- syntactic[hit]
+
+  unique(selected)
+}
+
+
+#' Error message for a selection that names no discovered table
+#' @noRd
+no_table_match_msg <- function(selected, available) {
+  shown <- utils::head(available, 20)
+  more <- if (length(available) > length(shown)) ", ..." else ""
+
+  paste0(
+    "No tables match the selection: ", paste(selected, collapse = ", "),
+    ". Available: ", paste(shown, collapse = ", "), more
   )
 }
 

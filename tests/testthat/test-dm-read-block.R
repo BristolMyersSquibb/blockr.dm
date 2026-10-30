@@ -562,3 +562,95 @@ test_that("the gear follows what the source's formats declare", {
   zip::zip(archive, "adsl.csv", root = dir, mode = "cherry-pick")
   expect_gt(length(blockr.io::source_options(archive, "container")), 0)
 })
+
+# Excel sheets become syntactic table names: a sheet called "2024" is the
+# table "X2024". A caller that only knows the workbook (the assistant, a
+# hand-written board) asks for the sheet names.
+make_year_workbook <- function() {
+  path <- withr::local_tempfile(fileext = ".xlsx", .local_envir = parent.frame())
+  writexl::write_xlsx(
+    list(
+      `2024` = data.frame(x = 1:2),
+      `2022` = data.frame(x = 3:4),
+      `2020` = data.frame(x = 5:6)
+    ),
+    path
+  )
+  path
+}
+
+test_that("sheet names select the tables they became", {
+
+  skip_if_not_installed("writexl")
+
+  path <- make_year_workbook()
+  block <- new_dm_read_block(path = path)
+
+  shiny::testServer(
+    blockr.core:::get_s3_method("block_server", block),
+    {
+      session$flushReact()
+      session$returned$state$selected_tables(c("2024", "2020"))
+      session$flushReact()
+
+      expect_identical(session$returned$status(), "ready")
+      expect_setequal(
+        names(dm::dm_get_tables(session$returned$result())),
+        c("X2024", "X2020")
+      )
+      # The state is rewritten to the table names, so the picker and whoever
+      # reads the state back see what was read.
+      expect_identical(
+        session$returned$state$selected_tables(), c("X2024", "X2020")
+      )
+    },
+    args = list(x = block, data = list())
+  )
+})
+
+test_that("a restored selection of sheet names survives discovery", {
+
+  skip_if_not_installed("writexl")
+
+  path <- make_year_workbook()
+  block <- new_dm_read_block(path = path, selected_tables = "2022")
+
+  shiny::testServer(
+    blockr.core:::get_s3_method("block_server", block),
+    {
+      session$flushReact()
+      expect_identical(
+        names(dm::dm_get_tables(session$returned$result())), "X2022"
+      )
+    },
+    args = list(x = block, data = list())
+  )
+})
+
+test_that("a selection that matches nothing is a block error", {
+
+  skip_if_not_installed("writexl")
+
+  path <- make_year_workbook()
+  block <- new_dm_read_block(path = path)
+
+  shiny::testServer(
+    blockr.core:::get_s3_method("block_server", block),
+    {
+      session$flushReact()
+      session$returned$state$selected_tables("1999")
+      session$flushReact()
+
+      # The expression is built without throwing: the failure is a stop()
+      # inside it, which core's per-block error boundary catches. Before, the
+      # build itself threw out of `res()` and ended the session.
+      expect_no_error(session$returned$result())
+      expect_identical(session$returned$status(), "failed")
+      expect_error(
+        eval(session$returned$expr()),
+        "No tables match the selection: 1999. Available: X2024, X2022, X2020"
+      )
+    },
+    args = list(x = block, data = list())
+  )
+})

@@ -20,8 +20,10 @@ dm_read_arguments <- function() {
     ),
     selected_tables = new_arg_spec(
       paste0(
-        "Optional character vector restricting which tables to load. null ",
-        "or unset loads every table found at `path`."
+        "Character vector naming the tables to load. Table names are ",
+        "syntactic R names made from the sheet or file names: sheet ",
+        "\"2024\" is table \"X2024\" (sheet names are accepted too). null ",
+        "or unset reads nothing; the block waits until tables are chosen."
       ),
       example = list("adsl", "adae", "adlbc"),
       type = arg_array(arg_string())
