@@ -509,7 +509,12 @@ new_dm_read_block <- function(
             # instead of throwing out of this reactive.
             expr = shiny::reactive({
               resolved <- resolved_path()
-              shiny::req(length(resolved) > 0)
+
+              # Core only builds the expression once `path` is set, so this
+              # is reached only by a path whose first element is empty.
+              if (!length(resolved)) {
+                return(quote(stop("No path set.", call. = FALSE)))
+              }
 
               blocked <- policy_error()
 
@@ -536,13 +541,7 @@ new_dm_read_block <- function(
                 return(bquote(stop(.(msg), call. = FALSE)))
               }
 
-              # No table chosen yet is "not ready", not "read everything":
-              # pointing the block at a directory of study data must not read
-              # all of it before anyone asks for a table.
-              selected <- r_selected_tables()
-              shiny::req(length(selected) > 0)
-
-              dm_read_expr(resolved, selected, args = r_args())
+              dm_read_expr(resolved, r_selected_tables(), args = r_args())
             }),
             state = list(
               path = r_path,
@@ -670,7 +669,13 @@ new_dm_read_block <- function(
       )
     },
     class = "dm_read_block",
-    allow_empty_state = TRUE,
+    # `path` and `selected_tables` are required: until both are set, core
+    # reports the block as `unset` and never builds its expression. No table
+    # chosen means not ready rather than read everything, so pointing the
+    # block at a directory of study data reads nothing until a table is
+    # picked. The table picker and path badge run in observers and work
+    # while the block is unset.
+    allow_empty_state = "args",
     external_ctrl = c("path", "selected_tables", "args"),
     ...
   )
