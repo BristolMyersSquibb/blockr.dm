@@ -44,19 +44,18 @@ leaves no trace.}
 
 \item{inner}{The expression the block would otherwise return.}
 
-\item{data, count}{Accepted for blocks written against blockr.dm 0.0.95 and
-ignored: the trail upstream rides through on the tables, and the trail
-no longer counts subjects.}
+\item{data, count}{Accepted and ignored: the trail upstream rides through
+on the tables, and the trail no longer counts subjects.}
 
-\item{table}{The one table a filter narrowed without cascading, as in
-blockr.dm 0.0.95. Same as \code{tables} with one name.}
+\item{table}{The one table a filter narrowed without cascading. Same as
+\code{tables} with one name.}
 }
 \value{
 \code{filter_trail()} returns a named character vector, or \code{NULL} when
 nothing is recorded. On a \code{dm} it is the union of the tables' trails in
 the order the clauses were added. \code{add_filter_trail()} returns \code{x} with
-the clause added. \code{trail_key()} returns a string, \code{trail_expr()} a call,
-and \code{provenance()} a list or \code{NULL}.
+the clause added. The deprecated \code{trail_key()} returns a string,
+\code{trail_expr()} a call, and \code{provenance()} a list or \code{NULL}.
 }
 \description{
 The record of which filters produced a table, carried on the data itself as
@@ -64,14 +63,12 @@ a \code{blockr_filters} attribute so that any downstream consumer (a chart
 caption, a table footnote, a download) can print what was applied without
 knowing anything about the board.
 
-\code{trail_key()}, \code{trail_expr()} and \code{provenance()} are for blocks in other
-packages that write or read the trail. \code{trail_key()} is the key a block
-writes its clause under: its module namespace, which carries the board's
-block id and is unique per block per session. \code{trail_expr()} wraps a
-block's expression in a call to \code{add_filter_trail()}. \code{provenance()}
-returns the \code{blockr_provenance} list a reader set on a table: \code{dataset}
-names download files, \code{note} is the line the crossfilter prints under its
-cards.
+\code{trail_key()}, \code{trail_expr()} and \code{provenance()} are deprecated and will
+stop being exported. They stay for blocks written against blockr.dm 0.0.95
+and log a warning the first time each is called in a session. A block
+passes its module namespace (\code{session$ns("")}) as the key to
+\code{add_filter_trail()}, wraps its expression in that call itself, and reads
+the \code{blockr_provenance} attribute of a table.
 }
 \details{
 The trail is a \strong{named character vector, keyed by block}. A filter block

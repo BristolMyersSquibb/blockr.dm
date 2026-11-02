@@ -366,9 +366,9 @@ value_filter_server <- function(state, drill = FALSE) {
           # narrowed its data from the data itself. The key is this block's
           # module namespace, which carries its board id, so the reader can
           # tell the drill filter's clause from the global one.
-          trail_expr(
+          block_trail_expr(
             inner,
-            trail_key(session),
+            block_trail_key(session),
             value_filter_clause(st$columns, op)
           )
         }),

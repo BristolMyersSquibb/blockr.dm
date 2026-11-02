@@ -1183,9 +1183,9 @@ crossfilter_server <- function(active_dims, filters, range_filters,
               Reduce(function(a, b) call("&", a, b), all_conds)
             }
             return(
-              trail_expr(
+              block_trail_expr(
                 as.call(list(quote(dplyr::filter), quote(data), combined)),
-                trail_key(session),
+                block_trail_key(session),
                 clause
               )
             )
@@ -1197,7 +1197,7 @@ crossfilter_server <- function(active_dims, filters, range_filters,
             expr[[tbl]] <- table_conditions[[tbl]]
           }
           expr[[1]] <- quote(dm::dm_filter)
-          trail_expr(expr, trail_key(session), clause)
+          block_trail_expr(expr, block_trail_key(session), clause)
         }),
         state = list(
           active_dims = r_active_dims,
@@ -1401,12 +1401,12 @@ build_lookups_independent <- function(
 
 # The one line of text a data source can put under the cards, e.g. which
 # study and extract the board is looking at. It is the `note` field of the
-# `blockr_provenance` list (`provenance()`), which rides on a TABLE rather
+# `blockr_provenance` list (`table_provenance()`), which rides on a TABLE rather
 # than on the dm: every dm verb (filter, key edits, dm_mutate_tbl) rebuilds
 # the dm and drops its attributes, while a table's attributes come through,
 # the way `blockr_kinds` does.
 crossfilter_note <- function(dm_obj) {
-  note <- provenance(dm_obj)$note
+  note <- table_provenance(dm_obj)$note
   if (is.character(note) && length(note) == 1L && !is.na(note) &&
       nzchar(note)) {
     note

@@ -100,7 +100,7 @@ test_that("the trail survives dm verbs and the dm-to-data-frame boundary", {
 
   # What the crossfilter block emits.
   filtered <- eval(
-    trail_expr(
+    block_trail_expr(
       quote(dm::dm_filter(data, adsl = SEX == "F", lb = LBSTRESN > 15)),
       "global_filter",
       "adsl.SEX = F; lb.LBSTRESN 15 to 30"
@@ -132,19 +132,19 @@ test_that("two filter blocks on one path do not overwrite each other", {
   # module namespace, which carries the board's block id.
   ns_of <- function(prefix) list(ns = function(x) paste0(prefix, "-expr-"))
 
-  expect_false(identical(trail_key(ns_of("ae_flags")),
-                         trail_key(ns_of("global_filter"))))
+  expect_false(identical(block_trail_key(ns_of("ae_flags")),
+                         block_trail_key(ns_of("global_filter"))))
 
   d <- data.frame(x = 1:3)
-  d <- add_filter_trail(d, trail_key(ns_of("ae_flags")), "TRTEMFL")
-  d <- add_filter_trail(d, trail_key(ns_of("global_filter")), "SEX = F")
+  d <- add_filter_trail(d, block_trail_key(ns_of("ae_flags")), "TRTEMFL")
+  d <- add_filter_trail(d, block_trail_key(ns_of("global_filter")), "SEX = F")
 
   expect_equal(unname(filter_trail(d)), c("TRTEMFL", "SEX = F"))
 
   # A session that cannot report a namespace still yields a usable key rather
   # than erroring, and the same block keeps the same one.
-  expect_identical(trail_key(NULL), "block")
-  expect_identical(trail_key(ns_of("x")), trail_key(ns_of("x")))
+  expect_identical(block_trail_key(NULL), "block")
+  expect_identical(block_trail_key(ns_of("x")), block_trail_key(ns_of("x")))
 })
 
 test_that("value_filter_clause renders columns the way the crossfilter does", {
@@ -188,19 +188,19 @@ test_that("a subject-id claim reads as the clause that was clicked", {
 
 test_that("trail_expr wraps only when there is a clause", {
   expect_identical(
-    trail_expr(quote(f(data)), "k", NULL),
+    block_trail_expr(quote(f(data)), "k", NULL),
     quote(f(data))
   )
   expect_identical(
-    trail_expr(quote(f(data)), "k", ""),
+    block_trail_expr(quote(f(data)), "k", ""),
     quote(f(data))
   )
   expect_identical(
-    trail_expr(quote(f(data)), "k", "SEX = F"),
+    block_trail_expr(quote(f(data)), "k", "SEX = F"),
     quote(blockr.dm::add_filter_trail(f(data), "k", "SEX = F"))
   )
   expect_identical(
-    trail_expr(quote(f(data)), "k", "TRTEMFL", tables = "ae"),
+    block_trail_expr(quote(f(data)), "k", "TRTEMFL", tables = "ae"),
     quote(blockr.dm::add_filter_trail(f(data), "k", "TRTEMFL", tables = "ae"))
   )
 })
@@ -210,7 +210,7 @@ test_that("the devmaster shape: an AE-only flag leaves the lab branch alone", {
   # What the flag filter emits in dm mode: one table narrowed without a
   # cascade, the clause on that table only.
   flagged <- eval(
-    trail_expr(
+    block_trail_expr(
       quote(dm::dm_update_zoomed(
         dplyr::filter(dm::dm_zoom_to(data, ae), TRTEMFL == "Y")
       )),
@@ -223,7 +223,7 @@ test_that("the devmaster shape: an AE-only flag leaves the lab branch alone", {
 
   # The crossfilter on top, on every table, because dm_filter cascades.
   both <- eval(
-    trail_expr(
+    block_trail_expr(
       quote(dm::dm_filter(data, adsl = SEX == "F")),
       "global_filter", "SEX = F"
     ),
@@ -295,27 +295,50 @@ test_that("provenance is read off the first table that has one", {
   adsl <- dm::pull_tbl(d, adsl)
   attr(adsl, "blockr_provenance") <- list(dataset = "AQ-001", path = "/d/aq")
   d <- dm::dm_mutate_tbl(d, adsl = adsl)
-  expect_identical(provenance(d)$dataset, "AQ-001")
+  expect_identical(table_provenance(d)$dataset, "AQ-001")
   # a filter rebuilds the dm, the table keeps it
-  expect_identical(provenance(dm::dm_filter(d, adsl = SEX == "F"))$path,
+  expect_identical(table_provenance(dm::dm_filter(d, adsl = SEX == "F"))$path,
                    "/d/aq")
-  expect_null(provenance(data.frame(x = 1)))
+  expect_null(table_provenance(data.frame(x = 1)))
 })
 
-test_that("trail_expr takes the arguments of blockr.dm 0.0.95", {
+test_that("the deprecated exports take the 0.0.95 arguments and log once", {
   # A flag filter from blockr.pharma main, which a saved board can still
   # build: blockr.dm::trail_key(session) in the server and trail_expr() with
   # `data` and `table`.
   expect_true(all(c("trail_key", "trail_expr", "provenance") %in%
                     getNamespaceExports("blockr.dm")))
+
+  logged <- character()
+  withr::local_options(
+    blockr.logger = function(msg, level) logged <<- c(logged, msg),
+    blockr.log_level = "warn"
+  )
+  rm(list = ls(deprecated_logged), envir = deprecated_logged)
+
+  expect_no_warning(
+    e <- trail_expr(quote(f(d)), "k", "TRTEMFL", data = quote(d),
+                    table = "ae")
+  )
   expect_identical(
-    trail_expr(quote(f(d)), "k", "TRTEMFL", data = quote(d), table = "ae"),
+    e,
     quote(blockr.dm::add_filter_trail(f(d), "k", "TRTEMFL", tables = "ae"))
   )
   expect_identical(
     trail_expr(quote(f(d)), NULL, NULL, data = quote(d), tables = "adsl"),
     quote(f(d))
   )
+  expect_identical(trail_key(NULL), "block")
+  expect_null(provenance(data.frame(x = 1)))
+
+  expect_length(logged, 3L)
+  expect_match(logged[[1L]], "blockr.dm::trail_expr() is deprecated",
+               fixed = TRUE)
+  expect_match(logged[[2L]], "blockr.dm::trail_key() is deprecated",
+               fixed = TRUE)
+  expect_match(logged[[3L]], "blockr.dm::provenance() is deprecated",
+               fixed = TRUE)
+
   flagged <- eval(
     trail_expr(
       quote(dm::dm_update_zoomed(
