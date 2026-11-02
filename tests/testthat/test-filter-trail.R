@@ -301,3 +301,29 @@ test_that("provenance is read off the first table that has one", {
                    "/d/aq")
   expect_null(provenance(data.frame(x = 1)))
 })
+
+test_that("trail_expr takes the arguments of blockr.dm 0.0.95", {
+  # A flag filter from blockr.pharma main, which a saved board can still
+  # build: blockr.dm::trail_key(session) in the server and trail_expr() with
+  # `data` and `table`.
+  expect_true(all(c("trail_key", "trail_expr", "provenance") %in%
+                    getNamespaceExports("blockr.dm")))
+  expect_identical(
+    trail_expr(quote(f(d)), "k", "TRTEMFL", data = quote(d), table = "ae"),
+    quote(blockr.dm::add_filter_trail(f(d), "k", "TRTEMFL", tables = "ae"))
+  )
+  expect_identical(
+    trail_expr(quote(f(d)), NULL, NULL, data = quote(d), tables = "adsl"),
+    quote(f(d))
+  )
+  flagged <- eval(
+    trail_expr(
+      quote(dm::dm_update_zoomed(
+        dplyr::filter(dm::dm_zoom_to(d, ae), TRTEMFL == "Y")
+      )),
+      "ae_flags", "TRTEMFL", data = quote(d), table = "ae"
+    ),
+    list(d = trail_dm())
+  )
+  expect_identical(filter_trail(flagged), c(ae_flags = "TRTEMFL"))
+})

@@ -33,7 +33,10 @@ export(new_dm_pull_block)
 export(new_dm_select_block)
 export(new_drill_filter_block)
 export(new_value_filter_block)
+export(provenance)
 export(register_dm_blocks)
+export(trail_expr)
+export(trail_key)
 importFrom(blockr.core,
   arg_array,
   arg_boolean,

@@ -3,11 +3,28 @@
 \name{filter_trail}
 \alias{filter_trail}
 \alias{add_filter_trail}
+\alias{trail_key}
+\alias{trail_expr}
+\alias{provenance}
 \title{Filter trail}
 \usage{
 filter_trail(x, tables = NULL)
 
 add_filter_trail(x, key, clause, tables = NULL)
+
+trail_key(session = shiny::getDefaultReactiveDomain())
+
+trail_expr(
+  inner,
+  key = NULL,
+  clause = NULL,
+  data = quote(data),
+  table = NULL,
+  tables = NULL,
+  count = FALSE
+)
+
+provenance(x)
 }
 \arguments{
 \item{x}{A data frame or a \code{dm}.}
@@ -22,18 +39,39 @@ it.}
 \item{clause}{What the block filtered, e.g. \code{"segment = Consumer; city = Boston"}. An
 empty or missing clause adds nothing, so a filter with nothing selected
 leaves no trace.}
+
+\item{session}{The block server's Shiny session.}
+
+\item{inner}{The expression the block would otherwise return.}
+
+\item{data, count}{Accepted for blocks written against blockr.dm 0.0.95 and
+ignored: the trail upstream rides through on the tables, and the trail
+no longer counts subjects.}
+
+\item{table}{The one table a filter narrowed without cascading, as in
+blockr.dm 0.0.95. Same as \code{tables} with one name.}
 }
 \value{
 \code{filter_trail()} returns a named character vector, or \code{NULL} when
 nothing is recorded. On a \code{dm} it is the union of the tables' trails in
 the order the clauses were added. \code{add_filter_trail()} returns \code{x} with
-the clause added.
+the clause added. \code{trail_key()} returns a string, \code{trail_expr()} a call,
+and \code{provenance()} a list or \code{NULL}.
 }
 \description{
 The record of which filters produced a table, carried on the data itself as
 a \code{blockr_filters} attribute so that any downstream consumer (a chart
 caption, a table footnote, a download) can print what was applied without
 knowing anything about the board.
+
+\code{trail_key()}, \code{trail_expr()} and \code{provenance()} are for blocks in other
+packages that write or read the trail. \code{trail_key()} is the key a block
+writes its clause under: its module namespace, which carries the board's
+block id and is unique per block per session. \code{trail_expr()} wraps a
+block's expression in a call to \code{add_filter_trail()}. \code{provenance()}
+returns the \code{blockr_provenance} list a reader set on a table: \code{dataset}
+names download files, \code{note} is the line the crossfilter prints under its
+cards.
 }
 \details{
 The trail is a \strong{named character vector, keyed by block}. A filter block

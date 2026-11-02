@@ -43,7 +43,8 @@
 #' @return `filter_trail()` returns a named character vector, or `NULL` when
 #'   nothing is recorded. On a `dm` it is the union of the tables' trails in
 #'   the order the clauses were added. `add_filter_trail()` returns `x` with
-#'   the clause added.
+#'   the clause added. `trail_key()` returns a string, `trail_expr()` a call,
+#'   and `provenance()` a list or `NULL`.
 #'
 #' @examples
 #' d <- data.frame(x = 1:3)
@@ -139,23 +140,45 @@ merge_trails <- function(trails) {
   out
 }
 
-# The key a block writes its clause under: its module namespace, which
-# carries the board's block id and is unique per block per session.
-#
-# NOT the `id` a block server receives. `expr_server.block()` calls every
-# block's server with `id = "expr"` (blockr.core/R/block-server.R), so using
-# it would file every block's clause under one key and each filter would
-# overwrite the one before it.
+#' @description
+#' `trail_key()`, `trail_expr()` and `provenance()` are for blocks in other
+#' packages that write or read the trail. `trail_key()` is the key a block
+#' writes its clause under: its module namespace, which carries the board's
+#' block id and is unique per block per session. `trail_expr()` wraps a
+#' block's expression in a call to `add_filter_trail()`. `provenance()`
+#' returns the `blockr_provenance` list a reader set on a table: `dataset`
+#' names download files, `note` is the line the crossfilter prints under its
+#' cards.
+#'
+#' @param session The block server's Shiny session.
+#'
+#' @rdname filter_trail
+#' @export
 trail_key <- function(session = shiny::getDefaultReactiveDomain()) {
+  # NOT the `id` a block server receives. `expr_server.block()` calls every
+  # block's server with `id = "expr"` (blockr.core/R/block-server.R), so using
+  # it would file every block's clause under one key and each filter would
+  # overwrite the one before it.
   ns <- tryCatch(session$ns(""), error = function(e) NULL)
   if (is.null(ns) || !length(ns) || !nzchar(ns)) "block" else ns
 }
 
-# Wrap a block's expression so it writes its clause. With no clause the
-# expression is returned as it is: the trail upstream rides through on the
-# tables. Self-qualified, because block expressions are deparsed into the
-# exported script.
-trail_expr <- function(inner, key, clause, tables = NULL) {
+#' @param inner The expression the block would otherwise return.
+#' @param data,count Accepted for blocks written against blockr.dm 0.0.95 and
+#'   ignored: the trail upstream rides through on the tables, and the trail
+#'   no longer counts subjects.
+#' @param table The one table a filter narrowed without cascading, as in
+#'   blockr.dm 0.0.95. Same as `tables` with one name.
+#'
+#' @rdname filter_trail
+#' @export
+trail_expr <- function(inner, key = NULL, clause = NULL, data = quote(data),
+                       table = NULL, tables = NULL, count = FALSE) {
+
+  # With no clause the expression is returned as it is: the trail upstream
+  # rides through on the tables. Self-qualified, because block expressions
+  # are deparsed into the exported script.
+  tables <- tables %||% table
 
   if (is.null(key) || !length(clause) || is.na(clause[[1L]]) ||
         !nzchar(clause[[1L]])) {
@@ -171,11 +194,10 @@ trail_expr <- function(inner, key, clause, tables = NULL) {
   as.call(args)
 }
 
-# Where the data came from: a named list a reader sets as a
-# `blockr_provenance` attribute on a table of its dm. `note` is the line the
-# crossfilter prints under its cards; blockr.viz reads `dataset` for
-# download file names. The first table that has one wins.
+#' @rdname filter_trail
+#' @export
 provenance <- function(x) {
+  # The first table that has one wins.
   cands <- if (inherits(x, "dm")) {
     lapply(dm::dm_get_tables(x), attr, "blockr_provenance", exact = TRUE)
   } else {
