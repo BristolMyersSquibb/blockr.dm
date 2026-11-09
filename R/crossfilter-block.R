@@ -449,16 +449,6 @@ crossfilter_server <- function(active_dims, filters, range_filters,
         )
       })
 
-      # --- Key column helper ---
-      find_key_column <- function(tbl_name) {
-        info <- dm_info()
-        pk_row <- info$pks[info$pks$table == tbl_name, ]
-        if (nrow(pk_row) > 0) return(pk_row$pk_col[[1]][[1]])
-        fk_row <- info$fks[info$fks$child_table == tbl_name, ]
-        if (nrow(fk_row) > 0) return(fk_row$child_fk_cols[[1]][[1]])
-        NULL
-      }
-
       # --- Column classification ---
       column_info_per_table <- shiny::reactive({
         info <- dm_info()
@@ -487,16 +477,17 @@ crossfilter_server <- function(active_dims, filters, range_filters,
           is_range_dim <- is_numeric & !is_low_cardinality
           is_date_dim <- is_date
 
-          # Exclude key columns from dimensions
-          key_col <- find_key_column(tbl_name)
+          # Foreign keys are left out: each one repeats its parent's key
+          # (USUBJID in every event table), and a filter on the copy narrows
+          # only that table. The primary key stays, so a reader can pick
+          # single subjects in the table that owns them.
           fk_rows <- info$fks[info$fks$child_table == tbl_name, ]
           all_fk_cols <- if (nrow(fk_rows) > 0) {
             unique(unlist(fk_rows$child_fk_cols))
           } else {
             character()
           }
-          exclude_cols <- unique(c(key_col, all_fk_cols))
-          for (ec in exclude_cols) {
+          for (ec in all_fk_cols) {
             if (ec %in% names(is_dimension)) {
               is_dimension[ec] <- FALSE
               is_range_dim[ec] <- FALSE
