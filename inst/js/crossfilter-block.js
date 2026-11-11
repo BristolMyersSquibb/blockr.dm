@@ -2476,6 +2476,11 @@
         fillBar.style.left = loP + '%';
         fillBar.style.width = (hiP - loP) + '%';
 
+        // With both handles on one spot the upper one is on top. At the top
+        // of the range it could then only be dragged into the lower one, so
+        // there the lower one goes on top and one handle always moves.
+        inputLo.style.zIndex = (lo >= hi && hi >= mx) ? '5' : '3';
+
         bubbleLo.textContent = fmtVal(lo);
         bubbleLo.style.left = loP + '%';
         bubbleHi.textContent = fmtVal(hi);
@@ -2503,8 +2508,18 @@
       // rounded to its step. Called with no argument (from a typed commit)
       // it reads neither and applies card._lo / card._hi as they stand.
       const onInput = (which) => {
-        if (which === 'lo') card._lo = Number(inputLo.value);
-        if (which === 'hi') card._hi = Number(inputHi.value);
+        // A handle stops at the other one. Dragged past it, the two values
+        // used to swap on every step of the drag: the range shrank to a
+        // sliver that trailed the dragged handle, while the handle it had
+        // passed stayed where it was.
+        if (which === 'lo') {
+          card._lo = Number(inputLo.value);
+          if (card._lo > card._hi) card._setValues(card._hi, card._hi);
+        }
+        if (which === 'hi') {
+          card._hi = Number(inputHi.value);
+          if (card._hi < card._lo) card._setValues(card._lo, card._lo);
+        }
         let lo = card._lo;
         let hi = card._hi;
         if (lo > hi) [lo, hi] = [hi, lo];

@@ -170,4 +170,47 @@ test_that("range card: typed bounds are exact, blue density is the gray cut", {
     "1"
   )
   expect_null(app$get_js("window.__cfDebug.filters.VAL"))
+
+  # -- 4. a handle stops at the other one ------------------------------------
+  # Dragged past it, the two values swapped on every step, so the range
+  # became a sliver behind the dragged handle (here it would end at 60 to 70).
+  app$run_js("
+    var card = window.__cfDebug.panels.VAL;
+    card._setValues(20, 40);
+    [50, 60, 70].forEach(function (v) {
+      card._inputLo.value = v;
+      card._inputLo.dispatchEvent(new Event('input', {bubbles: true}));
+    });
+  ")
+  Sys.sleep(0.5)
+  expect_equal(app$get_js("window.__cfDebug.panels.VAL._lo"), 40)
+  expect_equal(app$get_js("window.__cfDebug.panels.VAL._hi"), 40)
+  expect_equal(app$get_js("window.__cfDebug.filters.VAL.min"), 40)
+  expect_equal(app$get_js("window.__cfDebug.filters.VAL.max"), 40)
+  # The dragged handle is back on the other one, not where it was let go.
+  expect_equal(
+    app$get_js("Number(window.__cfDebug.panels.VAL._inputLo.value)"), 40,
+    tolerance = 0.02
+  )
+
+  # The same from the other side.
+  app$run_js("
+    var card = window.__cfDebug.panels.VAL;
+    card._setValues(20, 40);
+    card._inputHi.value = 5;
+    card._inputHi.dispatchEvent(new Event('input', {bubbles: true}));
+  ")
+  Sys.sleep(0.5)
+  expect_equal(app$get_js("window.__cfDebug.panels.VAL._lo"), 20)
+  expect_equal(app$get_js("window.__cfDebug.panels.VAL._hi"), 20)
+
+  # Both handles at the top of the range: the lower one is the one on top.
+  app$run_js("window.__cfDebug.panels.VAL._setValues(100, 100)")
+  expect_equal(
+    app$get_js("window.__cfDebug.panels.VAL._inputLo.style.zIndex"), "5"
+  )
+  app$run_js("window.__cfDebug.panels.VAL._setValues(20, 40)")
+  expect_equal(
+    app$get_js("window.__cfDebug.panels.VAL._inputLo.style.zIndex"), "3"
+  )
 })
