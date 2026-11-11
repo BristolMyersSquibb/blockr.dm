@@ -455,11 +455,15 @@
   overflow-wrap: anywhere;
 }
 /* The value turns muted when another value of the column is ticked and this
-   one is not. Muted text never sits on the hover wash. */
-.dm-cf-tw-row.dimmed .dm-cf-tw-name {
+   one is not, and when the other filters leave it no rows (it then reads 0
+   over an empty bar). A ticked value keeps its colour. Muted text never sits
+   on the hover wash. */
+.dm-cf-tw-row.dimmed .dm-cf-tw-name,
+.dm-cf-tw-row.empty:not([aria-selected="true"]) .dm-cf-tw-name {
   color: var(--blockr-color-text-muted);
 }
 .dm-cf-tw-row.dimmed:hover .dm-cf-tw-name,
+.dm-cf-tw-row.empty:hover .dm-cf-tw-name,
 .dm-cf-tw-row:hover .dm-cf-tw-bar-label,
 .dm-cf-tw-row:hover .dm-cf-tw-missing {
   color: var(--blockr-color-text-default);

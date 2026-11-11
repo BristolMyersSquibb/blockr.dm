@@ -1,7 +1,8 @@
 # The categorical card as the multi-select's list in place: a tick per row,
 # the ticked values on top under "Selected", and above eight values the
 # filter box with the count, All and None. A column of numbers keeps its
-# value order. The card has no reset of its own; a range card keeps one, and
+# value order, and a level the other filters empty keeps its row at 0. The
+# card has no reset of its own; a range card keeps one, and
 # Reset all is the count with an x.
 #
 # Drives the live JS with shinytest2 (chromote). Local-only, same opt-in as
@@ -158,6 +159,19 @@ test_that("categorical card: ticks, groups, the list head, clearing", {
   expect_equal(unlist(app$get_js("window.__values('DOSE')")), c("0", "54", "81"))
   expect_length(app$get_js("window.__groups('DOSE')"), 0)
   expect_equal(unlist(app$get_js("window.__cfDebug.filters.DOSE")), "81")
+
+  # -- A level the other filters leave no rows keeps its row, at 0 ----------
+  # Dose 81 leaves S07, S08 and S10 without a row.
+  expect_length(app$get_js("window.__values('SITE')"), 10)
+  empty <- app$get_js("window.__rows('SITE')
+    .filter(r => r.classList.contains('empty')).map(r => r.dataset.value)")
+  expect_setequal(unlist(empty), c("S07", "S08", "S10"))
+  expect_equal(
+    app$get_js("window.__rows('SITE').find(r => r.dataset.value === 'S07')
+      .querySelector('.dm-cf-tw-bar-label').textContent"),
+    "0"
+  )
+  expect_equal(count("SITE"), "10 values")
 
   # -- Reset all clears every card -------------------------------------------
   app$run_js("document.querySelector('.jscf-reset-btn').click()")

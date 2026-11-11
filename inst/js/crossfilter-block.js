@@ -2150,7 +2150,12 @@
       const scale = all.some(d => !isMissingKey(d.label)) &&
         all.every(d => isMissingKey(d.label) || isNumber(d.label));
 
-      const items = all.filter(d => d.value > 0 || selectedSet.has(d.label));
+      // Every level stays, the ones the other filters leave no rows for
+      // too: they read 0 with an empty bar and sink to the end of a list by
+      // count. A list that loses rows while another card is clicked is not
+      // the multi-select's, and a number column would lose steps of its
+      // scale.
+      const items = all;
       // Missing and empty values go last among equals, as in every table.
       const byLabel = (a, b) => {
         const am = isMissingKey(a.label), bm = isMissingKey(b.label);
@@ -2197,7 +2202,8 @@
       list.textContent = '';
       const row = (d) => {
         const on = selectedSet.has(d.label);
-        const r = el('div', 'dm-cf-tw-row' + (hasFilter && !on ? ' dimmed' : ''));
+        const r = el('div', 'dm-cf-tw-row' + (hasFilter && !on ? ' dimmed' : '') +
+          (d.value === 0 ? ' empty' : ''));
         r.dataset.value = d.label;
         r.setAttribute('role', 'option');
         r.setAttribute('aria-selected', String(on));
