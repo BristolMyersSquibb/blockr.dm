@@ -105,7 +105,7 @@ test_that("int-native payload: codes inside, labels at every edge", {
       '.dm-cf-filter-card[data-dim=\"GRP\"] .dm-cf-tw-row'));
     return {
       values: rows.map(r => r.dataset.value),
-      texts: rows.map(r => r.querySelector('td').textContent.trim())
+      texts: rows.map(r => r.querySelector('.dm-cf-tw-name').textContent.trim())
     };
   })()")
   expect_setequal(unlist(dom$values), c("A", "B", "__NA__", "__EMPTY__"))

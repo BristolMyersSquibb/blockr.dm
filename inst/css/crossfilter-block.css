@@ -59,19 +59,19 @@
   white-space: nowrap;
 }
 
-/* Reset all: the xs main button (26px, radius 4, the accent tint), the icon
-   and "179 of 306 patients" at 12px weight 500 in tabular figures. It stands
-   where the status text stands and only while a filter is on; the JS swaps
-   the two, so the count never moves. */
+/* Reset all: the xs main button (26px, radius 4, the accent tint), "179 of
+   306 patients" at 12px weight 500 in tabular figures, then the tag's x. It
+   stands where the status text stands and only while a filter is on; the JS
+   swaps the two, so the count never moves. */
 .jscf-reset-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 4px;
+  gap: 6px;
   box-sizing: border-box;
   min-width: 0;
   height: var(--blockr-control-h-xs);
-  padding: 0 8px 0 6px;
+  padding: 0 6px 0 8px;
   font: inherit;
   font-size: var(--blockr-font-size-xs);
   font-weight: var(--blockr-font-weight-medium);
@@ -94,10 +94,11 @@
   outline: var(--blockr-focus-outline);
   outline-offset: var(--blockr-focus-offset);
 }
-.jscf-reset-btn svg {
+.jscf-reset-x {
+  display: inline-flex;
   flex-shrink: 0;
 }
-/* The label gives up width before the icon does. */
+/* The label gives up width before the x does. */
 .jscf-reset-label {
   min-width: 0;
   overflow: hidden;
@@ -329,10 +330,10 @@
   gap: 2px;
   align-items: center;
 }
-/* Reset and remove: 26px tools, always shown (the crossfilter cards are the
-   exception to "hidden until hover"). Icon muted, the hover wash; remove
-   turns danger. Reset is disabled while the card cuts no rows, like Reset
-   all. */
+/* Remove, and on a range card reset: 26px tools, always shown (the
+   crossfilter cards are the exception to "hidden until hover"). Icon muted,
+   the hover wash; remove turns danger. Reset is disabled while the card cuts
+   no rows, like Reset all. */
 .dm-cf-reset-btn,
 .dm-cf-remove-btn {
   display: inline-flex;
@@ -372,208 +373,121 @@
 /* ============================================================
    Categorical card
    ============================================================ */
-/* The search field (design system, "Search field"), shown above eight
-   values: 30px, radius 6, bg-field; a 14px magnifier 9px from the left; a
-   22px clear button while there is text; on focus bg-surface, the accent
-   edge and the ring. */
-.dm-cf-tw-search {
-  position: relative;
-  display: flex;
-  align-items: center;
+/* The multi-select's list in place (Blockr.Pick, blockr.dplyr), drawn by the
+   block because every row also carries a count and a bar. The count line
+   with All and None, and the "Selected" and "Other" group names, wear Pick's
+   own classes (blockr-pick.css) and are not restyled here. */
+
+/* The filter box above eight values: 30px, the same as Select's and the
+   column menu's. On focus the accent edge and the ring. */
+.dm-cf-tw-filter {
+  display: block;
   box-sizing: border-box;
+  width: 100%;
   height: var(--blockr-control-h-sm);
-  margin-bottom: 6px;
-  padding: 0 4px 0 30px;
+  margin: 0 0 5px;
+  padding: 0 9px;
+  font: inherit;
+  font-size: var(--blockr-font-size-sm);
+  color: var(--blockr-color-text-default);
   background: var(--blockr-color-bg-field);
   border: 1px solid var(--blockr-color-border-default);
   border-radius: var(--blockr-radius-md);
-  cursor: text;
+  outline: none;
   transition: border-color var(--blockr-transition),
     box-shadow var(--blockr-transition), background var(--blockr-transition);
 }
-.dm-cf-tw-search:focus-within {
+.dm-cf-tw-filter::placeholder {
+  color: var(--blockr-color-text-muted);
+}
+.dm-cf-tw-filter:focus {
   background: var(--blockr-color-bg-surface);
   border-color: var(--blockr-color-border-accent);
   box-shadow: var(--blockr-focus-ring);
 }
-.dm-cf-tw-search-icon {
-  position: absolute;
-  left: 9px;
-  top: 50%;
-  display: inline-flex;
-  transform: translateY(-50%);
-  color: var(--blockr-color-text-muted);
-  pointer-events: none;
-}
-.dm-cf-tw-search-input {
-  flex: 1 1 auto;
-  min-width: 0;
-  height: 100%;
-  padding: 0;
-  border: 0;
-  outline: 0;
-  background: transparent;
-  font: inherit;
-  font-size: var(--blockr-font-size-sm);
-  color: var(--blockr-color-text-default);
-}
-.dm-cf-tw-search-input::placeholder {
-  color: var(--blockr-color-text-muted);
-}
-.dm-cf-tw-search-clear {
-  display: none;
-  align-items: center;
-  justify-content: center;
-  flex: none;
-  width: 22px;
-  height: 22px;
-  padding: 0;
-  border: 0;
-  border-radius: var(--blockr-radius-sm);
-  background: transparent;
-  color: var(--blockr-color-text-muted);
-  cursor: pointer;
-}
-.dm-cf-tw-search--has .dm-cf-tw-search-clear {
-  display: inline-flex;
-}
-.dm-cf-tw-search-clear:hover {
-  background: var(--blockr-color-bg-hover);
-  color: var(--blockr-color-text-default);
-}
-.dm-cf-tw-search-clear:focus-visible {
-  outline: var(--blockr-focus-outline);
-  outline-offset: var(--blockr-focus-offset);
-}
-/* 200px: about six 30px rows under the header. */
-.dm-cf-tw-scroll {
-  max-height: 200px;
+
+/* 247px: six and a half 38px rows, so the cut row says the list goes on. */
+.dm-cf-tw-list {
+  max-height: 247px;
   overflow-y: auto;
 }
-/* The card's list follows the design system's Tables: header names 13px
-   weight 600 in text-default with a 1px border-strong rule under each
-   column, 12px short of the next; rows 30px, 14px on a 20px line, 12px side
-   padding, no body rules, the hover wash. */
-.dm-cf-tw-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: var(--blockr-font-size-base);
-  table-layout: fixed;
+/* The first group name sits right under the card's header or the count
+   line, which already leave their gap. */
+.dm-cf-tw-list > .blockr-pick__group:first-child {
+  padding-top: 2px;
 }
-.dm-cf-tw-th {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  padding: 2px 12px 5px;
-  background: var(--blockr-color-bg-surface);
-  font-size: var(--blockr-font-size-sm);
-  font-weight: var(--blockr-font-weight-semibold);
-  line-height: 18px;
-  text-align: left;
-  white-space: nowrap;
-  user-select: none;
-  cursor: pointer;
-  color: var(--blockr-color-text-default);
-}
-.dm-cf-tw-th::after {
-  content: "";
-  position: absolute;
-  left: 12px;
-  right: 12px;
-  bottom: 0;
-  border-bottom: 1px solid var(--blockr-color-border-strong);
-}
-/* Count sits over the numbers, so its header does too. */
-.dm-cf-tw-th--num {
-  text-align: right;
-}
-.jscf-th-head {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  max-width: 100%;
-  vertical-align: middle;
-}
-/* The sort cue, as in the table preview (blockr.ui): sort bars that draw the
-   values top to bottom, short to long for ascending, long to short for
-   descending; the accent on the sorted column, muted on hover elsewhere.
-   A mask, so the colour is currentColor. */
-.jscf-sort-cue {
-  flex: none;
-  width: 12px;
-  height: 12px;
-  visibility: hidden;
-  color: var(--blockr-color-text-muted);
-  background-color: currentColor;
-  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='black' stroke-width='1.4' stroke-linecap='round'%3E%3Cpath d='M2 3h3M2 6h5.5M2 9h8'/%3E%3C/svg%3E") no-repeat center / 12px 12px;
-  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='black' stroke-width='1.4' stroke-linecap='round'%3E%3Cpath d='M2 3h3M2 6h5.5M2 9h8'/%3E%3C/svg%3E") no-repeat center / 12px 12px;
-}
-.jscf-sort-cue--desc {
-  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='black' stroke-width='1.4' stroke-linecap='round'%3E%3Cpath d='M2 3h8M2 6h5.5M2 9h3'/%3E%3C/svg%3E");
-  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='black' stroke-width='1.4' stroke-linecap='round'%3E%3Cpath d='M2 3h8M2 6h5.5M2 9h3'/%3E%3C/svg%3E");
-}
-.dm-cf-tw-th:hover .jscf-sort-cue,
-.jscf-sort-cue--on {
-  visibility: visible;
-}
-.jscf-sort-cue--on {
-  color: var(--blockr-color-text-accent);
-}
-/* Rows: 30px. The hover wash; the value turns muted when another value of
-   the column is picked and this one is not. */
+
+/* A row: the tick's slot, the value and its count on one line, the bar under
+   them across the row. 14px on a 20px line, 10px side padding, radius 4, the
+   hover wash. The value wraps; the count keeps its width. */
 .dm-cf-tw-row {
-  height: 30px;
-  cursor: pointer;
-  color: var(--blockr-color-text-default);
-}
-.dm-cf-tw-row td {
-  padding: 5px 12px;
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  row-gap: 3px;
+  padding: 5px 10px 6px;
+  border-radius: var(--blockr-radius-sm);
+  font-size: var(--blockr-font-size-base);
   line-height: 20px;
+  color: var(--blockr-color-text-default);
+  cursor: pointer;
 }
-.dm-cf-tw-row td:first-child {
-  border-radius: var(--blockr-radius-sm) 0 0 var(--blockr-radius-sm);
-}
-.dm-cf-tw-row td:last-child {
-  border-radius: 0 var(--blockr-radius-sm) var(--blockr-radius-sm) 0;
-}
-.dm-cf-tw-row:hover td {
+.dm-cf-tw-row:hover {
   background: var(--blockr-color-bg-hover);
 }
-.dm-cf-tw-row.dimmed td {
+.dm-cf-tw-row:focus-visible {
+  outline: var(--blockr-focus-outline);
+  outline-offset: -2px;
+}
+/* The tick, as the multi-select draws it: 14px in the accent, in a slot
+   every row keeps, so the values stay in line. */
+.dm-cf-tw-tick {
+  display: inline-flex;
+  width: 14px;
+  height: 14px;
+  margin-top: 3px;
+  color: var(--blockr-color-text-accent);
+}
+.dm-cf-tw-tick svg {
+  display: block;
+}
+.dm-cf-tw-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+/* The value turns muted when another value of the column is ticked and this
+   one is not. Muted text never sits on the hover wash. */
+.dm-cf-tw-row.dimmed .dm-cf-tw-name {
   color: var(--blockr-color-text-muted);
 }
-/* Muted text never sits on the hover wash. */
-.dm-cf-tw-row.dimmed:hover td,
+.dm-cf-tw-row.dimmed:hover .dm-cf-tw-name,
 .dm-cf-tw-row:hover .dm-cf-tw-bar-label,
 .dm-cf-tw-row:hover .dm-cf-tw-missing {
   color: var(--blockr-color-text-default);
-}
-.dm-cf-tw-row.dimmed .dm-cf-tw-bar-fill {
-  opacity: 0.2;
 }
 /* Missing and empty values: NA and (empty), 12px muted. */
 .dm-cf-tw-missing {
   font-size: var(--blockr-font-size-xs);
   color: var(--blockr-color-text-muted);
 }
-.dm-cf-tw-bar-cell {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 5px;
+.dm-cf-tw-bar-label {
+  padding-left: 10px;
+  font-size: var(--blockr-font-size-xs);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+  color: var(--blockr-color-text-muted);
 }
-/* Bars: the accent at --blockr-mark-weight-supporting, the value end rounded
-   by --blockr-mark-radius; the zero end is shared by every row and stays
+/* Bars: 4px under the value and the count, the accent at
+   --blockr-mark-weight-supporting, the value end rounded by
+   --blockr-mark-radius; the zero end is shared by every row and stays
    square. The track is a light wash of the text colour, so it still shows on
    a hovered row. */
 .dm-cf-tw-bar-track {
-  flex: 1;
-  max-width: 96px;
-  height: 12px;
+  grid-column: 2 / 4;
+  height: 4px;
   background: color-mix(in srgb, var(--blockr-color-text-default) 6%, transparent);
   border-radius: 0 var(--blockr-mark-radius) var(--blockr-mark-radius) 0;
   overflow: hidden;
-  position: relative;
 }
 .dm-cf-tw-bar-fill {
   height: 100%;
@@ -581,20 +495,18 @@
   background: var(--blockr-color-bg-accent);
   /* These bars support a CHOICE (which level to filter to); they are not the
      answer, so they carry less weight than a summarize-table bar. NOTE: the
-     .dimmed rule above drives the SAME property to 0.2 to mean "this row is
+     .dimmed rule below drives the SAME property to 0.2 to mean "this row is
      excluded". Two unrelated meanings on one property -- it overrides rather
      than multiplies, and must stay that way. */
   opacity: var(--blockr-mark-weight-supporting);
 }
-.dm-cf-tw-bar-label {
-  font-size: var(--blockr-font-size-xs);
-  font-variant-numeric: tabular-nums;
-  /* Set per card by _sizeCountColumn() from the widest number rendered. One
-     width per card keeps the bars aligned down the column. */
-  width: var(--jscf-count-w, 60px);
-  text-align: right;
-  flex-shrink: 0;
-  white-space: nowrap;
+.dm-cf-tw-row.dimmed .dm-cf-tw-bar-fill {
+  opacity: 0.2;
+}
+/* "No matches", and "+12 more, type to narrow" under a list cut at 200. */
+.dm-cf-tw-note {
+  padding: 8px 10px;
+  font-size: var(--blockr-font-size-sm);
   color: var(--blockr-color-text-muted);
 }
 

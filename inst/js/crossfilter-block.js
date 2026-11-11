@@ -14,12 +14,13 @@
 
   const ICON_RESET = '<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path fill-rule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 1 1 .908-.418A6 6 0 1 1 8 2v1z"/><path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466z"/></svg>';
 
-  // The search field's magnifier.
-  const ICON_SEARCH = '<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001q.044.06.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1 1 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0"/></svg>';
-
-  // A card shows its search above this many values, as a menu shows its
-  // filter box.
+  // A card shows its filter box above this many values, as a menu does.
   const SEARCH_MIN_VALUES = 8;
+  // A card draws this many rows and then says how many more there are, as
+  // the multi-select does; the filter box reaches the rest.
+  const MAX_CARD_ROWS = 200;
+  const REDUCED_MOTION = typeof window.matchMedia === 'function' &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   // Missing and empty values, shown as NA and (empty), and sorted last.
   const isMissingKey = (v) => v === '__NA__' || v === '__EMPTY__';
@@ -340,15 +341,16 @@
       this.statusEl = el('span', 'jscf-status-text');
       gearHeader.appendChild(this.statusEl);
 
-      // Reset all: the design system's 26px main button, the icon and the
-      // count it would lift, "179 of 306 patients". It takes the status
-      // text's place while a filter is on and is not there otherwise, so the
-      // count and the way back to all of it are one thing. The tooltip names
-      // the clause it would undo.
-      this.resetBtn = el('button', 'jscf-reset-btn', ICON_RESET);
+      // Reset all: the count it would lift, "179 of 306 patients", then an
+      // x, as a tag carries its remove. It takes the status text's place
+      // while a filter is on and is not there otherwise, so the count and the
+      // way back to all of it are one thing. The tooltip names the clause it
+      // would undo.
+      this.resetBtn = el('button', 'jscf-reset-btn');
       this.resetBtn.type = 'button';
       this.resetLabelEl = el('span', 'jscf-reset-label');
       this.resetBtn.appendChild(this.resetLabelEl);
+      this.resetBtn.appendChild(el('span', 'jscf-reset-x', window.Blockr.icons.remove));
       this.resetBtn.style.display = 'none';
       this.resetBtn.addEventListener('click', () => this._resetAllFilters());
       tip(this.resetBtn, () => {
@@ -1967,20 +1969,23 @@
       }
     }
 
-    // A card's reset and remove: 26px icon buttons, always shown (the one
-    // exception to "hidden until hover", see the design system's crossfilter).
-    _cardActions(dim, tbl) {
+    // A card's tools: 26px icon buttons, always shown (the one exception to
+    // "hidden until hover", see the design system's crossfilter). Every card
+    // has remove. A range card also has reset, which puts its handles back;
+    // a categorical card clears from its list head instead.
+    _cardActions(dim, tbl, { reset = true } = {}) {
       const actions = el('div', 'dm-cf-filter-card-actions');
-      // Disabled while the card cuts no rows, like Reset all
-      // (_syncShelfState keeps it current).
-      const resetBtn = el('button', 'dm-cf-reset-btn', ICON_RESET);
-      resetBtn.type = 'button';
-      resetBtn.disabled = !this._isFiltering(dim);
-      resetBtn.setAttribute('aria-label', `Reset the ${dim} filter`);
-      tip(resetBtn, 'Reset filter');
-      resetBtn.addEventListener('click', () => this._clearFilter(dim));
-      actions.appendChild(resetBtn);
-      actions._resetBtn = resetBtn;
+      if (reset) {
+        // Disabled while the card cuts no rows, like Reset all
+        // (_syncShelfState keeps it current).
+        const resetBtn = el('button', 'dm-cf-reset-btn', ICON_RESET);
+        resetBtn.type = 'button';
+        resetBtn.disabled = !this._isFiltering(dim);
+        resetBtn.setAttribute('aria-label', `Reset the ${dim} filter`);
+        tip(resetBtn, 'Reset filter');
+        resetBtn.addEventListener('click', () => this._clearFilter(dim));
+        actions.appendChild(resetBtn);
+      }
       const removeBtn = el('button', 'dm-cf-remove-btn', window.Blockr.icons.x);
       removeBtn.type = 'button';
       removeBtn.setAttribute('aria-label', `Remove ${dim}`);
@@ -1991,6 +1996,14 @@
     }
 
     // -- Categorical card ---------------------------------------------------
+    //
+    // The card is the multi-select's list in place (Blockr.Pick, blockr.dplyr):
+    // a tick in a slot every row keeps, the ticked values on top under
+    // "Selected", the rest under "Other", and above SEARCH_MIN_VALUES values
+    // the filter box with the count, All and None. It is drawn here and not
+    // by Blockr.Pick because each row also carries a count and a bar, and
+    // both change with every filter on the board. The list head and the group
+    // names wear Pick's classes, so they keep its look.
 
     _createCategoricalCard(dim, tbl, opts = {}) {
       const isPinned = !!opts.pinned;
@@ -2013,280 +2026,257 @@
 
       // Removing a card is a one-click job on the card itself. The group's
       // card is removable like any other -- closing it drops a filter, not
-      // the grouping.
-      header.appendChild(this._cardActions(dim, tbl));
+      // the grouping. No reset here: None in the list head clears a long
+      // card, a short one is unticked by hand, and Reset all clears the lot.
+      header.appendChild(this._cardActions(dim, tbl, { reset: false }));
       card.appendChild(header);
 
-      // The card's search field (design system, "Search field"): a
-      // magnifier, the input, a clear button while there is text. Shown
-      // only above SEARCH_MIN_VALUES values (_renderCategoricalCounts).
-      const searchWrap = el('label', 'dm-cf-tw-search');
-      searchWrap.style.display = 'none';
-      searchWrap.appendChild(el('span', 'dm-cf-tw-search-icon', ICON_SEARCH));
-      const searchInput = el('input', 'dm-cf-tw-search-input');
-      searchInput.type = 'text';
-      searchInput.placeholder = 'Search\u2026';
-      searchInput.autocomplete = 'off';
-      searchInput.spellcheck = false;
-      searchInput.setAttribute('aria-label', `Search ${dim}`);
-      const clearBtn = el('button', 'dm-cf-tw-search-clear', window.Blockr.icons.remove);
-      clearBtn.type = 'button';
-      clearBtn.setAttribute('aria-label', 'Clear the search');
-      tip(clearBtn, 'Clear');
-      const applySearch = () => {
-        card._query = searchInput.value.trim().toLowerCase();
-        searchWrap.classList.toggle('dm-cf-tw-search--has', searchInput.value !== '');
-        this._applyCardSearch(card);
+      // The list head: the filter box, then the count with All and None.
+      // Shown only above SEARCH_MIN_VALUES values (_renderCategoricalCounts).
+      const head = el('div', 'dm-cf-tw-head');
+      head.style.display = 'none';
+      const filterInput = el('input', 'dm-cf-tw-filter');
+      filterInput.type = 'text';
+      filterInput.placeholder = 'Filter';
+      filterInput.autocomplete = 'off';
+      filterInput.spellcheck = false;
+      filterInput.setAttribute('aria-label', `Filter the values of ${dim}`);
+      const redraw = () => {
+        if (this.groups[dim]) {
+          this._renderCategoricalCounts(dim, this.groups[dim].all());
+        }
       };
-      searchInput.addEventListener('input', applySearch);
-      searchInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape' && searchInput.value) {
+      const applyQuery = () => {
+        card._query = filterInput.value.trim().toLowerCase();
+        redraw();
+      };
+      filterInput.addEventListener('input', applyQuery);
+      filterInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && filterInput.value) {
           e.preventDefault();
           e.stopPropagation();
-          searchInput.value = '';
-          applySearch();
+          filterInput.value = '';
+          applyQuery();
         }
       });
-      clearBtn.addEventListener('click', (e) => {
+      head.appendChild(filterInput);
+
+      const bulk = el('div', 'blockr-pick__bulk');
+      const countEl = el('span', 'blockr-pick__count');
+      const bulkBtns = el('span', 'blockr-pick__bulk-btns');
+      const allBtn = el('button', 'blockr-pick__bulk-btn', 'All');
+      const noneBtn = el('button', 'blockr-pick__bulk-btn', 'None');
+      allBtn.type = 'button';
+      noneBtn.type = 'button';
+      allBtn.addEventListener('click', () => this._bulkCategorical(dim, true));
+      noneBtn.addEventListener('click', () => this._bulkCategorical(dim, false));
+      bulkBtns.appendChild(allBtn);
+      bulkBtns.appendChild(noneBtn);
+      bulk.appendChild(countEl);
+      bulk.appendChild(bulkBtns);
+      head.appendChild(bulk);
+      card.appendChild(head);
+
+      // The rows. One tab stop: the arrows move between rows, Space and
+      // Enter tick the row that has the focus.
+      const list = el('div', 'dm-cf-tw-list');
+      list.setAttribute('role', 'listbox');
+      list.setAttribute('aria-multiselectable', 'true');
+      list.setAttribute('aria-label', sublabel ? `${dim}, ${sublabel}` : dim);
+      list.addEventListener('click', (e) => {
+        const row = e.target.closest('.dm-cf-tw-row');
+        if (row && list.contains(row)) {
+          this._toggleCategorical(dim, row.dataset.value);
+        }
+      });
+      list.addEventListener('keydown', (e) => {
+        const rows = Array.from(list.querySelectorAll('.dm-cf-tw-row'));
+        const i = rows.indexOf(document.activeElement);
+        if (i < 0) return;
+        if (e.key === ' ' || e.key === 'Enter') {
+          e.preventDefault();
+          this._toggleCategorical(dim, rows[i].dataset.value);
+          return;
+        }
+        const to = e.key === 'ArrowDown' ? rows[Math.min(i + 1, rows.length - 1)]
+          : e.key === 'ArrowUp' ? rows[Math.max(i - 1, 0)]
+            : e.key === 'Home' ? rows[0]
+              : e.key === 'End' ? rows[rows.length - 1] : null;
+        if (!to) return;
         e.preventDefault();
-        searchInput.value = '';
-        applySearch();
-        searchInput.focus();
+        rows[i].tabIndex = -1;
+        to.tabIndex = 0;
+        to.focus();
       });
-      searchWrap.appendChild(searchInput);
-      searchWrap.appendChild(clearBtn);
-      card.appendChild(searchWrap);
-      card._searchWrap = searchWrap;
-      card._searchInput = searchInput;
+      card.appendChild(list);
+
+      card._head = head;
+      card._filterInput = filterInput;
+      card._countEl = countEl;
+      card._allBtn = allBtn;
+      card._noneBtn = noneBtn;
+      card._list = list;
       card._query = '';
-
-      // Default sort: count descending
-      card._sortCol = 'count';
-      card._sortDir = 'desc';
-
-      // Scrollable table
-      const scroll = el('div', 'dm-cf-tw-scroll');
-      const table = el('table', 'dm-cf-tw-table');
-      const thead = el('thead');
-      const headRow = el('tr');
-
-      const valueTh = el('th', 'dm-cf-tw-th');
-      const countTh = el('th', 'dm-cf-tw-th');
-      // Width follows the widest number the card actually renders
-      // (_sizeCountColumn); this is the starting point, replaced on first
-      // render. table-layout is fixed, so whatever this column does not take
-      // goes to the values, which is where long level names need it.
-      countTh.style.width = '135px';
-
-      // The sort cue, as in the table preview: sort bars beside the
-      // header text, in the accent on the sorted column. The other column
-      // shows, muted and on hover only, what a click on it would do.
-      const firstDir = (col) => col === 'count' ? 'desc' : 'asc';
-      const sortWords = {
-        value: { asc: 'A to Z', desc: 'Z to A' },
-        count: { asc: 'Smallest first', desc: 'Largest first' }
-      };
-      const head = (th, text, col) => {
-        th.innerHTML = '';
-        const on = card._sortCol === col;
-        const dir = on ? card._sortDir : firstDir(col);
-        const h = el('span', 'jscf-th-head');
-        const cue = el('span',
-          `jscf-sort-cue jscf-sort-cue--${dir}${on ? ' jscf-sort-cue--on' : ''}`);
-        // Before the name on the right-aligned Count, so the name stays
-        // over its numbers; after it on the values.
-        if (col === 'count') h.appendChild(cue);
-        h.appendChild(document.createTextNode(text));
-        if (col !== 'count') h.appendChild(cue);
-        th.appendChild(h);
-        th.classList.toggle('dm-cf-tw-th--sorted', on);
-        if (on) th.setAttribute('aria-sort', dir === 'asc' ? 'ascending' : 'descending');
-        else th.removeAttribute('aria-sort');
-      };
-      const updateThLabels = () => {
-        head(valueTh, dim, 'value');
-        head(countTh, 'Count', 'count');
-      };
-      updateThLabels();
-      countTh.classList.add('dm-cf-tw-th--num');
-      for (const [th, col] of [[valueTh, 'value'], [countTh, 'count']]) {
-        tip(th, () => card._sortCol === col ? sortWords[col][card._sortDir] : null);
-      }
-
-      const toggleSort = (col) => {
-        if (card._sortCol === col) {
-          card._sortDir = card._sortDir === 'desc' ? 'asc' : 'desc';
-        } else {
-          card._sortCol = col;
-          card._sortDir = col === 'count' ? 'desc' : 'asc';
-        }
-        updateThLabels();
-        this._renderCategoricalCounts(dim, this.groups[dim].all());
-      };
-
-      valueTh.addEventListener('click', () => toggleSort('value'));
-      countTh.addEventListener('click', () => toggleSort('count'));
-
-      headRow.appendChild(valueTh);
-      headRow.appendChild(countTh);
-      thead.appendChild(headRow);
-      table.appendChild(thead);
-
-      const tbody = el('tbody');
-      table.appendChild(tbody);
-      scroll.appendChild(table);
-      card.appendChild(scroll);
-
-      card._tbody = tbody;
-      card._countTh = countTh;
+      card._matching = [];
       return card;
     }
 
     _renderCategoricalCounts(dim, counts) {
       const card = this.panels[dim];
-      if (!card || !card._tbody) return;
-      const tbody = card._tbody;
+      if (!card || !card._list) return;
+      const list = card._list;
 
       const gv = (d) => this._getGroupValue(d);
       const hasMeasure = this.measure && this.measure !== '.count';
 
-      const filtered = counts.filter(d => gv(d) > 0 || this._isSelected(dim, d.key));
-
-      // Apply card's sort state
-      const sortCol = card._sortCol || 'count';
-      const sortDir = card._sortDir || 'desc';
-      const sorted = filtered.sort((a, b) => {
-        let cmp;
-        if (sortCol === 'value') {
-          // Decode BEFORE comparing: group keys are int codes for encoded
-          // dims, and comparing codes (or stringified codes: "10" < "2")
-          // would change the visible order. Missing and empty values go
-          // last in both directions, as in every table.
-          const av = this._decodeStr(dim, a.key);
-          const bv = this._decodeStr(dim, b.key);
-          const am = isMissingKey(av), bm = isMissingKey(bv);
-          if (am || bm) return am && bm ? 0 : am ? 1 : -1;
-          cmp = av.localeCompare(bv);
-        } else {
-          cmp = gv(a) - gv(b);
-        }
-        return sortDir === 'asc' ? cmp : -cmp;
-      });
-
       const selected = this.filters[dim];
-      const selectedSet = selected ? new Set(selected) : null;
-      const hasFilter = !!selectedSet;
-      const maxVal = sorted.reduce((m, d) => Math.max(m, Math.abs(gv(d))), 0);
+      const selectedSet = new Set(Array.isArray(selected) ? selected : []);
+      const hasFilter = selectedSet.size > 0;
 
-      tbody.innerHTML = '';
-      let widestLabel = 0;
-      for (const item of sorted) {
-        const count = gv(item);
-        // Decode once: item.key is an int code for encoded dims. The label
-        // is what selection state, dataset.value, the sentinel display test
-        // and the click handler all operate on -- comparing item.key against
-        // the '__NA__'/'__EMPTY__' STRINGS would silently never match.
-        const valLabel = this._decodeStr(dim, item.key);
-        const isSelected = selectedSet && selectedSet.has(valLabel);
-        const isDimmed = hasFilter && !isSelected;
+      // Decode once: a group key is an int code for encoded dims, and the
+      // label is what selection state, dataset.value, the sentinel display
+      // test and the click handler all work on -- comparing the key against
+      // the '__NA__'/'__EMPTY__' STRINGS would silently never match.
+      const all = counts.map(d => ({ label: this._decodeStr(dim, d.key), value: gv(d) }));
+      const display = (label) => label === '__NA__' ? 'NA'
+        : label === '__EMPTY__' ? '(empty)' : label;
 
-        const tr = el('tr', 'dm-cf-tw-row' + (isDimmed ? ' dimmed' : ''));
-        tr.dataset.value = valLabel;
+      // A column whose values are all numbers (a numeric column of ten or
+      // fewer values gets this card) is a scale: its rows stay in value
+      // order and a tick does not move them, since the order is what they
+      // say. Read off every level, not the ones with rows left, so the card
+      // does not change its mind as other filters cut levels out.
+      const isNumber = (v) => v.trim() !== '' && isFinite(Number(v));
+      const scale = all.some(d => !isMissingKey(d.label)) &&
+        all.every(d => isMissingKey(d.label) || isNumber(d.label));
 
-        // Value cell
-        const tdVal = el('td');
-        const displayKey = valLabel === '__NA__' ? 'NA'
-          : valLabel === '__EMPTY__' ? '(empty)' : valLabel;
-        if (valLabel === '__NA__' || valLabel === '__EMPTY__') {
-          tdVal.appendChild(el('span', 'dm-cf-tw-missing', displayKey));
-        } else {
-          tdVal.textContent = displayKey;
-        }
-        tr.appendChild(tdVal);
-
-        // Bar + count cell
-        const tdBar = el('td');
-        const barCell = el('div', 'dm-cf-tw-bar-cell');
-        const track = el('div', 'dm-cf-tw-bar-track');
-        const fill = el('div', 'dm-cf-tw-bar-fill');
-        const absCount = Math.abs(count);
-        fill.style.width = maxVal > 0 ? `${(absCount / maxVal) * 100}%` : '0%';
-        track.appendChild(fill);
-        barCell.appendChild(track);
-        const label = hasMeasure ? fmtNum(count) : fmtCount(count);
-        if (label.length > widestLabel) widestLabel = label.length;
-        barCell.appendChild(el('span', 'dm-cf-tw-bar-label', label));
-        tdBar.appendChild(barCell);
-        tr.appendChild(tdBar);
-
-        tr.addEventListener('click', () => {
-          this._toggleCategorical(dim, valLabel);
-        });
-
-        tbody.appendChild(tr);
-      }
-
-      this._sizeCountColumn(card, widestLabel);
+      const items = all.filter(d => d.value > 0 || selectedSet.has(d.label));
+      // Missing and empty values go last among equals, as in every table.
+      const byLabel = (a, b) => {
+        const am = isMissingKey(a.label), bm = isMissingKey(b.label);
+        if (am || bm) return am && bm ? 0 : am ? 1 : -1;
+        return scale ? Number(a.label) - Number(b.label)
+          : a.label.localeCompare(b.label);
+      };
+      items.sort(scale ? byLabel : (a, b) => (b.value - a.value) || byLabel(a, b));
+      const maxVal = items.reduce((m, d) => Math.max(m, Math.abs(d.value)), 0);
 
       const searchable = counts.length > SEARCH_MIN_VALUES;
-      card._searchWrap.style.display = searchable ? '' : 'none';
+      card._head.style.display = searchable ? '' : 'none';
       if (!searchable && card._query) {
-        card._searchInput.value = '';
+        card._filterInput.value = '';
         card._query = '';
-        card._searchWrap.classList.remove('dm-cf-tw-search--has');
       }
-      this._applyCardSearch(card);
-    }
+      const q = card._query;
+      const shown = q
+        ? items.filter(d => display(d.label).toLowerCase().includes(q)) : items;
+      card._matching = shown.map(d => d.label);
 
-    // Hide the rows the card's search does not match. Run after every render,
-    // so a data update keeps the reader's query.
-    _applyCardSearch(card) {
-      const q = card._query || '';
-      for (const r of card._tbody.querySelectorAll('.dm-cf-tw-row')) {
-        const v = r.dataset.value.toLowerCase();
-        r.style.display = (q === '' || v.includes(q)) ? '' : 'none';
+      // The ticked values lead, each group in the card's order. The list
+      // stops at MAX_CARD_ROWS; the filter box reaches the rest.
+      const picked = scale ? [] : shown.filter(d => selectedSet.has(d.label));
+      const rest = scale ? shown : shown.filter(d => !selectedSet.has(d.label));
+      const pickedRows = picked.slice(0, MAX_CARD_ROWS);
+      const restRows = rest.slice(0, MAX_CARD_ROWS - pickedRows.length);
+      const extra = shown.length - pickedRows.length - restRows.length;
+
+      // Where the rows are and which one has the focus, so the redraw can
+      // slide them from there and hand the focus back.
+      const slide = card._slide && !REDUCED_MOTION;
+      card._slide = false;
+      const before = new Map();
+      const oldRows = Array.from(list.querySelectorAll('.dm-cf-tw-row'));
+      if (slide) {
+        for (const r of oldRows) before.set(r.dataset.value, r.getBoundingClientRect().top);
       }
-    }
+      const focusAt = oldRows.indexOf(document.activeElement);
+      const valueAt = (i) => oldRows[i] ? oldRows[i].dataset.value : null;
+      const focused = valueAt(focusAt);
+      const afterFocused = valueAt(focusAt + 1);
 
-    // The count column was a flat 160px, which is right for "1,234,567" and
-    // wastes half the card on a study with two-digit counts -- the bar and its
-    // number ended up at opposite ends of the row. Size it to the widest
-    // number this card actually renders instead, and give what is left to the
-    // values, where a long level name ("BLACK OR AFRICAN AMERICAN") is
-    // otherwise wrapped to four lines. One width per card, not per row, so the
-    // bars still line up.
-    _sizeCountColumn(card, widestLabel) {
-      const chars = Math.max(2, widestLabel || 0);
-      // ch is the digit width in a tabular-numeral font, plus a little for the
-      // padding the cell already carries.
-      card.style.setProperty('--jscf-count-w', `calc(${chars}ch + 8px)`);
-      if (card._countTh) {
-        // What the bar needs to reach its full length: the 96px cap, the 5px
-        // gap to the number, the cell's own 24px of padding, and the number
-        // itself. Keep in step with .dm-cf-tw-bar-track's max-width, or the
-        // bar never gets the width the column reserved for it.
-        //
-        // Capped at 45% of the card because the width is in px and the
-        // column does not shrink with it: on a narrow card a fixed
-        // reservation eats the level names, and a wrapped name costs a whole
-        // row. The bar gives way instead -- it supports the choice, the name
-        // IS the choice. The cap is applied here in px rather than as
-        // `min(..., 45%)`, which parses but is ignored for a column of a
-        // `table-layout: fixed` table (measured: the column fell back to an
-        // even split and wrapped every long level).
-        const needed = 133 + chars * 7.2;
-        const cardW = card.clientWidth || 0;
-        card._countTh.style.width = cardW && needed > cardW * 0.45
-          ? `${Math.round(cardW * 0.45)}px`
-          : `calc(133px + ${chars}ch)`;
+      list.textContent = '';
+      const row = (d) => {
+        const on = selectedSet.has(d.label);
+        const r = el('div', 'dm-cf-tw-row' + (hasFilter && !on ? ' dimmed' : ''));
+        r.dataset.value = d.label;
+        r.setAttribute('role', 'option');
+        r.setAttribute('aria-selected', String(on));
+        r.tabIndex = -1;
+
+        // The tick's slot is there on every row, so the names stay in line.
+        r.appendChild(el('span', 'dm-cf-tw-tick', on ? window.Blockr.icons.check : ''));
+
+        const name = el('span', 'dm-cf-tw-name');
+        if (isMissingKey(d.label)) {
+          name.appendChild(el('span', 'dm-cf-tw-missing', display(d.label)));
+        } else {
+          name.textContent = d.label;
+        }
+        r.appendChild(name);
+
+        const num = el('span', 'dm-cf-tw-bar-label');
+        num.textContent = hasMeasure ? fmtNum(d.value) : fmtCount(d.value);
+        r.appendChild(num);
+
+        const track = el('div', 'dm-cf-tw-bar-track');
+        const fill = el('div', 'dm-cf-tw-bar-fill');
+        fill.style.width = maxVal > 0 ? `${(Math.abs(d.value) / maxVal) * 100}%` : '0%';
+        track.appendChild(fill);
+        r.appendChild(track);
+        return r;
+      };
+      const groupName = (text) => {
+        const h = el('div', 'blockr-pick__group');
+        h.textContent = text;
+        h.setAttribute('role', 'presentation');
+        return h;
+      };
+      if (pickedRows.length) {
+        list.appendChild(groupName('Selected'));
+        for (const d of pickedRows) list.appendChild(row(d));
+        if (restRows.length) list.appendChild(groupName('Other'));
       }
-    }
+      for (const d of restRows) list.appendChild(row(d));
+      if (!shown.length) {
+        list.appendChild(el('div', 'dm-cf-tw-note', 'No matches'));
+      } else if (extra > 0) {
+        list.appendChild(el('div', 'dm-cf-tw-note',
+          `+${fmtCount(extra)} more, type to narrow`));
+      }
 
-    _isSelected(dim, key) {
-      // `key` is a group key (int code for encoded dims); `this.filters`
-      // holds labels.
-      const sel = this.filters[dim];
-      return sel && sel.includes(this._decodeStr(dim, key));
+      // The count, and what All and None would change: with text in the
+      // filter box they act on the values it matches.
+      card._countEl.textContent = hasFilter
+        ? `${fmtCount(selectedSet.size)} of ${fmtCount(items.length)} selected`
+        : `${fmtCount(items.length)} values`;
+      card._allBtn.disabled = !shown.some(d => !selectedSet.has(d.label));
+      card._noneBtn.disabled = !shown.some(d => selectedSet.has(d.label));
+
+      const rows = Array.from(list.querySelectorAll('.dm-cf-tw-row'));
+      if (slide) {
+        for (const r of rows) {
+          const was = before.get(r.dataset.value);
+          if (was === undefined) continue;
+          const dy = was - r.getBoundingClientRect().top;
+          if (Math.abs(dy) > 1) {
+            r.animate([{ transform: `translateY(${dy}px)` }, { transform: 'none' }],
+              { duration: 180, easing: 'ease' });
+          }
+        }
+      }
+      // The focus stays on a row that kept its place. When a tick moved the
+      // row, it goes to the row that came after it, so ticking down a list
+      // with the keyboard keeps going down.
+      if (rows.length) {
+        const at = (v) => rows.findIndex(r => r.dataset.value === v);
+        let to = 0;
+        if (focusAt >= 0) {
+          to = at(focused) === focusAt ? focusAt : at(afterFocused);
+          if (to < 0) to = Math.min(focusAt, rows.length - 1);
+        }
+        rows[to].tabIndex = 0;
+        if (focusAt >= 0) rows[to].focus({ preventScroll: true });
+      }
     }
 
     _toggleCategorical(dim, value) {
@@ -2299,7 +2289,27 @@
       } else {
         current = [...current, value];
       }
+      if (this.panels[dim]) this.panels[dim]._slide = true;
       this._applyFilter(dim, current);
+    }
+
+    // All and None in a card's list head. All ticks every value the filter
+    // box matches, not only the rows on screen; None unticks those, or with
+    // an empty box clears the card.
+    _bulkCategorical(dim, pick) {
+      const card = this.panels[dim];
+      if (!card) return;
+      const current = Array.isArray(this.filters[dim]) ? this.filters[dim] : [];
+      const matching = new Set(card._matching);
+      let next;
+      if (pick) {
+        const have = new Set(current);
+        next = current.concat(card._matching.filter(v => !have.has(v)));
+      } else {
+        next = card._query ? current.filter(v => !matching.has(v)) : [];
+      }
+      card._slide = true;
+      this._applyFilter(dim, next.length ? next : null);
     }
 
     // -- Range card ---------------------------------------------------------
