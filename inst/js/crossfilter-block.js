@@ -2163,13 +2163,16 @@
       const display = (label) => label === '__NA__' ? 'NA'
         : label === '__EMPTY__' ? '(empty)' : label;
 
-      // A column whose values are all numbers (a numeric column of ten or
-      // fewer values gets this card) is a scale: its rows stay in value
-      // order and a tick does not move them, since the order is what they
-      // say. Read off every level, not the ones with rows left, so the card
-      // does not change its mind as other filters cut levels out.
+      // A numeric column (one of ten or fewer values gets this card) is a
+      // scale: its rows stay in value order and a tick does not move them,
+      // since the order is what they say. Character columns arrive
+      // dictionary-encoded (this.levels), numeric ones do not, so codes
+      // such as site "701" stay a list. Read off every level, not the ones
+      // with rows left, so the card does not change its mind as other
+      // filters cut levels out.
       const isNumber = (v) => v.trim() !== '' && isFinite(Number(v));
-      const scale = all.some(d => !isMissingKey(d.label)) &&
+      const scale = !this.levels[dim] &&
+        all.some(d => !isMissingKey(d.label)) &&
         all.every(d => isMissingKey(d.label) || isNumber(d.label));
 
       // Every level stays, the ones the other filters leave no rows for
@@ -2208,13 +2211,21 @@
       const extra = shown.length - pickedRows.length - restRows.length;
 
       // Where the rows are and which one has the focus, so the redraw can
-      // slide them from there and hand the focus back.
+      // slide them from there and hand the focus back. Only the rows in the
+      // list's visible box slide: the list scrolls, and animating the ones
+      // scrolled out of sight made a tick on a long card slower than the
+      // old table's.
       const slide = card._slide && !REDUCED_MOTION;
       card._slide = false;
       const before = new Map();
       const oldRows = Array.from(list.querySelectorAll('.dm-cf-tw-row'));
+      const box = slide ? list.getBoundingClientRect() : null;
       if (slide) {
-        for (const r of oldRows) before.set(r.dataset.value, r.getBoundingClientRect().top);
+        for (const r of oldRows) {
+          const top = r.getBoundingClientRect().top;
+          if (top >= box.bottom + 40) break;
+          if (top > box.top - 40) before.set(r.dataset.value, top);
+        }
       }
       const focusAt = oldRows.indexOf(document.activeElement);
       const valueAt = (i) => oldRows[i] ? oldRows[i].dataset.value : null;
@@ -2281,11 +2292,13 @@
       card._noneBtn.disabled = !shown.some(d => selectedSet.has(d.label));
 
       const rows = Array.from(list.querySelectorAll('.dm-cf-tw-row'));
-      if (slide) {
+      if (slide && before.size) {
         for (const r of rows) {
+          const top = r.getBoundingClientRect().top;
+          if (top >= box.bottom) break;
           const was = before.get(r.dataset.value);
           if (was === undefined) continue;
-          const dy = was - r.getBoundingClientRect().top;
+          const dy = was - top;
           if (Math.abs(dy) > 1) {
             r.animate([{ transform: `translateY(${dy}px)` }, { transform: 'none' }],
               { duration: 180, easing: 'ease' });

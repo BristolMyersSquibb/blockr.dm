@@ -25,6 +25,8 @@ test_that("categorical card: ticks, groups, the list head, clearing", {
       SEX = rep(c("F", "M"), 20),
       # Three numeric values: a categorical card, 54 the most frequent.
       DOSE = rep(c(0, 54, 81, 54), 10),
+      # Codes that read as numbers in a character column: a list, not a scale.
+      ARMCD = rep(c("10", "20", "30", "20"), 10),
       AGE = as.numeric(30:69)
     ))
   }
@@ -59,7 +61,7 @@ test_that("categorical card: ticks, groups, the list head, clearing", {
   server <- function(input, output, session) {
     data_r <- shiny::reactive(build_dm())
     blockr.dm:::crossfilter_server(
-      active_dims = list(pt = c("SITE", "SEX", "DOSE", "AGE")),
+      active_dims = list(pt = c("SITE", "SEX", "DOSE", "ARMCD", "AGE")),
       filters = list(), range_filters = list(), measure = NULL, agg_func = NULL
     )("xf", data_r)
   }
@@ -152,6 +154,14 @@ test_that("categorical card: ticks, groups, the list head, clearing", {
   expect_length(site_filter(), 0)
   expect_equal(count("SITE"), "10 values")
   expect_true(app$get_js("window.__bulk('SITE', 'None').disabled"))
+
+  # -- Number-like codes in a character column are a list ------------------
+  expect_equal(unlist(app$get_js("window.__values('ARMCD')")), c("20", "10", "30"))
+  app$run_js("window.__click('ARMCD', '30')")
+  expect_equal(unlist(app$get_js("window.__values('ARMCD')")), c("30", "20", "10"))
+  expect_equal(unlist(app$get_js("window.__groups('ARMCD')")), c("Selected", "Other"))
+  app$run_js("window.__click('ARMCD', '30')")
+  expect_length(app$get_js("window.__cfDebug.filters.ARMCD"), 0)
 
   # -- A column of numbers keeps its value order, ticked or not -------------
   expect_equal(unlist(app$get_js("window.__values('DOSE')")), c("0", "54", "81"))
