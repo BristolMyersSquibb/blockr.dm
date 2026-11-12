@@ -2243,7 +2243,7 @@
         r.tabIndex = -1;
 
         // The tick's slot is there on every row, so the names stay in line.
-        r.appendChild(el('span', 'dm-cf-tw-tick', on ? window.Blockr.icons.check : ''));
+        r.appendChild(el('span', 'dm-cf-tw-tick', on ? window.Blockr.icons.confirm : ''));
 
         const name = el('span', 'dm-cf-tw-name');
         if (isMissingKey(d.label)) {
