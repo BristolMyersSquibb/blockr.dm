@@ -99,6 +99,28 @@
     return d;
   }
 
+  // The lowest and highest of a list of numbers, or null for an empty one.
+  function extent(values) {
+    if (!values.length) return null;
+    let min = Infinity, max = -Infinity;
+    for (const v of values) {
+      if (v < min) min = v;
+      if (v > max) max = v;
+    }
+    return { min, max };
+  }
+
+  // A range column's values in `rows`, as the numbers its card works in
+  // (a date as epoch-days), with the missing ones dropped.
+  function rangeValues(rows, dim, type) {
+    const values = [];
+    for (const r of rows) {
+      const v = type === 'date' ? toEpochDay(r[dim]) : r[dim];
+      if (typeof v === 'number' && isFinite(v)) values.push(v);
+    }
+    return values;
+  }
+
   // -- Density helpers ------------------------------------------------------
   // The blue overlay is the GRAY curve, cut at the handles. It is NOT a fresh
   // KDE of the filtered rows: that re-smooths a truncated sample, so the
@@ -107,8 +129,8 @@
   // user is reading the cut.
   //
   // Nothing is scaled, because there is nothing to scale: gray is already
-  // "every row the OTHER filters leave" (_rebuildRangeDensity clears this
-  // dim's own filter before measuring), and inside the cut this dim's filter
+  // "every row the OTHER filters leave" (_rangeReach lifts this dim's own
+  // filter before measuring), and inside the cut this dim's filter
   // drops nothing. A per-cell survival ratio was tried here and is worse than
   // useless -- with 30-odd rows over 64 cells it is counts like 1/2 and 0/1,
   // and it drew a jagged blue curve under a smooth gray one.
@@ -2339,26 +2361,32 @@
       header.appendChild(this._cardActions(dim, tbl));
       card.appendChild(header);
 
-      // Initial bounds (excluding this dim's own filter)
-      const bounds = this._getRangeBounds(dim, type);
-      if (!bounds) return card;
-      const { min: min0, max: max0 } = bounds;
-
-      if (min0 === max0) {
+      // The column's whole range, over every row of its table whatever the
+      // filters: what the card stands on when the rows in reach give it no
+      // scale, and what a typed bound is held to. A column with no values
+      // gets a bare header, one with a single value says so.
+      const childTable = this.dimChild[dim];
+      const colValues = childTable
+        ? rangeValues(this.instances[childTable].all(), dim, type) : [];
+      const full = extent(colValues);
+      if (!full) return card;
+      if (full.min === full.max) {
         card.appendChild(el('div', 'dm-cf-range-info',
-          `All values: ${type === 'date' ? fmtDate(min0) : fmtNum(min0)}`));
-        card._min = min0;
-        card._max = max0;
+          `All values: ${type === 'date' ? fmtDate(full.min) : fmtNum(full.min)}`));
+        card._min = full.min;
+        card._max = full.max;
         return card;
       }
+      card._full = full;
+      card._integer = type !== 'date' && colValues.every(Number.isInteger);
 
-      // Row count info (populated by _applyRangeBounds / _updateRangeInfo)
+      // Row count info (populated by _refreshRangeCard / _updateRangeInfo)
       const infoEl = el('div', 'dm-cf-range-info');
       card.appendChild(infoEl);
       card._infoEl = infoEl;
 
       // KDE density overlay (SVG) — paths get their `d` attr set in
-      // _applyRangeBounds (gray) and _updateRangeInfo (blue). Built for both
+      // _drawRangeDensity (gray) and _updateRangeInfo (blue). Built for both
       // numeric and date range cards; the value extractors below read date
       // columns as epoch-days.
       {
@@ -2468,18 +2496,25 @@
         let hi = card._hi;
         if (lo > hi) [lo, hi] = [hi, lo];
 
+        // A filter may reach past the scale (another filter shrank the
+        // scale under it, or one side of it is open): the thumbs stop at
+        // the ends of the scale, and the fill, the bubbles and the labels
+        // read the thumbs. The filter itself is in card._lo / card._hi.
         const mn = card._min;
         const mx = card._max;
         const range = mx - mn;
-        const loP = range > 0 ? ((lo - mn) / range) * 100 : 0;
-        const hiP = range > 0 ? ((hi - mn) / range) * 100 : 100;
+        lo = Math.min(mx, Math.max(mn, lo));
+        hi = Math.min(mx, Math.max(mn, hi));
+        const at = (v) => ((v - mn) / range) * 100;
+        const loP = range > 0 ? at(lo) : 0;
+        const hiP = range > 0 ? at(hi) : 100;
         fillBar.style.left = loP + '%';
         fillBar.style.width = (hiP - loP) + '%';
 
         // With both handles on one spot the upper one is on top. At the top
-        // of the range it could then only be dragged into the lower one, so
+        // of the scale it could then only be dragged into the lower one, so
         // there the lower one goes on top and one handle always moves.
-        inputLo.style.zIndex = (lo >= hi && hi >= mx) ? '5' : '3';
+        inputLo.style.zIndex = (loP >= hiP && hiP >= 100) ? '5' : '3';
 
         bubbleLo.textContent = fmtVal(lo);
         bubbleLo.style.left = loP + '%';
@@ -2512,12 +2547,26 @@
         // used to swap on every step of the drag: the range shrank to a
         // sliver that trailed the dragged handle, while the handle it had
         // passed stayed where it was.
+        //
+        // A thumb at an end of the scale leaves that side open: the value
+        // is the column's own end (card._full), so it cuts nothing there
+        // now and still cuts nothing once the other filters let the scale
+        // grow back. The end of the scale itself would turn into a cut the
+        // user never made.
+        const span = card._max - card._min;
         if (which === 'lo') {
-          card._lo = Number(inputLo.value);
+          const v = Number(inputLo.value);
+          card._lo = v <= card._min + span * 0.001 ? card._full.min : v;
           if (card._lo > card._hi) card._setValues(card._hi, card._hi);
         }
         if (which === 'hi') {
-          card._hi = Number(inputHi.value);
+          // The right end is the thumb's last stop, which the step does not
+          // always put on the top of the scale (card._topStop). Read as a
+          // value, a thumb at 1000 on a scale to 1003 left a filter that
+          // cut the last three values with no way to drag it off.
+          const v = Number(inputHi.value);
+          const atEnd = v >= card._max - span * 0.001 || v >= card._topStop;
+          card._hi = atEnd ? card._full.max : v;
           if (card._hi < card._lo) card._setValues(card._lo, card._lo);
         }
         let lo = card._lo;
@@ -2529,11 +2578,9 @@
 
         // Apply silently: the in-block bars / counts / status update live while
         // dragging, but the R round-trip (and downstream re-eval) is deferred
-        // to the `change` handler below, which fires once on drag-end.
-        const mn = card._min;
-        const mx = card._max;
-        const range = mx - mn;
-        if (lo <= mn + range * 0.001 && hi >= mx - range * 0.001) {
+        // to the `change` handler below, which fires once on drag-end. With
+        // both sides open there is no filter.
+        if (lo <= card._full.min && hi >= card._full.max) {
           this._applyFilter(dim, null, { silent: true });
         } else if (type === 'date') {
           this._applyFilter(dim, { min: lo, max: hi, isDate: true }, { silent: true });
@@ -2559,8 +2606,8 @@
       this._makeRangeLabelEditable(card, labelMin, 'lo', onTyped);
       this._makeRangeLabelEditable(card, labelMax, 'hi', onTyped);
 
-      // Apply initial bounds (sets attrs, values, KDE, labels, totalRows).
-      this._applyRangeBounds(card, min0, max0);
+      // The scale, the handles, the gray curve and the row count.
+      this._refreshRangeCard(card);
 
       return card;
     }
@@ -2591,8 +2638,8 @@
 
         if (isDate) {
           inp.type = 'date';
-          inp.min = fmtDate(card._min);
-          inp.max = fmtDate(card._max);
+          inp.min = fmtDate(card._full.min);
+          inp.max = fmtDate(card._full.max);
           inp.value = fmtDate(current);
         } else {
           inp.type = 'text';
@@ -2623,10 +2670,12 @@
             const raw = isDate
               ? Math.round(toEpochDay(inp.value)) : parseFloat(inp.value);
             if (isFinite(raw)) {
-              // Clamp into the data bounds, and keep the handles in order --
-              // typing a minimum past the maximum means "up to here", not an
+              // Hold it to the column's range, not to the scale on screen:
+              // "65 and over" is what was typed even while the other filters
+              // leave nobody over 64. And keep the handles in order -- typing
+              // a minimum past the maximum means "up to here", not an
               // inverted range.
-              let v = Math.min(card._max, Math.max(card._min, raw));
+              let v = Math.min(card._full.max, Math.max(card._full.min, raw));
               const other = Number(which === 'lo' ? card._hi : card._lo);
               if (which === 'lo' && v > other) v = other;
               if (which === 'hi' && v < other) v = other;
@@ -2656,47 +2705,42 @@
       });
     }
 
-    // -- Range bounds helpers -----------------------------------------------
+    // -- Range card: scale, handles, curve -----------------------------------
+    //
+    // A range card shows the rows every filter BUT ITS OWN leaves: its scale
+    // runs from the lowest to the highest of their values, the gray curve is
+    // their density, and "of N rows" counts them. All three come from one
+    // read (_rangeReach) and are redrawn together (_refreshRangeCard)
+    // whenever another filter changes.
+    //
+    // The card never changes a filter to fit its scale. A filter is what the
+    // user set, kept as set: when another filter shrinks the scale under it,
+    // the handles stop at the ends of the scale, and when the scale grows
+    // back the handles are where they were left. Rewriting the filter to the scale instead (as this did)
+    // made every range filter drift: cutting one card narrowed the filters
+    // on the others for good, which in turn moved the first card's rows.
 
-    // Query a range dim's [min, max] over data filtered by everything except
-    // its own filter, by temporarily clearing it, reading bounds, restoring.
-    _getRangeBounds(dim, type) {
+    // The rows a range card can see, and their values in its column with
+    // the missing ones dropped. The card's own filter is lifted for the read
+    // and put back.
+    //
+    // The values are scanned. The ends of crossfilter's sorted index
+    // (bottom(1) / top(1)) are not safe to read here: a missing value has no
+    // place in that order, so a column with NAs came back with bounds short
+    // of its data or the wrong way round, and a numeric one could start at 0
+    // (a null compares as 0).
+    _rangeReach(dim, type) {
       const cfDim = this.dimensions[dim];
-      if (!cfDim) return null;
+      const childTable = this.dimChild[dim];
+      if (!cfDim || !childTable) return null;
 
-      const savedFilter = this.filters[dim];
-      const hasOwnFilter = savedFilter !== undefined && savedFilter !== null;
-      if (hasOwnFilter) cfDim.filterAll();
+      const saved = this.filters[dim];
+      const hasOwn = saved !== undefined && saved !== null;
+      if (hasOwn) cfDim.filterAll();
+      const rows = this.instances[childTable].allFiltered();
+      if (hasOwn) this._reapplyFilter(dim, saved);
 
-      const bottom = cfDim.bottom(1)[0];
-      const top = cfDim.top(1)[0];
-
-      const toNum = type === 'date'
-        ? v => toEpochDay(v) : v => Number(v);
-      let min = bottom ? toNum(bottom[dim]) : NaN;
-      let max = top ? toNum(top[dim]) : NaN;
-
-      // A column with missing values can put a NaN at either end of the
-      // sort, and the card then had no bounds at all: `AENDT` (473 of 1191
-      // AE end dates missing) rendered as a bare header, no slider, no
-      // density. Fall back to a scan of the rows this dim can see -- same
-      // pass the gray density already makes, and only on a bounds change.
-      if (!isFinite(min) || !isFinite(max)) {
-        const childTable = this.dimChild[dim];
-        const rows = childTable ? this.instances[childTable].allFiltered() : [];
-        min = Infinity; max = -Infinity;
-        for (const r of rows) {
-          const v = toNum(r[dim]);
-          if (!isFinite(v)) continue;
-          if (v < min) min = v;
-          if (v > max) max = v;
-        }
-      }
-
-      if (hasOwnFilter) this._reapplyFilter(dim, savedFilter);
-
-      if (!isFinite(min) || !isFinite(max)) return null;
-      return { min, max };
+      return { n: rows.length, values: rangeValues(rows, dim, type) };
     }
 
     _reapplyFilter(dim, value) {
@@ -2705,147 +2749,85 @@
       if (Array.isArray(value)) {
         cfDim.filterFunction(this._makeCatPredicate(dim, value));
       } else if (value && value.min !== undefined) {
-        if (value.isDate) {
-          // Date dim values are epoch-days (see the dimension accessor); NaN
-          // (missing) fails the comparison and is excluded, matching R.
-          const loD = value.min, hiD = value.max;
-          cfDim.filterFunction(v => typeof v === 'number' && v >= loD && v <= hiD);
-        } else {
-          // Use filterFunction (inclusive both ends) instead of filterRange
-          // (which is [lo, hi) — half-open) so JS results match R's
-          // `>= lo & <= hi` semantics exactly.
-          const lo = value.min, hi = value.max;
-          cfDim.filterFunction(v => typeof v === 'number' && v >= lo && v <= hi);
-        }
+        // Date dim values are epoch-days (see the dimension accessor); NaN
+        // (missing) fails the comparison and is excluded, matching R.
+        // filterFunction (inclusive both ends) and not filterRange (which is
+        // [lo, hi), half-open), so JS results match R's `>= lo & <= hi`.
+        const lo = value.min, hi = value.max;
+        cfDim.filterFunction(v => typeof v === 'number' && v >= lo && v <= hi);
       }
     }
 
-    // Apply [min, max] to a range card: input attrs, labels, gray KDE,
-    // totalRows. Slider value attrs are clamped (or set to bounds when no
-    // filter). Caller is responsible for triggering blue-KDE / count refresh.
-    _applyRangeBounds(card, min, max) {
-      const dim = card._dim;
-      card._min = min;
-      card._max = max;
-
-      const step = card._type === 'date' ? 1 : (max - min) / 200;
-      const lo = card._inputLo;
-      const hi = card._inputHi;
-
-      const ownFilter = this.filters[dim];
-      const hasRangeFilter = ownFilter && ownFilter.min !== undefined;
-
-      lo.min = min; lo.max = max; lo.step = step;
-      hi.min = min; hi.max = max; hi.step = step;
-
-      // Clamp filter values into the new bounds (HTML clamps too, but be
-      // explicit). If the filter no longer intersects, snap to endpoints.
-      const loV = hasRangeFilter
-        ? Math.max(min, Math.min(max, ownFilter.min)) : min;
-      const hiV = hasRangeFilter
-        ? Math.max(min, Math.min(max, ownFilter.max)) : max;
-
-      // Labels follow the handles; _setValues -> _updateSlider writes them.
-      if (card._setValues) {
-        card._setValues(loV, hiV);
-      } else {
-        lo.value = loV;
-        hi.value = hiV;
-      }
-
-      this._rebuildRangeDensity(card);
-    }
-
-    // Rebuild the gray curve + totalRows from the data filtered by
-    // all-but-this-dim. Mirrors _getRangeBounds: temporarily clear own
-    // filter, read, restore.
-    //
-    // Runs whenever ANOTHER dim's filter changes, not only when the bounds
-    // move: gray is "everything the other filters left", and a filter that
-    // drops rows without moving the extremes left it showing the old shape
-    // (and the old "of N rows").
-    _rebuildRangeDensity(card) {
-      const dim = card._dim;
-      const min = card._min;
-      const max = card._max;
-      if (!(max > min)) return;
-
-      const childTable = this.dimChild[dim];
-      if (childTable) {
-        const cfDim = this.dimensions[dim];
-        const savedFilter = this.filters[dim];
-        const hadOwnFilter = savedFilter !== undefined && savedFilter !== null;
-        if (hadOwnFilter) cfDim.filterAll();
-
-        const toNum0 = card._type === 'date'
-          ? r => toEpochDay(r[dim]) : r => +r[dim];
-        const allRows = this.instances[childTable].allFiltered();
-        card._totalRows = allRows.length;
-
-        if (card._pathAll) {
-          const allValues = allRows.map(toNum0).filter(v => isFinite(v));
-          const kdeAll = kde(allValues, min, max);
-          const kdeMaxY = Math.max(...kdeAll.map(p => p.y), 1);
-          card._kdeMaxY = kdeMaxY;
-          card._pathAll.setAttribute('d',
-            kdeToSvgPath(kdeAll, min, max, kdeMaxY, 300, 80));
-          // The blue overlay is this grid, cut (clipGrid), so it repaints
-          // for free on every filter change -- no second KDE.
-          card._kdeGrid = kdeAll;
-
-          // Integer column: drag in whole units. The default step,
-          // (max-min)/200, gave AGE a thumb that stopped on 75.96 and a
-          // label reading "76.0" for a column that only holds whole years.
-          if (allValues.every(Number.isInteger)) {
-            const stepInt = Math.max(1, Math.round((max - min) / 200));
-            card._inputLo.step = stepInt;
-            card._inputHi.step = stepInt;
-          }
-        }
-
-        if (hadOwnFilter) this._reapplyFilter(dim, savedFilter);
-      }
-    }
-
-    // Recompute and apply bounds when other filters change. If the slider
-    // had a range filter that no longer intersects the new bounds, clear it
-    // (mutate state directly to avoid re-entering _applyFilter).
-    _updateRangeBounds(dim, silent = false) {
-      const card = this.panels[dim];
+    // Bring a range card in line with the filters in force: its scale, its
+    // row count, its gray curve and its handles. `keepCurve` is a drag in
+    // progress on another card: the curve is a KDE per card per frame, so
+    // while the scale holds it waits for the drag to end.
+    _refreshRangeCard(card, { keepCurve = false } = {}) {
       if (!card || !card._inputLo) return; // not a fully-built range card
+      const dim = card._dim;
+      const reach = this._rangeReach(dim, card._type);
+      if (!reach) return;
 
-      const bounds = this._getRangeBounds(dim, card._type);
-      if (!bounds) return;
-      const { min, max } = bounds;
-      if (min === max) return;
-      if (Math.abs(card._min - min) < 1e-9 &&
-          Math.abs(card._max - max) < 1e-9) {
-        // Bounds held, but the rows behind them may not have: refresh the
-        // gray curve in place. Skipped mid-drag, see _updateAllCounts.
-        if (!silent) this._rebuildRangeDensity(card);
+      // With one value in reach, or none, there is no scale to draw from
+      // the rows. The card then stands on the column's whole range, so the
+      // handles and the curve keep a place and the state does not depend on
+      // what was on screen before.
+      const seen = extent(reach.values);
+      const { min, max } = seen && seen.max > seen.min ? seen : card._full;
+
+      const moved = !(Math.abs(card._min - min) < 1e-9 &&
+        Math.abs(card._max - max) < 1e-9);
+      if (moved) {
+        card._min = min;
+        card._max = max;
+        // A column of whole numbers drags in whole units. The plain step,
+        // (max-min)/200, gave AGE a thumb that stopped on 75.96 and a label
+        // reading "76.0" for a column that only holds whole years.
+        const step = card._type === 'date' ? 1
+          : card._integer ? Math.max(1, Math.round((max - min) / 200))
+            : (max - min) / 200;
+        for (const inp of [card._inputLo, card._inputHi]) {
+          inp.min = min;
+          inp.max = max;
+          inp.step = step;
+        }
+        // The last stop of the upper thumb, asked of the input itself. It
+        // is not always `max`: whole numbers from 0 to 1003 step by 5 and
+        // stop at 1000, and a fractional step can miss `max` by a rounding
+        // error and stop one step short. The drag handler reads the thumb
+        // at this stop as "at the end".
+        card._inputHi.value = max;
+        card._topStop = Number(card._inputHi.value);
+      }
+
+      card._totalRows = reach.n;
+      if (moved || !keepCurve) this._drawRangeDensity(card, reach.values);
+
+      // The handles read the card's filter. With none, both sides are open:
+      // the values are the column's own ends and the thumbs stand at the
+      // ends of the scale (see the drag handler for why not the scale's).
+      // Set on every refresh, not only when the scale moved: a filter
+      // restored from a saved board changes no scale.
+      const own = this.filters[dim];
+      if (own && own.min !== undefined) card._setValues(own.min, own.max);
+      else card._setValues(card._full.min, card._full.max);
+    }
+
+    // The gray curve: the density of the values in reach, over the card's
+    // scale. The blue one is this grid cut at the handles (_updateRangeInfo),
+    // so it repaints for free on every filter change. No rows, no curve.
+    _drawRangeDensity(card, values) {
+      if (!card._pathAll) return;
+      if (!values.length) {
+        card._kdeGrid = null;
+        card._pathAll.setAttribute('d', '');
         return;
       }
-
-      this._applyRangeBounds(card, min, max);
-
-      // If filter is now outside new bounds, clear/clamp it (direct mutation —
-      // avoids re-entering _applyFilter from inside _updateAllCounts).
-      const filter = this.filters[dim];
-      if (filter && filter.min !== undefined) {
-        const newLo = Math.max(min, filter.min);
-        const newHi = Math.min(max, filter.max);
-        if (newLo >= newHi) {
-          this.dimensions[dim].filterAll();
-          delete this.filters[dim];
-          card._setValues(min, max);
-        } else if (newLo !== filter.min || newHi !== filter.max) {
-          this.dimensions[dim].filterFunction(
-            v => typeof v === 'number' && v >= newLo && v <= newHi
-          );
-          this.filters[dim] = { ...filter, min: newLo, max: newHi };
-          card._setValues(newLo, newHi);
-        }
-      }
+      const grid = kde(values, card._min, card._max);
+      card._kdeMaxY = Math.max(...grid.map(p => p.y), 1);
+      card._kdeGrid = grid;
+      card._pathAll.setAttribute('d',
+        kdeToSvgPath(grid, card._min, card._max, card._kdeMaxY, 300, 80));
     }
 
     // -- Filter application -------------------------------------------------
@@ -2900,7 +2882,7 @@
     _resetRangeCardValues(dim) {
       const card = this.panels[dim];
       if (!card || !card._setValues) return;
-      card._setValues(card._min, card._max);
+      card._setValues(card._full.min, card._full.max);
     }
 
     _resetAllFilters() {
@@ -2988,7 +2970,7 @@
       for (const dim of Object.keys(this.dimensions)) {
         const type = this._getDimType(dim);
         if ((type === 'range' || type === 'date') && dim !== changedDim) {
-          this._updateRangeBounds(dim, silent);
+          this._refreshRangeCard(this.panels[dim], { keepCurve: silent });
         }
       }
       for (const dim of Object.keys(this.dimensions)) {
@@ -3013,13 +2995,17 @@
 
       // Update the blue overlay: the gray curve, cut at the handles. See the
       // density helpers for why this is not a KDE of the filtered rows.
-      if (card._pathFiltered && card._dim && card._kdeMaxY && card._kdeGrid) {
+      if (card._pathFiltered && card._dim) {
         const own = this.filters[card._dim];
-        const lo = own && own.min !== undefined ? own.min : card._min;
-        const hi = own && own.max !== undefined ? own.max : card._max;
-        card._pathFiltered.setAttribute('d',
-          kdeToSvgPath(clipGrid(card._kdeGrid, lo, hi), card._min, card._max,
-            card._kdeMaxY, 300, 80));
+        // A filter that reaches past the scale is cut at its ends.
+        const lo = Math.max(card._min,
+          own && own.min !== undefined ? own.min : card._min);
+        const hi = Math.min(card._max,
+          own && own.max !== undefined ? own.max : card._max);
+        card._pathFiltered.setAttribute('d', card._kdeGrid
+          ? kdeToSvgPath(clipGrid(card._kdeGrid, lo, hi), card._min, card._max,
+            card._kdeMaxY, 300, 80)
+          : '');
       }
     }
 

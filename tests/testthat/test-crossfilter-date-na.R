@@ -95,7 +95,8 @@ test_that("date dimension with NAs filters correctly (bounds + parity)", {
 
   # (a) Range bounds are the real data extremes, NOT 1970 (epoch day 0). The
   # old bug surfaced as max == 0 (an inverted {min: 18261, max: 0} range).
-  bounds <- app$get_js("window.__cfDebug._getRangeBounds('ADT', 'date')")
+  bounds <- app$get_js("({min: window.__cfDebug.panels.ADT._min,
+    max: window.__cfDebug.panels.ADT._max})")
   expect_false(is.null(bounds))
   expect_equal(bounds$min, as.numeric(as.Date("2020-01-01")))
   expect_equal(bounds$max, as.numeric(as.Date("2022-01-01")))
