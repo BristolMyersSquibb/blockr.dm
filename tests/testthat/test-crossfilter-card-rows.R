@@ -44,12 +44,12 @@ test_that("categorical card: ticks, groups, the list head, clearing", {
         window.__card(d).querySelectorAll('.dm-cf-tw-row'));
       window.__values = (d) => window.__rows(d).map(r => r.dataset.value);
       window.__groups = (d) => Array.from(
-        window.__card(d).querySelectorAll('.blockr-pick__group'))
+        window.__card(d).querySelectorAll('.blockr-select__group'))
         .map(g => g.textContent);
       window.__click = (d, v) => window.__rows(d)
         .find(r => r.dataset.value === v).click();
       window.__bulk = (d, t) => Array.from(
-        window.__card(d).querySelectorAll('.blockr-pick__bulk-btn'))
+        window.__card(d).querySelectorAll('.blockr-select__bulk-btn'))
         .find(b => b.textContent === t);
       window.__type = (d, q) => {
         const inp = window.__card(d).querySelector('.dm-cf-tw-filter');
@@ -87,7 +87,7 @@ test_that("categorical card: ticks, groups, the list head, clearing", {
 
   count <- function(dim) {
     app$get_js(sprintf(
-      "window.__card('%s').querySelector('.blockr-pick__count').textContent", dim
+      "window.__card('%s').querySelector('.blockr-select__count').textContent", dim
     ))
   }
   site_filter <- function() unlist(app$get_js("window.__cfDebug.filters.SITE || []"))

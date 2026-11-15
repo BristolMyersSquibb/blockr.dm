@@ -1,3 +1,10 @@
+# blockr.dm 0.0.103
+
+* The crossfilter's group columns and pool levels and the value filter's
+  multi values use blockr.ui's `Blockr.Select` in place of `Blockr.Pick`,
+  the copy that was on trial in blockr.dplyr. They look and behave the
+  same.
+
 # blockr.dm 0.0.102
 
 * The crossfilter's categorical cards are drawn as the multi-select's list:

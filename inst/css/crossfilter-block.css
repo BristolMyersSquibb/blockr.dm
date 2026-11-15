@@ -373,10 +373,10 @@
 /* ============================================================
    Categorical card
    ============================================================ */
-/* The multi-select's list in place (Blockr.Pick, blockr.dplyr), drawn by the
+/* The multi-select's list in place (Blockr.Select.list), drawn by the
    block because every row also carries a count and a bar. The count line
-   with All and None, and the "Selected" and "Other" group names, wear Pick's
-   own classes (blockr-pick.css) and are not restyled here. */
+   with All and None, and the "Selected" and "Other" group names, wear
+   Select's own classes (blockr-select.css) and are not restyled here. */
 
 /* The filter box above eight values: 30px, the same as Select's and the
    column menu's. On focus the accent edge and the ring. */
@@ -413,7 +413,7 @@
 }
 /* The first group name sits right under the card's header or the count
    line, which already leave their gap. */
-.dm-cf-tw-list > .blockr-pick__group:first-child {
+.dm-cf-tw-list > .blockr-select__group:first-child {
   padding-top: 2px;
 }
 
@@ -863,7 +863,7 @@
 }
 .jscf-groups--overlap .jscf-pool-levels .blockr-select__control,
 .jscf-groups--overlap .jscf-columns-select .blockr-select__control,
-.jscf-groups--overlap .jscf-columns-select .blockr-pick__panel--inline {
+.jscf-groups--overlap .jscf-columns-select .blockr-select__panel--list {
   border-color: var(--blockr-color-border-warning);
   background-color: var(--blockr-color-bg-warning);
 }

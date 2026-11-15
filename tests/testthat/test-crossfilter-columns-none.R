@@ -49,7 +49,7 @@ test_that("Columns: None is held back and the picks never bounce", {
   deadline <- Sys.time() + 30
   repeat {
     ready <- isTRUE(tryCatch(
-      app$get_js("document.querySelector('.jscf-columns-select .blockr-pick__count') != null"),
+      app$get_js("document.querySelector('.jscf-columns-select .blockr-select__count') != null"),
       error = function(e) FALSE
     ))
     if (ready || Sys.time() > deadline) break
@@ -58,7 +58,7 @@ test_that("Columns: None is held back and the picks never bounce", {
   expect_true(ready)
 
   count <- function() {
-    app$get_js("document.querySelector('.jscf-columns-select .blockr-pick__count').textContent")
+    app$get_js("document.querySelector('.jscf-columns-select .blockr-select__count').textContent")
   }
   expect_match(count(), "^3 of 3")
 
@@ -67,10 +67,10 @@ test_that("Columns: None is held back and the picks never bounce", {
     const host = document.querySelector('.jscf-columns-select');
     window.__counts = [];
     new MutationObserver(() => {
-      const c = host.querySelector('.blockr-pick__count');
+      const c = host.querySelector('.blockr-select__count');
       if (c) window.__counts.push(c.textContent);
     }).observe(host, { subtree: true, childList: true, characterData: true });
-    window.__bulk = (t) => Array.from(host.querySelectorAll('.blockr-pick__bulk-btn'))
+    window.__bulk = (t) => Array.from(host.querySelectorAll('.blockr-select__bulk-btn'))
       .find(b => b.textContent === t);
     window.__row = (v) => host.querySelector('.blockr-select__option[data-value=\"' + v + '\"]');
   ")

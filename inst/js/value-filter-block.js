@@ -486,17 +486,14 @@
             }
           });
         } else {
-          // Blockr.Pick (blockr.dplyr), the multi-select on trial; Blockr.Select
-          // where it is missing.
-          const Multi = Blockr.Pick || Blockr.Select;
-          this._bodySelects[key] = Multi.multi(wrap, {
+          this._bodySelects[key] = Blockr.Select.multi(wrap, {
             options: opts,
             selected: sel.slice(),
             placeholder: 'Select values…',
             reorderable: false,
             loading: loading,
             onOpen: () => this._requestColumnValues(key),
-            // The entry itself, not its index: a Pick destroyed open by a
+            // The entry itself, not its index: a select destroyed open by a
             // redraw reports late, when the entries may already be new.
             onChange: (vals) => {
               entry.values = vals.map(String);

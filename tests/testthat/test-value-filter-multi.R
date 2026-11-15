@@ -1,4 +1,4 @@
-# The value filter's multi values are a Blockr.Pick dropdown: picks are
+# The value filter's multi values are a Blockr.Select multi dropdown: picks are
 # reported once, when it closes. These check the round trip in a browser: a
 # burst of ticks is one change, None sticks (an empty multi is no condition,
 # so every row), and nothing R sends back moves the picks afterwards.
@@ -38,14 +38,14 @@ test_that("value filter: picks, a burst and None survive the round trip", {
 
   app <- suppressWarnings(shinytest2::AppDriver$new(
     shiny::shinyApp(ui, server),
-    name = "value-filter-pick", timeout = 30000, wait = FALSE
+    name = "value-filter-multi", timeout = 30000, wait = FALSE
   ))
   on.exit(app$stop(), add = TRUE)
 
   deadline <- Sys.time() + 30
   repeat {
     ready <- isTRUE(tryCatch(
-      app$get_js("document.querySelector('.bi-filter-container .blockr-pick .blockr-select__control') != null"),
+      app$get_js("document.querySelector('.bi-filter-select-wrap .blockr-select--multi .blockr-select__control') != null"),
       error = function(e) FALSE
     ))
     if (ready || Sys.time() > deadline) break
@@ -54,12 +54,12 @@ test_that("value filter: picks, a burst and None survive the round trip", {
   expect_true(ready)
 
   result <- function() app$get_js("document.getElementById('n').textContent")
-  face <- function() app$get_js("document.querySelector('.bi-filter-container .blockr-pick__face').textContent")
+  face <- function() app$get_js("document.querySelector('.bi-filter-select-wrap .blockr-select__face').textContent")
   app$run_js("
-    window.__ctl = () => document.querySelector('.bi-filter-container .blockr-pick .blockr-select__control');
-    window.__list = () => document.querySelector('.blockr-select__dropdown.blockr-pick__panel');
+    window.__ctl = () => document.querySelector('.bi-filter-select-wrap .blockr-select--multi .blockr-select__control');
+    window.__list = () => document.querySelector('.blockr-select__dropdown.blockr-select__panel');
     window.__row = (v) => window.__list().querySelector('.blockr-select__option[data-value=\"' + v + '\"]');
-    window.__bulk = (t) => Array.from(window.__list().querySelectorAll('.blockr-pick__bulk-btn'))
+    window.__bulk = (t) => Array.from(window.__list().querySelectorAll('.blockr-select__bulk-btn'))
       .find(b => b.textContent === t);
   ")
   Sys.sleep(1)
@@ -97,7 +97,8 @@ test_that("value filter: picks, a burst and None survive the round trip", {
   app$run_js("window.__bulk('All').click(); window.__ctl().click();")
   Sys.sleep(2)
   expect_equal(result(), "150 setosa,versicolor,virginica")
-  expect_equal(face(), "All 3")
+  # Every value picked reads as the count, then the picks.
+  expect_equal(face(), "3 of 3setosa, versicolor, virginica")
 
   # Upstream changes while the list is open with a new pick: the block
   # redraws, the list goes, and the pick is reported rather than lost.

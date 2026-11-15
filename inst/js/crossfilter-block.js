@@ -1309,14 +1309,6 @@
       return Select;
     }
 
-    // The group columns and a pool's levels use Blockr.Pick (blockr.dplyr),
-    // the multi-select on trial: each pick shows once, picks on top, All and
-    // None. Without it they fall back to Blockr.Select.
-    _pick() {
-      const Pick = window.Blockr && window.Blockr.Pick;
-      return Pick || this._select();
-    }
-
     // The whole band: the design system's controls and nothing else. The
     // columns are a multi-select with tags, levels and pools together, in
     // table order; a tag drags to reorder, its x removes it, the list ticks
@@ -1355,10 +1347,8 @@
       s.el.appendChild(colField);
       const { options, selected } = this._columnOptions(s);
       // In place: the columns are what this section is for, and the list
-      // is short. Blockr.Pick.list where it is loaded, a dropdown otherwise.
-      const Pick = window.Blockr && window.Blockr.Pick;
-      const make = Pick && Pick.list ? Pick.list : this._select().multi;
-      s.colSelect = make(host, {
+      // is short.
+      s.colSelect = this._select().list(host, {
         options,
         selected,
         bordered: true,
@@ -1533,7 +1523,7 @@
       const levelsHost = el('div', 'jscf-pool-levels');
       wrap.appendChild(levelsHost);
       wrap.appendChild(err);
-      const levelSelect = this._pick().multi(levelsHost, {
+      const levelSelect = this._select().multi(levelsHost, {
         options: s.levels.map(l => ({ value: l.value, label: String(l.n) })),
         selected: p.members.slice(),
         bordered: true,
@@ -2019,13 +2009,13 @@
 
     // -- Categorical card ---------------------------------------------------
     //
-    // The card is the multi-select's list in place (Blockr.Pick, blockr.dplyr):
+    // The card is the multi-select's list in place (Blockr.Select.list):
     // a tick in a slot every row keeps, the ticked values on top under
     // "Selected", the rest under "Other", and above SEARCH_MIN_VALUES values
     // the filter box with the count, All and None. It is drawn here and not
-    // by Blockr.Pick because each row also carries a count and a bar, and
+    // by Blockr.Select because each row also carries a count and a bar, and
     // both change with every filter on the board. The list head and the group
-    // names wear Pick's classes, so they keep its look.
+    // names wear Select's classes, so they keep its look.
 
     _createCategoricalCard(dim, tbl, opts = {}) {
       const isPinned = !!opts.pinned;
@@ -2083,11 +2073,11 @@
       });
       head.appendChild(filterInput);
 
-      const bulk = el('div', 'blockr-pick__bulk');
-      const countEl = el('span', 'blockr-pick__count');
-      const bulkBtns = el('span', 'blockr-pick__bulk-btns');
-      const allBtn = el('button', 'blockr-pick__bulk-btn', 'All');
-      const noneBtn = el('button', 'blockr-pick__bulk-btn', 'None');
+      const bulk = el('div', 'blockr-select__bulk');
+      const countEl = el('span', 'blockr-select__count');
+      const bulkBtns = el('span', 'blockr-select__bulk-btns');
+      const allBtn = el('button', 'blockr-select__bulk-btn', 'All');
+      const noneBtn = el('button', 'blockr-select__bulk-btn', 'None');
       allBtn.type = 'button';
       noneBtn.type = 'button';
       allBtn.addEventListener('click', () => this._bulkCategorical(dim, true));
@@ -2265,7 +2255,7 @@
         return r;
       };
       const groupName = (text) => {
-        const h = el('div', 'blockr-pick__group');
+        const h = el('div', 'blockr-select__group');
         h.textContent = text;
         h.setAttribute('role', 'presentation');
         return h;
