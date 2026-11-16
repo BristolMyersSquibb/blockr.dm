@@ -42,7 +42,7 @@ blockr_pkgs <- c(
   "blockr.dm",       # dm blocks (dm_select, dm_flatten, dm_example) + Key-lines preview
   "blockr.dock",
   "blockr.dag",
-  "blockr.extra"     # new_function_var_block (variadic source) + new_function_block
+  "blockr.script"    # script blocks: the DuckDB source and the collect()
 )
 
 for (pkg in blockr_pkgs) {
@@ -150,35 +150,33 @@ message(sprintf("orders parquet: %s (%.1f MB, %s rows)",
                 f_ord, file.size(f_ord) / 1e6,
                 format(n_orders, big.mark = ",")))
 
-# --- arity-0 SOURCE: open DuckDB, expose parquet as views, return a LAZY dm --
-# `function(...)` takes no input, so the block is a root. Self-qualified
+# --- SOURCE: open DuckDB, expose parquet as views, return a LAZY dm ---------
+# A script block with no input is a root. Self-qualified
 # (DBI::/duckdb::/dplyr::/dm::) because a block expr runs sandboxed. All four
 # tables share ONE connection, so dm key checks and the flatten join push to
 # SQL on the same backend. Keys are metadata-only (check = FALSE by default),
 # so building the dm runs no scan over the 5M-row fact table.
-read_remote_dm_fn <- sprintf(
-  "function(...) {
-  con <- DBI::dbConnect(duckdb::duckdb())
-  DBI::dbExecute(con, \"CREATE OR REPLACE VIEW categories AS SELECT * FROM read_parquet('%s')\")
-  DBI::dbExecute(con, \"CREATE OR REPLACE VIEW products   AS SELECT * FROM read_parquet('%s')\")
-  DBI::dbExecute(con, \"CREATE OR REPLACE VIEW customers  AS SELECT * FROM read_parquet('%s')\")
-  DBI::dbExecute(con, \"CREATE OR REPLACE VIEW orders     AS SELECT * FROM read_parquet('%s')\")
+read_remote_dm_script <- sprintf(
+  "con <- DBI::dbConnect(duckdb::duckdb())
+DBI::dbExecute(con, \"CREATE OR REPLACE VIEW categories AS SELECT * FROM read_parquet('%s')\")
+DBI::dbExecute(con, \"CREATE OR REPLACE VIEW products   AS SELECT * FROM read_parquet('%s')\")
+DBI::dbExecute(con, \"CREATE OR REPLACE VIEW customers  AS SELECT * FROM read_parquet('%s')\")
+DBI::dbExecute(con, \"CREATE OR REPLACE VIEW orders     AS SELECT * FROM read_parquet('%s')\")
 
-  d <- dm::dm(
-    categories = dplyr::tbl(con, \"categories\"),
-    products   = dplyr::tbl(con, \"products\"),
-    customers  = dplyr::tbl(con, \"customers\"),
-    orders     = dplyr::tbl(con, \"orders\")
-  )
-  d <- dm::dm_add_pk(d, categories, category_id)
-  d <- dm::dm_add_pk(d, products, product_id)
-  d <- dm::dm_add_pk(d, customers, customer_id)
-  d <- dm::dm_add_pk(d, orders, order_id)
-  d <- dm::dm_add_fk(d, products, category_id, categories)
-  d <- dm::dm_add_fk(d, orders, customer_id, customers)
-  d <- dm::dm_add_fk(d, orders, product_id, products)
-  d
-}",
+d <- dm::dm(
+  categories = dplyr::tbl(con, \"categories\"),
+  products   = dplyr::tbl(con, \"products\"),
+  customers  = dplyr::tbl(con, \"customers\"),
+  orders     = dplyr::tbl(con, \"orders\")
+)
+d <- dm::dm_add_pk(d, categories, category_id)
+d <- dm::dm_add_pk(d, products, product_id)
+d <- dm::dm_add_pk(d, customers, customer_id)
+d <- dm::dm_add_pk(d, orders, order_id)
+d <- dm::dm_add_fk(d, products, category_id, categories)
+d <- dm::dm_add_fk(d, orders, customer_id, customers)
+d <- dm::dm_add_fk(d, orders, product_id, products)
+d",
   f_cat, f_prd, f_cus, f_ord
 )
 
@@ -186,9 +184,7 @@ read_remote_dm_fn <- sprintf(
 # DON'T collect the 5,000,000-row join. The `filtered` block upstream cuts it
 # down to ~1,000 rows IN DuckDB first (the filter pushes a WHERE clause to
 # SQL), so here we can collect() the whole -- now tiny -- result safely.
-collect_fn <- "function(data) {
-  dplyr::collect(data)
-}"
+collect_script <- "dplyr::collect(data)"
 
 board <- new_dock_board(
   blocks = c(
@@ -202,7 +198,8 @@ board <- new_dock_board(
     example = new_dm_example_block(),
 
     # arity-0 lazy source -> a remote dm with keys (the reader's function code)
-    remote = new_function_var_block(fn = read_remote_dm_fn),
+    remote = new_script_block(script = read_remote_dm_script,
+                              block_name = "Read star schema"),
 
     # star join across the FKs -- stays lazy, previews via the same engine
     joined = new_dm_flatten_block(start_table = "orders", recursive = TRUE),
@@ -217,7 +214,7 @@ board <- new_dock_board(
     ),
 
     # materialize the (now small) filtered join into an in-memory data.frame
-    collected = new_function_block(fn = collect_fn)
+    collected = new_script_block(script = collect_script, block_name = "Collect")
   ),
   links = links(
     from  = c("remote", "model", "joined", "filtered"),
