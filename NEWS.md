@@ -1,3 +1,9 @@
+# blockr.dm 0.0.104
+
+* The crossfilter's gear has a "Group by offers (none)" switch, the new
+  `group_none` argument, off by default. On, the `Group by` select lists
+  "(none)" last, which unpins the group.
+
 # blockr.dm 0.0.103
 
 * The crossfilter's group columns and pool levels and the value filter's
