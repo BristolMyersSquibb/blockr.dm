@@ -14,6 +14,7 @@ new_crossfilter_block(
   pinned = NULL,
   groups = list(),
   subgroup = NULL,
+  group_none = FALSE,
   ...
 )
 }
@@ -76,6 +77,11 @@ subgroup. Its levels are pooled like the group's, through its entry in
 \code{groups}, and a button in its field swaps it with \code{pinned}. Like
 \code{pinned}, the block only records it; a package building on it, such as
 blockr.pharma's population filter, decides what to do with it.}
+
+\item{group_none}{Whether the \verb{Group by} select offers "(none)", which
+unpins the group. Off by default, set in the gear (\verb{Group by offers (none)}). The block only records the choice; a package building on it
+decides what an ungrouped board means (blockr.pharma's population filter
+stamps its group column as NA in every row).}
 
 \item{...}{Forwarded to \code{\link[blockr.core:new_transform_block]{blockr.core::new_transform_block()}}. A package
 building on this block passes its own \code{class} here: the subclass has to be

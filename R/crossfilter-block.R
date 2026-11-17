@@ -55,6 +55,11 @@
 #'   `groups`, and a button in its field swaps it with `pinned`. Like
 #'   `pinned`, the block only records it; a package building on it, such as
 #'   blockr.pharma's population filter, decides what to do with it.
+#' @param group_none Whether the `Group by` select offers "(none)", which
+#'   unpins the group. Off by default, set in the gear (`Group by offers
+#'   (none)`). The block only records the choice; a package building on it
+#'   decides what an ungrouped board means (blockr.pharma's population filter
+#'   stamps its group column as NA in every row).
 #' @param ... Forwarded to [blockr.core::new_transform_block()]. A package
 #'   building on this block passes its own `class` here: the subclass has to be
 #'   set at construction, which is where block metadata is resolved from the
@@ -77,6 +82,7 @@ new_crossfilter_block <- function(
   pinned = NULL,
   groups = list(),
   subgroup = NULL,
+  group_none = FALSE,
   ...
 ) {
   args <- list(...)
@@ -95,7 +101,8 @@ new_crossfilter_block <- function(
       list(
         server = crossfilter_server(
           active_dims, filters, range_filters, measure, agg_func, featured,
-          pinned, groups, subgroup, subject_unit = subject_unit
+          pinned, groups, subgroup, group_none = group_none,
+          subject_unit = subject_unit
         ),
         ui = crossfilter_ui,
         allow_empty_state = c(
@@ -402,7 +409,8 @@ crossfilter_groups_payload <- function(groups) {
 crossfilter_server <- function(active_dims, filters, range_filters,
                                measure, agg_func, featured = character(),
                                pinned = NULL, groups = list(),
-                               subgroup = NULL, subject_unit = NULL) {
+                               subgroup = NULL, group_none = FALSE,
+                               subject_unit = NULL) {
   function(id, data) {
     shiny::moduleServer(id, function(input, output, session) {
       ns <- session$ns
@@ -527,6 +535,7 @@ crossfilter_server <- function(active_dims, filters, range_filters,
       r_pinned <- shiny::reactiveVal(as.character(pinned %||% character()))
       r_groups <- shiny::reactiveVal(crossfilter_clean_groups(groups))
       r_subgroup <- shiny::reactiveVal(as.character(subgroup %||% character()))
+      r_group_none <- shiny::reactiveVal(isTRUE(group_none))
 
       # Everything the client needs for the chip shelf and the pinned card. A
       # pin naming a column that is not (or no longer) pinnable is dropped
@@ -555,7 +564,8 @@ crossfilter_server <- function(active_dims, filters, range_filters,
           pinnable = as.list(pinnable),
           pinned = if (length(pin)) pin[[1L]] else NULL,
           pinned_table = pin_tbl,
-          subgroup = if (length(pin) && length(sub)) sub[[1L]] else NULL
+          subgroup = if (length(pin) && length(sub)) sub[[1L]] else NULL,
+          group_none = r_group_none()
         )
       })
 
@@ -654,7 +664,8 @@ crossfilter_server <- function(active_dims, filters, range_filters,
       # Moving the pin leaves the previous column exactly as it is: an ordinary
       # card, filter and all. Dropping its filter here would widen the
       # population under a reader who was looking at something else. An empty
-      # string unpins: the "(none)" entry of the Group by select sends it.
+      # string unpins: the "(none)" entry of the Group by select sends it,
+      # offered when the gear's `group_none` switch is on.
       shiny::observeEvent(input$set_pinned, {
         val <- input$set_pinned
         if (is.null(val)) {
@@ -739,6 +750,10 @@ crossfilter_server <- function(active_dims, filters, range_filters,
           groups = crossfilter_groups_payload(crossfilter_clean_groups(cur))
         ))
       }, ignoreInit = TRUE, ignoreNULL = FALSE)
+
+      shiny::observeEvent(input$set_group_none, {
+        r_group_none(isTRUE(input$set_group_none))
+      }, ignoreInit = TRUE)
 
       shiny::observeEvent(input$set_featured, {
         vals <- as.character(unlist(input$set_featured))
@@ -912,6 +927,7 @@ crossfilter_server <- function(active_dims, filters, range_filters,
             agg_func = cur_agg_func,
             featured = pin$featured,
             pinnable = pin$pinnable,
+            group_none = pin$group_none,
             pinned = pin$pinned,
             pinned_levels = pinned_levels(),
             subgroup = pin$subgroup,
@@ -939,6 +955,7 @@ crossfilter_server <- function(active_dims, filters, range_filters,
             active_dims = safe_active,
             featured = pin$featured,
             pinnable = pin$pinnable,
+            group_none = pin$group_none,
             pinned = pin$pinned,
             pinned_levels = pinned_levels(),
             subgroup = pin$subgroup,
@@ -1200,7 +1217,8 @@ crossfilter_server <- function(active_dims, filters, range_filters,
           featured = r_featured,
           pinned = r_pinned,
           groups = r_groups,
-          subgroup = r_subgroup
+          subgroup = r_subgroup,
+          group_none = r_group_none
         )
       )
     })

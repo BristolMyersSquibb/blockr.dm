@@ -272,6 +272,7 @@
       this.activeDims = {};   // table -> [dim, ...]
       this.featured = [];     // [{table, dim, type, label}, ...] shelf chips
       this.pinnable = [];     // featured dims the pinned picker may offer
+      this.groupNone = false; // whether the picker also offers "(none)"
       this.pinned = null;     // dim held in the always-open card, or null
       this.subgroup = null;   // second split under the group, or null
       // Group definitions under the Group by field. `this.groups` is taken:
@@ -417,6 +418,17 @@
       featuredField.appendChild(el('p', 'jscf-settings-hint',
         'The tags above the cards, in this order. Drag a tag to reorder.'));
       grid.appendChild(featuredField);
+
+      // Whether Group by offers "(none)". A setting for every reader of the
+      // board, like the vocabulary above, so it sits here and not in the
+      // select.
+      const noneField = el('div',
+        'blockr-settings__field blockr-settings__field--full');
+      this._groupNoneBox = window.Blockr.checkbox(
+        'Group by offers (none)', this.groupNone,
+        (checked) => this._setGroupNone(checked));
+      noneField.appendChild(this._groupNoneBox.el);
+      grid.appendChild(noneField);
 
       // What a bar is long by. A Select, mounted once the measures are known
       // (_updateMeasureUI); hidden when the data has none.
@@ -799,6 +811,12 @@
       Shiny.setInputValue(nsBase + '-set_subgroup', dim, { priority: 'event' });
     }
 
+    _setGroupNone(on) {
+      const nsBase = this.el.id.replace(/-crossfilter_input$/, '');
+      Shiny.setInputValue(nsBase + '-set_group_none', !!on,
+        { priority: 'event' });
+    }
+
     _setPinned(dim) {
       const id = this.el.id;
       const nsBase = id.replace(/-crossfilter_input$/, '');
@@ -913,14 +931,15 @@
       const labels = {};
       for (const f of this.featured) labels[f.dim] = f.label || '';
       // "(none)", last, ungroups the board: the same sentinel as the
-      // subgroup's. A block that stamps the group (blockr.pharma's population
-      // filter) then writes the stamped column as NA in every row, which the
-      // exhibits read as no split, so the column they bind by name stays.
+      // subgroup's. Offered only when the gear's switch is on. A block that
+      // stamps the group (blockr.pharma's population filter) then writes the
+      // stamped column as NA in every row, which the exhibits read as no
+      // split, so the column they bind by name stays.
       const NONE = '(none)';
       const options = this.pinnable.map(
         dim => ({ value: dim, label: labels[dim] || '' }))
-        .concat([{ value: NONE, label: '' }]);
-      const selected = this.pinned || NONE;
+        .concat(this.groupNone ? [{ value: NONE, label: '' }] : []);
+      const selected = this.pinned || (this.groupNone ? NONE : '');
 
       if (this._groupSelect) {
         this._groupSelect.setOptions(options, selected);
@@ -1645,6 +1664,8 @@
       this.activeDims = msg.active_dims || {};
       this.featured = asArray(msg.featured);
       this.pinnable = asArray(msg.pinnable);
+      this.groupNone = msg.group_none === true;
+      if (this._groupNoneBox) this._groupNoneBox.set(this.groupNone);
       this.pinned = msg.pinned == null ? null : asArray(msg.pinned)[0];
       this.subgroup = msg.subgroup == null ? null : asArray(msg.subgroup)[0];
       this.measure = msg.measure || '.count';
