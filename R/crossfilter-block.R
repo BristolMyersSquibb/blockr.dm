@@ -654,9 +654,7 @@ crossfilter_server <- function(active_dims, filters, range_filters,
       # Moving the pin leaves the previous column exactly as it is: an ordinary
       # card, filter and all. Dropping its filter here would widen the
       # population under a reader who was looking at something else. An empty
-      # string unpins, which is how a board or a test clears the split; the UI
-      # does not offer it, because a board whose exhibits bind a stamped column
-      # by name loses that column when the group goes.
+      # string unpins: the "(none)" entry of the Group by select sends it.
       shiny::observeEvent(input$set_pinned, {
         val <- input$set_pinned
         if (is.null(val)) {

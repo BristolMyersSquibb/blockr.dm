@@ -912,9 +912,15 @@
 
       const labels = {};
       for (const f of this.featured) labels[f.dim] = f.label || '';
+      // "(none)", last, ungroups the board: the same sentinel as the
+      // subgroup's. A block that stamps the group (blockr.pharma's population
+      // filter) then writes the stamped column as NA in every row, which the
+      // exhibits read as no split, so the column they bind by name stays.
+      const NONE = '(none)';
       const options = this.pinnable.map(
-        dim => ({ value: dim, label: labels[dim] || '' }));
-      const selected = this.pinned || '';
+        dim => ({ value: dim, label: labels[dim] || '' }))
+        .concat([{ value: NONE, label: '' }]);
+      const selected = this.pinned || NONE;
 
       if (this._groupSelect) {
         this._groupSelect.setOptions(options, selected);
@@ -922,17 +928,14 @@
       }
 
       const Select = this._select();
-      // allowEmpty carries the ungrouped state a board starts in (`pinned` is
-      // NULL by default). It is not offered back once a group exists: on a
-      // board whose exhibits bind a stamped column by name, dropping the group
-      // takes the column away with it.
       this._groupSelect = Select.single(this.groupHostEl, {
         options,
         selected,
         allowEmpty: true,
         placeholder: 'Not grouped',
         onChange: (value) => {
-          if (value !== this.pinned) this._setPinned(value || '');
+          const dim = value === NONE ? '' : (value || '');
+          if (dim !== (this.pinned || '')) this._setPinned(dim);
         }
       });
       this._groupSelect.el.classList.add('blockr-select--bordered');
