@@ -176,6 +176,33 @@
   flex-shrink: 0;
 }
 
+/* In the card body a flag row reads as a row of Blockr.Select's multi list:
+   no box, the 14px tick in the accent, in a slot every row keeps. */
+.bi-filter-bool-checkbox .blockr-checkbox__box,
+.bi-filter-bool-checkbox:hover .blockr-checkbox__box,
+.bi-filter-bool-checkbox input:checked + .blockr-checkbox__box {
+  width: 14px;
+  height: 14px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--blockr-color-text-accent, #2563eb);
+  transition: none;
+}
+
+.bi-filter-bool-checkbox .blockr-checkbox__box svg {
+  width: 14px;
+  height: 14px;
+  transform: none;
+  transition: none;
+}
+
+.bi-filter-bool-checkbox input:focus-visible + .blockr-checkbox__box {
+  box-shadow: none;
+  outline: var(--blockr-focus-outline);
+  outline-offset: 2px;
+}
+
 /* AND/OR combinator pill (gear popover Combine row). */
 .bi-filter-op-toggle {
   text-transform: uppercase;
