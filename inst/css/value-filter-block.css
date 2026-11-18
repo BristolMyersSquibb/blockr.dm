@@ -166,14 +166,38 @@
   margin-bottom: 4px;
 }
 
+/* The row as the flag filter draws it: 14px name at weight 500, the label
+   muted after it and cut with "...", the hover wash. */
 .bi-filter-bool-checkbox {
-  max-width: 100%;
+  display: flex;
+  max-width: none;
   overflow: hidden;
   white-space: nowrap;
+  padding: 5px 10px;
+  margin: 0 -10px;
+  border-radius: var(--blockr-radius-sm, 4px);
+  font-size: var(--blockr-font-size-base, 0.875rem);
+  line-height: 20px;
+  color: var(--blockr-color-text-default, #111827);
+}
+
+.bi-filter-bool-checkbox:hover {
+  background: var(--blockr-color-bg-hover, #f3f4f6);
 }
 
 .bi-filter-bool-checkbox .blockr-checkbox__label {
   flex-shrink: 0;
+  font-weight: 500;
+}
+
+.bi-filter-bool-checkbox .bi-filter-label-sublabel {
+  min-width: 0;
+  font-size: var(--blockr-font-size-sm, 0.8125rem);
+  color: var(--blockr-color-text-muted, #6b7280);
+}
+
+.bi-filter-item-bool:has(+ .bi-filter-item-bool) {
+  margin-bottom: 0;
 }
 
 /* In the card body a flag row reads as a row of Blockr.Select's multi list:

@@ -417,12 +417,13 @@
   padding-top: 2px;
 }
 
-/* A row: the tick's slot, the value and its count on one line, the bar under
-   them across the row. 14px on a 20px line, 10px side padding, radius 4, the
-   hover wash. The value wraps; the count keeps its width. */
+/* A row: the tick's slot and the value on one line, the bar and its count
+   under it. 14px on a 20px line, 10px side padding, radius 4, the hover
+   wash. The value ends in "…" as in the select (the row's tooltip has it in
+   full); the count sits with the bar, so it takes no room from the value. */
 .dm-cf-tw-row {
   display: grid;
-  grid-template-columns: 22px minmax(0, 1fr) auto;
+  grid-template-columns: 22px minmax(0, 1fr);
   row-gap: 3px;
   padding: 5px 10px 6px;
   border-radius: var(--blockr-radius-sm);
@@ -452,7 +453,9 @@
 }
 .dm-cf-tw-name {
   min-width: 0;
-  overflow-wrap: anywhere;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 /* The value turns muted when another value of the column is ticked and this
    one is not, and when the other filters leave it no rows (it then reads 0
@@ -473,21 +476,34 @@
   font-size: var(--blockr-font-size-xs);
   color: var(--blockr-color-text-muted);
 }
+/* The bar's line: the track, then the count at 11px, right-aligned in a
+   slot wide enough for most counts, so the counts line up. */
+.dm-cf-tw-bar-line {
+  grid-column: 2;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 12px;
+  min-width: 0;
+}
 .dm-cf-tw-bar-label {
-  padding-left: 10px;
-  font-size: var(--blockr-font-size-xs);
+  flex: 0 0 auto;
+  min-width: 28px;
+  font-size: 11px;
+  line-height: 12px;
   font-variant-numeric: tabular-nums;
   text-align: right;
   white-space: nowrap;
   color: var(--blockr-color-text-muted);
 }
-/* Bars: 4px under the value and the count, the accent at
+/* Bars: 4px under the value, the accent at
    --blockr-mark-weight-supporting, the value end rounded by
    --blockr-mark-radius; the zero end is shared by every row and stays
    square. The track is a light wash of the text colour, so it still shows on
    a hovered row. */
 .dm-cf-tw-bar-track {
-  grid-column: 2 / 4;
+  flex: 1 1 auto;
+  min-width: 0;
   height: 4px;
   background: color-mix(in srgb, var(--blockr-color-text-default) 6%, transparent);
   border-radius: 0 var(--blockr-mark-radius) var(--blockr-mark-radius) 0;

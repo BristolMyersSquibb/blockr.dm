@@ -2267,15 +2267,21 @@
         }
         r.appendChild(name);
 
-        const num = el('span', 'dm-cf-tw-bar-label');
-        num.textContent = hasMeasure ? fmtNum(d.value) : fmtCount(d.value);
-        r.appendChild(num);
+        // The name keeps its line and ends in "…" as in the select, so the
+        // full value goes in the tooltip. The count sits with the bar.
+        r.title = display(d.label);
 
+        const barLine = el('div', 'dm-cf-tw-bar-line');
         const track = el('div', 'dm-cf-tw-bar-track');
         const fill = el('div', 'dm-cf-tw-bar-fill');
         fill.style.width = maxVal > 0 ? `${(Math.abs(d.value) / maxVal) * 100}%` : '0%';
         track.appendChild(fill);
-        r.appendChild(track);
+        barLine.appendChild(track);
+
+        const num = el('span', 'dm-cf-tw-bar-label');
+        num.textContent = hasMeasure ? fmtNum(d.value) : fmtCount(d.value);
+        barLine.appendChild(num);
+        r.appendChild(barLine);
         return r;
       };
       const groupName = (text) => {
