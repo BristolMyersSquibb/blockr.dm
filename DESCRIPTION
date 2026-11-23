@@ -29,7 +29,7 @@ Description: Blocks for working with relational data in 'blockr.core'
 License: GPL (>= 3)
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
-URL: https://bristolmyerssquibb.github.io/blockr.dm/
+URL: https://blockr.site, https://github.com/BristolMyersSquibb/blockr.dm
 BugReports: https://github.com/BristolMyersSquibb/blockr.dm/issues
 Imports:
     blockr.core,
