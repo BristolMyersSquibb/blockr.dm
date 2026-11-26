@@ -1,14 +1,14 @@
 # Regression: None in the Columns list of a group split. A split keeps at
 # least one column, so _setColumns() put the picks back when the list
 # reported an empty pick. The list showed "0 of 3", then, a second later
-# (the in-place list's report delay), "3 of 3" again. Now the list takes
-# `min: 1`: None is held back and the last pick does not untick, so the
-# count never reads 0.
+# (the in-place list's report delay), "3 of 3" again. Now an empty pick is a
+# draft: the list stays empty with the required-empty cue and a line saying
+# why, the split keeps its columns, and the next pick goes out as usual.
 #
 # Drives the live JS with shinytest2 (chromote). Local-only, same opt-in as
 # the other browser regressions here.
 
-test_that("Columns: None is held back and the picks never bounce", {
+test_that("Columns: None empties the list, and the split waits for a pick", {
   testthat::skip_on_cran()
   testthat::skip_on_ci()
   skip_if_not_installed("shinytest2")
@@ -75,21 +75,36 @@ test_that("Columns: None is held back and the picks never bounce", {
     window.__row = (v) => host.querySelector('.blockr-select__option[data-value=\"' + v + '\"]');
   ")
 
-  expect_equal(app$get_js("window.__bulk('None').getAttribute('aria-disabled')"), "true")
+  # None works: the list empties, takes the required-empty cue and says
+  # why, and stays empty after the report delay (no bounce), while the split
+  # keeps its three columns.
+  expect_false(app$get_js("window.__bulk('None').disabled"))
   app$run_js("window.__bulk('None').click()")
   Sys.sleep(2)
-  expect_match(count(), "^3 of 3")
+  expect_match(count(), "^0 of 3")
+  expect_true(app$get_js(
+    "document.querySelector('.jscf-groups-field.blockr-field--required-empty') != null"
+  ))
+  expect_match(
+    app$get_js("document.querySelector('.jscf-groups-field .jscf-groups-warning').textContent"),
+    "^Pick at least one column"
+  )
+  expect_true(app$get_js(
+    "window.__cfDebug.groupDefs.ARM == null ||
+      window.__cfDebug.groupDefs.ARM.columns.length === 3"
+  ))
 
-  # Untick two, then try the last one.
-  app$run_js("window.__row('Low').click(); window.__row('High').click();")
-  expect_equal(app$get_js("window.__row('Placebo').getAttribute('aria-disabled')"), "true")
-  app$run_js("window.__row('Placebo').click()")
+  # A pick ends the draft and goes out as the new split.
+  app$run_js("window.__row('High').click()")
   Sys.sleep(2)
   expect_match(count(), "^1 of 3")
+  expect_false(app$get_js(
+    "document.querySelector('.jscf-groups-field.blockr-field--required-empty') != null"
+  ))
   counts <- unlist(app$get_js("window.__counts"))
-  expect_false(any(grepl("^0 of", counts)))
+  expect_false(any(grepl("^3 of 3", counts)))
   expect_equal(
     app$get_js("window.__cfDebug.groupDefs.ARM.columns.map(c => c.members[0])"),
-    list("Placebo")
+    list("High")
   )
 })

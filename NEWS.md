@@ -1,5 +1,10 @@
 # blockr.dm 0.0.104
 
+* None in a split's Columns list works again: it empties the list, which
+  turns amber and says "Pick at least one column". The split keeps its
+  columns until one is picked, so a few columns can be picked afresh instead
+  of unticking the rest one by one.
+
 * The crossfilter's gear has a "Group by offers (none)" switch, the new
   `group_none` argument, off by default. On, the `Group by` select lists
   "(none)" last, which unpins the group.

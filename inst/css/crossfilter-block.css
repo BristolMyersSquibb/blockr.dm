@@ -877,6 +877,17 @@
   line-height: 1.4;
   color: var(--blockr-color-text-warning);
 }
+/* The Columns list emptied (_columnsEmpty): the required-empty cue reaches
+   the list in place, which blockr.ui's recipe does not cover, and the line
+   below it sits under the list. */
+.jscf-groups-field.blockr-field--required-empty .blockr-select__panel--list,
+.jscf-groups-field.blockr-field--required-empty .blockr-select__panel--list .blockr-select__head {
+  border-color: var(--blockr-color-border-warning);
+  background-color: var(--blockr-color-bg-warning);
+}
+.jscf-groups-field > .jscf-groups-warning {
+  margin: 4px 0 0;
+}
 .jscf-groups--overlap .jscf-pool-levels .blockr-select__control,
 .jscf-groups--overlap .jscf-columns-select .blockr-select__control,
 .jscf-groups--overlap .jscf-columns-select .blockr-select__panel--list {

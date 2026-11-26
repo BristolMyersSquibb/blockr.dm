@@ -1350,6 +1350,8 @@
       s.colSelect = null;
       s.el.innerHTML = '';
       s.warnEl = null;
+      s.colField = null;
+      s.colHint = null;
       const on = !!s.col && !!s.edit && s.levels.length > 0;
       s.el.style.display = on ? '' : 'none';
       if (!on) return;
@@ -1366,6 +1368,12 @@
       colField.appendChild(el('label', 'blockr-label', colLabel));
       const host = el('div', 'jscf-columns-select');
       colField.appendChild(host);
+      // Emptied, the list is a draft: this line says what is missing
+      // (_columnsEmpty).
+      s.colHint = el('div', 'jscf-groups-warning');
+      s.colHint.setAttribute('role', 'status');
+      colField.appendChild(s.colHint);
+      s.colField = colField;
       s.el.appendChild(colField);
       const { options, selected } = this._columnOptions(s);
       // In place: the columns are what this section is for, and the list
@@ -1378,10 +1386,9 @@
         countLabel: 'as columns',
         label: colLabel,
         placeholder: 'Pick columns',
-        // A split keeps a column (_setColumns): None and the last untick are
-        // held back in the list rather than put back after the report.
-        min: 1,
-        minHint: 'A split keeps at least one column',
+        // No `min`: None and the last untick empty the list, so a few
+        // columns can be picked afresh. A split keeps a column, so an empty
+        // pick is a draft the split waits out (_setColumns).
         onChange: (values) => { if (!s.rebuilding) this._setColumns(s, values); }
       });
       s.selects.push(s.colSelect);
@@ -1420,13 +1427,15 @@
 
     _refreshColumns(s) {
       if (!s.colSelect) return;
+      this._columnsEmpty(s, false);
       const { options, selected } = this._columnOptions(s);
       s.colSelect.setOptions(options, selected);
     }
 
     // The tags, in order, back into the definition: the levels and pools
     // they name are shown, in that order, and everything else keeps its
-    // place after them. A pick that would leave no column is put back.
+    // place after them. An empty pick leaves the split as it is: the list
+    // stays empty, with the required-empty cue, until a column is picked.
     _setColumns(s, values) {
       const levels = new Set(s.levels.map(l => l.value));
       const pools = new Map(s.edit.pools.filter(p => p.members.length)
@@ -1445,14 +1454,26 @@
         pools: s.edit.pools.map(p => (p.members.length
           ? Object.assign({}, p, { shown: onPools.has(p) }) : p))
       };
-      if (this._leavesNoColumn(next)) {
-        this._refreshColumns(s);
-        return;
-      }
+      const none = this._leavesNoColumn(next);
+      this._columnsEmpty(s, none);
+      if (none) return;
       s.edit.shown = next.shown;
       s.edit.order = next.order;
       for (const p of s.edit.pools) if (p.members.length) p.shown = onPools.has(p);
       this._groupsEdited(s);
+    }
+
+    // The Columns list emptied: the design system's required-empty cue on
+    // the field (amber, and a `*` after its label) and a line saying why.
+    // Only the list shows it; the split and R keep the last columns.
+    _columnsEmpty(s, on) {
+      if (!s.colField) return;
+      window.Blockr.setRequiredEmpty(s.colField, on);
+      if (s.colHint) {
+        s.colHint.textContent = on
+          ? 'Pick at least one column. The table keeps its columns until you do.'
+          : '';
+      }
     }
 
     _poolRow(s, p) {
